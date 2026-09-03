@@ -109,9 +109,10 @@ class LLMExtractor:
 
         if self._client is None:
             self._client = anthropic.Anthropic()
+        # Sonnet 5 계열은 사고(thinking)가 기본이고 max_tokens에 포함된다. 1024면 긴 발화에서 본문이 빈다
         r = self._client.messages.create(
             model=self.model_id,
-            max_tokens=1024,
+            max_tokens=8192,
             system=system,
             messages=[{"role": "user", "content": user}],
         )
