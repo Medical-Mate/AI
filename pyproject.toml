@@ -12,6 +12,11 @@ dev = [
     "pytest>=8",
     "ruff>=0.6",
 ]
+providers = [
+    "anthropic>=0.50",
+    "openai>=1.50",
+    "google-genai>=1.0",
+]
 
 [build-system]
 requires = ["hatchling"]
