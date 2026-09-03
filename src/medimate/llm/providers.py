@@ -135,7 +135,9 @@ class LLMExtractor:
         r = self._client.models.generate_content(
             model=self.model_id,
             contents=user,
-            config=types.GenerateContentConfig(system_instruction=system, max_output_tokens=1024),
+            # Gemini는 사고(thinking) 토큰이 max_output_tokens에 포함된다. 1024면 JSON이 잘린다.
+            config=types.GenerateContentConfig(system_instruction=system, max_output_tokens=8192),
         )
         m = r.usage_metadata
-        return r.text or "", m.prompt_token_count or 0, m.candidates_token_count or 0
+        out = (m.candidates_token_count or 0) + (getattr(m, "thoughts_token_count", 0) or 0)
+        return r.text or "", m.prompt_token_count or 0, out
