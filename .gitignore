@@ -1,0 +1,48 @@
+# --- 민감정보 · 절대 커밋 금지 ---
+.env
+.env.*
+*.key
+*.pem
+secrets/
+credentials*.json
+
+# 진료기록 원본 — 팀원 본인 것이라도 저장소에 넣지 않는다
+data/raw/
+data/private/
+*.prescription.*
+**/실물/
+
+# --- 대용량 원본 데이터 (내려받아 쓴다) ---
+# UBERON: curl -L -o uberon-basic.obo http://purl.obolibrary.org/obo/uberon/basic.obo
+*.obo
+*.owl
+uberon*
+synthea*/
+
+# --- 모델 가중치 · 인덱스 ---
+*.bin
+*.safetensors
+*.gguf
+*.onnx
+models/
+.index/
+*.faiss
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+build/
+
+# --- 도구 · OS ---
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.log
