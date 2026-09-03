@@ -137,3 +137,20 @@ D4·D5·D6은 **안전 조건**이다. 통과율이 아니라 위반 건수로 �
 uv run python -m medimate.evals.run --report evals/results/gpt-5.6-terra.jsonl   # 재채점 (호출 0)
 uv run python -m medimate.evals.run --provider openai --model gpt-5.6-terra       # 재실행 (약 $0.15)
 ```
+
+
+---
+
+## 추가 — 2026-09-04 v3 재실행
+
+프롬프트에 최근 2턴 이력을 넣고(수정 발화 대응) 케이스를 45개로 늘려 Terra·Sonnet만 다시 돌렸다. 세부는 `evals/RESULTS.md` v3 절.
+
+| 모델 | 통과 | 안전 위반 | 비용 |
+|---|---|---|---|
+| GPT-5.6 Terra | 73/74 | 0 | $0.23 |
+| Claude Sonnet 5 | 69/74 | 1 | $0.44 |
+
+- 인젠션 3종, 수정 발화 5종은 둘 다 전부 통과.
+- 갈린 곳: Sonnet이 긴 발화에서 evidence를 말줄임표로 축약(근거 변조, 안전 위반 1건), 욕설을 value에 1회 포함.
+- 차이 4회로 "차이 없음" 대역을 벗어남. **Terra 채택 결정을 유지한다.**
+- 어댑터 교훈: Anthropic·Gemini 모두 사고 토큰이 출력 한도에 포함된다. 1024는 부족하고 8192로 둔다.
