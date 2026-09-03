@@ -78,3 +78,39 @@ def test_provenance_and_log_are_stamped():
     assert s.card.provenance.prompt_version == "test"
     s.step("네")
     assert s.logs[0].turn == 1
+
+
+def test_ambiguous_triggers_one_clarification_then_closes():
+    from medimate.dialog.questions import CLARIFY
+
+    amb = AxisUpdate(axis=Axis.SITE, status=FieldStatus.AMBIGUOUS, value="거기", evidence="거기가")
+    ex = ScriptedExtractor(
+        [
+            TurnExtraction(chief_complaint="거기가 또 아프다", updates=[amb]),
+            TurnExtraction(updates=[filled(Axis.SITE, "왼쪽 무릎", "왼쪽 무릎")]),
+        ]
+    )
+    s = Session(ex)
+    reply = s.step("거기가 또 아파요")
+    assert reply == CLARIFY[Axis.SITE]
+    s.step("아 왼쪽 무릎이요")
+    assert s.card.axes[Axis.SITE].status == FieldStatus.FILLED
+    assert s.card.axes[Axis.SITE].value == "왼쪽 무릎"
+
+
+def test_ambiguous_twice_is_closed_as_skipped():
+    amb = AxisUpdate(axis=Axis.SITE, status=FieldStatus.AMBIGUOUS, value="거기", evidence="거기")
+    ex = ScriptedExtractor([TurnExtraction(updates=[amb]), TurnExtraction(updates=[amb])])
+    s = Session(ex)
+    s.step("거기요")
+    s.step("거기라니까요")
+    assert s.card.axes[Axis.SITE].status == FieldStatus.SKIPPED
+    assert s.asked_axis == Axis.ONSET
+
+
+def test_extra_fields_are_rejected():
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        TurnExtraction.model_validate({"updates": [], "diagnosis": "ACL 파열"})

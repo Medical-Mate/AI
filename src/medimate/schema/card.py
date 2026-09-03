@@ -34,6 +34,7 @@ class FieldStatus(StrEnum):
     FILLED = "filled"  # 환자가 답했고 값이 있다
     UNKNOWN = "unknown"  # 환자가 "모르겠다"고 했다
     SKIPPED = "skipped"  # 환자가 답하지 않고 넘겼다
+    AMBIGUOUS = "ambiguous"  # 발화가 이 축을 언급했지만 값을 확정할 수 없다 → 엔진이 확인 질문
 
 
 class AxisEntry(BaseModel):
@@ -66,9 +67,11 @@ class PreVisitCard(BaseModel):
         return site.status == FieldStatus.FILLED and bool(self.chief_complaint)
 
     def unfilled_axes(self) -> list[Axis]:
-        """아직 묻지 않은 축. 되묻기 후보."""
-        return [a for a in Axis if self.axes[a].status == FieldStatus.NOT_ASKED]
+        """아직 묻지 않았거나 확인이 필요한 축. 되묻기 후보."""
+        open_ = (FieldStatus.NOT_ASKED, FieldStatus.AMBIGUOUS)
+        return [a for a in Axis if self.axes[a].status in open_]
 
     def completeness(self) -> float:
-        answered = sum(1 for e in self.axes.values() if e.status != FieldStatus.NOT_ASKED)
+        closed = (FieldStatus.FILLED, FieldStatus.UNKNOWN, FieldStatus.SKIPPED)
+        answered = sum(1 for e in self.axes.values() if e.status in closed)
         return answered / len(Axis)

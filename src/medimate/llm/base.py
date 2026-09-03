@@ -10,20 +10,27 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from medimate.schema.card import Axis, FieldStatus
 
 
 class AxisUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     axis: Axis
-    status: FieldStatus  # FILLED / UNKNOWN / SKIPPED 중 하나. NOT_ASKED는 쓰지 않는다
-    value: str | None = None
+    status: FieldStatus  # FILLED / UNKNOWN / SKIPPED / AMBIGUOUS. NOT_ASKED는 쓰지 않는다
+    value: str | None = None  # AMBIGUOUS일 때는 발화에 있는 후보들만
     evidence: str  # 환자 발화 원문 중 이 값의 근거가 된 구간. 비우면 안 된다
 
 
 class TurnExtraction(BaseModel):
-    """한 턴의 환자 발화에서 뽑은 것."""
+    """한 턴의 환자 발화에서 뽑은 것.
+
+    extra="forbid": 모델이 diagnosis 같은 필드를 덧붙이면 스키마 위반으로 잡는다.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     chief_complaint: str | None = None  # 첫 턴에 주로 채워진다
     updates: list[AxisUpdate] = Field(default_factory=list)

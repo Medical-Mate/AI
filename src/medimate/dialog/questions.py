@@ -21,6 +21,18 @@ QUESTIONS: dict[Axis, str] = {
     Axis.SEVERITY: "가장 심할 때를 10점이라고 하면 지금은 몇 점 정도인가요?",
 }
 
+# AMBIGUOUS일 때 — 발화가 그 축을 건드렸지만 확정이 안 될 때 한 번만 되묻는다.
+CLARIFY: dict[Axis, str] = {
+    Axis.SITE: "어느 쪽, 어디쯤인지 조금만 더 말씀해 주실 수 있을까요?",
+    Axis.ONSET: "시작된 시점을 대략이라도 말씀해 주실 수 있을까요?",
+    Axis.CHARACTER: "느낌을 조금만 더 설명해 주실 수 있을까요?",
+    Axis.RADIATION: "퍼지는 곳이 어디인지 조금만 더 말씀해 주실 수 있을까요?",
+    Axis.ASSOCIATED: "함께 나타나는 증상이 무엇인지 조금만 더 말씀해 주실 수 있을까요?",
+    Axis.TIME_COURSE: "처음과 비교해서 어떤지 조금만 더 말씀해 주실 수 있을까요?",
+    Axis.EXACERBATING_RELIEVING: "어떤 때 그런지 조금만 더 말씀해 주실 수 있을까요?",
+    Axis.SEVERITY: "정도를 대략이라도 숫자나 말로 표현해 주실 수 있을까요?",
+}
+
 ASK_ORDER: list[Axis] = [
     Axis.SITE,
     Axis.ONSET,

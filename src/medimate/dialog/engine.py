@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from medimate.dialog.questions import ASK_ORDER, CLOSING, OPENING, QUESTIONS
+from medimate.dialog.questions import ASK_ORDER, CLARIFY, CLOSING, OPENING, QUESTIONS
 from medimate.llm.base import Extractor, TurnExtraction
 from medimate.schema.card import Axis, FieldStatus, PreVisitCard, Provenance
 
@@ -29,6 +29,7 @@ class Session:
     card: PreVisitCard = field(default_factory=PreVisitCard)
     logs: list[TurnLog] = field(default_factory=list)
     asked_axis: Axis | None = None
+    clarified: set[Axis] = field(default_factory=set)  # 확인 질문은 축당 한 번
     ended: bool = False
 
     def __post_init__(self) -> None:
@@ -48,10 +49,13 @@ class Session:
         self.logs.append(TurnLog(len(self.logs) + 1, self.asked_axis, utterance, ext))
         self._apply(ext)
 
-        # 물었는데 아무 갱신이 없으면 그 축은 SKIPPED로 닫는다. 같은 질문을 반복하지 않는다.
+        # 물었는데 닫히지 않은 축은 SKIPPED로 닫는다. 같은 질문을 반복하지 않는다.
+        # (AMBIGUOUS로 되물은 뒤에도 또 AMBIGUOUS면 그것도 닫는다)
         if self.asked_axis is not None:
             entry = self.card.axes[self.asked_axis]
-            if entry.status == FieldStatus.NOT_ASKED:
+            if entry.status == FieldStatus.NOT_ASKED or (
+                entry.status == FieldStatus.AMBIGUOUS and self.asked_axis in self.clarified
+            ):
                 entry.status = FieldStatus.SKIPPED
 
         if ext.wants_to_stop:
@@ -60,6 +64,9 @@ class Session:
         if nxt is None:
             return self.end()
         self.asked_axis = nxt
+        if self.card.axes[nxt].status == FieldStatus.AMBIGUOUS:
+            self.clarified.add(nxt)
+            return CLARIFY[nxt]
         return QUESTIONS[nxt]
 
     def end(self) -> str:
@@ -82,6 +89,10 @@ class Session:
             entry.evidence.append(u.evidence)
 
     def _next_axis(self) -> Axis | None:
+        # 확인이 필요한 축이 먼저, 그 다음 아직 안 물은 축
+        for a in ASK_ORDER:
+            if self.card.axes[a].status == FieldStatus.AMBIGUOUS and a not in self.clarified:
+                return a
         for a in ASK_ORDER:
             if self.card.axes[a].status == FieldStatus.NOT_ASKED:
                 return a
