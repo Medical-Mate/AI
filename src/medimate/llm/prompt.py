@@ -8,11 +8,12 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 
-from medimate.llm.base import TurnExtraction
+from medimate.llm.base import Turn, TurnExtraction
 from medimate.schema.card import Axis
 
-PROMPT_VERSION = "extract-v2"
+PROMPT_VERSION = "extract-v3"
 
 SYSTEM = """당신은 진료 전 문진 기록 보조입니다. 환자의 한 발화에서 아래 8축 중 언급된 것만 뽑아 JSON으로 냅니다.
 
@@ -36,6 +37,7 @@ status:
 9. 한 축에 두 값이 나오면("3일, 아니 4일") 마지막 값을 value로, evidence는 둘을 포함한 구간
 10. "아프다", "불편하다", "안 좋다"처럼 통증·불편 자체를 말한 것은 character가 아니다. character는 욱신·찌릿·조이는·뻐근 같은 느낌의 종류가 말해졌을 때만 넣는다
 11. ambiguous는 지시어 때문에 값을 정할 수 없을 때만 쓴다. 질문·잡담·거부는 ambiguous가 아니다
+12. "이전 대화"가 주어지면 참고만 한다. 뽑는 대상은 "환자 발화"(현재 턴)뿐이고 evidence도 현재 발화에서만 자른다. 환자가 앞서 말한 값을 고치면("아까 3일이라고 했는데 일주일") 그 축을 새 값으로 filled 한다
 
 출력은 아래 JSON 스키마만. 설명·코드블록 없이 JSON 하나만 출력한다.
 """
@@ -45,9 +47,14 @@ def schema_text() -> str:
     return json.dumps(TurnExtraction.model_json_schema(), ensure_ascii=False)
 
 
-def user_message(utterance: str, asked_axis: Axis | None) -> str:
+def user_message(utterance: str, asked_axis: Axis | None, history: Sequence[Turn] = ()) -> str:
     asked = asked_axis.value if asked_axis else "(없음 — 첫 발화)"
-    return f"asked_axis: {asked}\n환자 발화: {utterance}"
+    parts = []
+    if history:
+        lines = "\n".join(f"- 질문: {q}\n  환자: {a}" for q, a in history)
+        parts.append(f"이전 대화(참고만):\n{lines}")
+    parts.append(f"asked_axis: {asked}\n환자 발화: {utterance}")
+    return "\n\n".join(parts)
 
 
 def system_prompt() -> str:

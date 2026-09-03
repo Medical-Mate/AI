@@ -45,3 +45,6 @@ ASK_ORDER: list[Axis] = [
 ]
 
 CLOSING = "말씀해 주신 내용을 정리해서 진료 때 보실 수 있게 준비했어요."
+
+EMPTY_INPUT = "입력된 내용이 없어요."
+TRUNCATED_NOTICE = "내용이 길어서 앞부분만 반영했어요."

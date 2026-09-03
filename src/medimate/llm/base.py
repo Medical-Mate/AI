@@ -8,6 +8,7 @@ LLM이 하는 일은 하나다: 환자 발화에서 어느 축에 무엇이 말�
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -38,8 +39,14 @@ class TurnExtraction(BaseModel):
     wants_to_stop: bool = False  # "이만 할래요" 등
 
 
+# (직전 질문, 환자 답) 쌍. 엔진이 최근 N턴만 넘긴다 — 토큰 절약, 요약 생성 없음
+Turn = tuple[str, str]
+
+
 class Extractor(Protocol):
     model_id: str
     prompt_version: str
 
-    def extract(self, utterance: str, asked_axis: Axis | None) -> TurnExtraction: ...
+    def extract(
+        self, utterance: str, asked_axis: Axis | None, history: Sequence[Turn] = ()
+    ) -> TurnExtraction: ...
