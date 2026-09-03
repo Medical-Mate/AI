@@ -12,7 +12,7 @@ import json
 from medimate.llm.base import TurnExtraction
 from medimate.schema.card import Axis
 
-PROMPT_VERSION = "extract-v1"
+PROMPT_VERSION = "extract-v2"
 
 SYSTEM = """당신은 진료 전 문진 기록 보조입니다. 환자의 한 발화에서 아래 8축 중 언급된 것만 뽑아 JSON으로 냅니다.
 
@@ -34,6 +34,8 @@ status:
 7. 환자가 그만하겠다고 하면 wants_to_stop=true
 8. chief_complaint는 첫 발화(asked_axis가 없을 때)에서 환자 표현으로 한 문장
 9. 한 축에 두 값이 나오면("3일, 아니 4일") 마지막 값을 value로, evidence는 둘을 포함한 구간
+10. "아프다", "불편하다", "안 좋다"처럼 통증·불편 자체를 말한 것은 character가 아니다. character는 욱신·찌릿·조이는·뻐근 같은 느낌의 종류가 말해졌을 때만 넣는다
+11. ambiguous는 지시어 때문에 값을 정할 수 없을 때만 쓴다. 질문·잡담·거부는 ambiguous가 아니다
 
 출력은 아래 JSON 스키마만. 설명·코드블록 없이 JSON 하나만 출력한다.
 """

@@ -22,7 +22,7 @@ from pathlib import Path
 
 from medimate.evals.score import ROOT, load_cases, load_lexicon, score
 from medimate.llm.base import TurnExtraction
-from medimate.llm.providers import PRICES, BudgetExceeded, LLMExtractor, RawResult
+from medimate.llm.providers import PRICES, BudgetExceeded, LLMExtractor, RawResult, _parse_json
 from medimate.schema.card import Axis
 
 RESULTS = ROOT / "evals" / "results"
@@ -127,13 +127,13 @@ def report(rows: list[dict], cases) -> None:
     check_fail = Counter()
     for row in rows:
         c = by_id[row["case_id"]]
-        parsed = None
-        if row["parse_error"] is None:
-            try:
-                parsed = TurnExtraction.model_validate_json(row["text"].strip().strip("`"))
-            except Exception as e:  # noqa: BLE001
-                row["parse_error"] = str(e)
-        sc = score(c, row["text"], parsed, row["parse_error"], lexicon)
+        # 저장된 원문을 항상 다시 파싱한다 — 파서를 고치면 재호출 없이 재채점된다
+        parsed, err = None, None
+        try:
+            parsed = _parse_json(row["text"])
+        except Exception as e:  # noqa: BLE001
+            err = f"{type(e).__name__}: {str(e)[:120]}"
+        sc = score(c, row["text"], parsed, err, lexicon)
         per_case.setdefault(c["id"], []).append(sc)
         for k, v in sc.checks.items():
             if not v:

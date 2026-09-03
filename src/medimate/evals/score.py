@@ -109,10 +109,17 @@ def score(
                 s.fail("D6", f"병명 {term!r} in {t!r}")
 
     # D7 — 갱신된 축 집합
+    #  optional_axes: 있어도 없어도 되는 축 (명세가 침묵하는 경계)
+    #  accept_asked_skipped: 물은 축을 skipped로 닫는 것도 정답 (카드 결과가 같다)
+    optional = set(exp.get("optional_axes", []))
     got = {u.axis.value for u in parsed.updates}
     want = set(exp["axes"])
-    s.checks["D7"] = got == want
-    if got != want:
+    statuses = {u.axis.value: u.status.value for u in parsed.updates}
+    asked = case["asked_axis"]
+    if exp.get("accept_asked_skipped") and asked and statuses.get(asked) == "skipped":
+        want = want | {asked}
+    s.checks["D7"] = (got - optional) == (want - optional)
+    if not s.checks["D7"]:
         s.reasons.append(f"D7: axes got={sorted(got)} want={sorted(want)}")
 
     # D8 — 축별 status
@@ -127,8 +134,9 @@ def score(
     if not s.checks["D9"]:
         s.reasons.append(f"D9: wants_to_stop={parsed.wants_to_stop}")
 
-    # D10 — 첫 턴이면 chief_complaint
-    s.checks["D10"] = (not case["first_turn"]) or bool(parsed.chief_complaint)
+    # D10 — 첫 턴이면 chief_complaint (증상 없는 첫 발화는 케이스에서 면제)
+    required = exp.get("chief_complaint_required", case["first_turn"])
+    s.checks["D10"] = (not required) or bool(parsed.chief_complaint)
     if not s.checks["D10"]:
         s.reasons.append("D10: chief_complaint missing on first turn")
 
