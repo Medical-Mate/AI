@@ -114,3 +114,64 @@ def test_extra_fields_are_rejected():
 
     with pytest.raises(ValidationError):
         TurnExtraction.model_validate({"updates": [], "diagnosis": "ACL 파열"})
+
+
+def test_empty_input_does_not_call_llm_and_repeats_question():
+    from medimate.dialog.questions import EMPTY_INPUT, OPENING
+
+    ex = ScriptedExtractor([])
+    s = Session(ex)
+    reply = s.step("   ")
+    assert reply.startswith(EMPTY_INPUT) and OPENING in reply
+    assert ex.calls == [] and s.logs == []
+
+
+def test_long_utterance_is_truncated_with_notice():
+    from medimate.dialog.questions import TRUNCATED_NOTICE
+
+    ex = ScriptedExtractor([TurnExtraction()])
+    s = Session(ex)
+    reply = s.step("아" * 500)
+    assert len(ex.calls[0][0]) == 300
+    assert reply.startswith(TRUNCATED_NOTICE)
+
+
+def test_turn_cap_ends_session_with_reason():
+    from medimate.dialog.engine import Limits
+
+    ex = ScriptedExtractor([TurnExtraction() for _ in range(100)])
+    s = Session(ex, limits=Limits(max_turns=3))
+    for _ in range(3):
+        s.step("음")
+    assert not s.ended
+    reply = s.step("음")
+    assert s.ended and s.end_reason == "max_turns" and reply == CLOSING
+    assert len(ex.calls) == 3  # 4번째는 호출하지 않았다
+
+
+def test_normal_flow_never_hits_default_turn_cap():
+    # 8축 모두 무응답 → 첫 발화 + 8질문 = 9턴에서 자연 종료. 20에 닿지 않는다
+    ex = ScriptedExtractor([TurnExtraction() for _ in range(30)])
+    s = Session(ex)
+    n = 0
+    while not s.ended and n < 50:
+        s.step("...")
+        n += 1
+    assert s.end_reason == "complete" and n <= 17
+
+
+def test_session_token_budget_ends_session():
+    from dataclasses import dataclass
+
+    from medimate.dialog.engine import Limits
+
+    @dataclass
+    class U:
+        input_tokens: int = 50_000
+        output_tokens: int = 0
+
+    ex = ScriptedExtractor([TurnExtraction()])
+    ex.usage = U()
+    s = Session(ex, limits=Limits(max_session_tokens=40_000))
+    s.step("무릎")
+    assert s.ended and s.end_reason == "budget" and ex.calls == []

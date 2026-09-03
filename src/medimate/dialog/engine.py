@@ -8,7 +8,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from medimate.dialog.questions import ASK_ORDER, CLARIFY, CLOSING, OPENING, QUESTIONS
+from medimate.dialog.questions import (
+    ASK_ORDER,
+    CLARIFY,
+    CLOSING,
+    EMPTY_INPUT,
+    OPENING,
+    QUESTIONS,
+    TRUNCATED_NOTICE,
+)
 from medimate.llm.base import Extractor, TurnExtraction
 from medimate.schema.card import Axis, FieldStatus, PreVisitCard, Provenance
 
@@ -23,6 +31,20 @@ class TurnLog:
     extraction: TurnExtraction
 
 
+@dataclass(frozen=True)
+class Limits:
+    """세션 안전 상한. 정상 문진은 닿지 않는다 — 걸리면 버그·공격이다.
+
+    - max_utterance_chars: 팀 합의 임시값 300 (앱 카운터·백엔드 계약과 같은 값). 이중 방어
+    - max_turns: 정상 최대 17(첫 발화 1 + 8축 + 확인 8). 20은 안전 정지선
+    - max_session_tokens: 이 세션의 LLM 입력+출력 누적 상한. Extractor가 usage를 주면 적용
+    """
+
+    max_utterance_chars: int = 300
+    max_turns: int = 20
+    max_session_tokens: int = 40_000  # 턴당 ~1.1K × 20턴 + 여유
+
+
 @dataclass
 class Session:
     extractor: Extractor
@@ -31,6 +53,8 @@ class Session:
     asked_axis: Axis | None = None
     clarified: set[Axis] = field(default_factory=set)  # 확인 질문은 축당 한 번
     ended: bool = False
+    limits: Limits = field(default_factory=Limits)
+    end_reason: str | None = None  # None | "stop" | "complete" | "max_turns" | "budget"
 
     def __post_init__(self) -> None:
         self.card.provenance = Provenance(
@@ -45,6 +69,26 @@ class Session:
         """환자 발화 하나를 처리하고 다음 발화(질문 또는 마무리)를 돌려준다."""
         if self.ended:
             return CLOSING
+
+        # 빈 입력은 LLM을 부르지 않는다. 턴으로도 세지 않는다
+        utterance = utterance.strip()
+        if not utterance:
+            return EMPTY_INPUT + " " + self._current_question()
+
+        # 길이 상한 — 앱·백엔드가 먼저 막지만 이중 방어. 잘린 사실을 사용자에게 알린다
+        notice = ""
+        if len(utterance) > self.limits.max_utterance_chars:
+            utterance = utterance[: self.limits.max_utterance_chars]
+            notice = TRUNCATED_NOTICE + " "
+
+        # 턴 상한 — 정상 흐름은 닿지 않는다
+        if len(self.logs) >= self.limits.max_turns:
+            return self.end("max_turns")
+
+        # 세션 토큰 예산 — 어댑터가 usage를 노출하면 적용
+        if self._session_tokens() >= self.limits.max_session_tokens:
+            return self.end("budget")
+
         ext = self.extractor.extract(utterance, self.asked_axis)
         self.logs.append(TurnLog(len(self.logs) + 1, self.asked_axis, utterance, ext))
         self._apply(ext)
@@ -59,20 +103,35 @@ class Session:
                 entry.status = FieldStatus.SKIPPED
 
         if ext.wants_to_stop:
-            return self.end()
+            return notice + self.end("stop")
         nxt = self._next_axis()
         if nxt is None:
-            return self.end()
+            return notice + self.end("complete")
         self.asked_axis = nxt
         if self.card.axes[nxt].status == FieldStatus.AMBIGUOUS:
             self.clarified.add(nxt)
-            return CLARIFY[nxt]
-        return QUESTIONS[nxt]
+            return notice + CLARIFY[nxt]
+        return notice + QUESTIONS[nxt]
 
-    def end(self) -> str:
+    def end(self, reason: str = "stop") -> str:
         self.ended = True
+        self.end_reason = reason
         self.asked_axis = None
         return CLOSING
+
+    # ------------------------------------------------------------------
+    def _current_question(self) -> str:
+        if self.asked_axis is None:
+            return OPENING
+        if self.asked_axis in self.clarified:
+            return CLARIFY[self.asked_axis]
+        return QUESTIONS[self.asked_axis]
+
+    def _session_tokens(self) -> int:
+        usage = getattr(self.extractor, "usage", None)
+        if usage is None:
+            return 0
+        return int(getattr(usage, "input_tokens", 0)) + int(getattr(usage, "output_tokens", 0))
 
     # ------------------------------------------------------------------
     def _apply(self, ext: TurnExtraction) -> None:
