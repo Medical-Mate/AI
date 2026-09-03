@@ -16,12 +16,14 @@ from medimate.schema.card import Axis
 
 # $/1M tokens (input, output). 지출 가드용. 공급자 가격 페이지에서 확인 후 갱신.
 PRICES: dict[str, tuple[float, float]] = {
-    "claude-haiku-4-5": (1.00, 5.00),
+    "claude-haiku-4-5-20251001": (1.00, 5.00),
     "claude-sonnet-5": (2.00, 10.00),
     "claude-opus-5": (5.00, 25.00),
     "gpt-5.6-luna": (0.20, 1.20),
     "gpt-5.6-terra": (2.00, 12.00),
     "gemini-3.5-flash": (1.50, 9.00),
+    "gemini-3.5-flash-lite": (0.30, 2.50),
+    "gemini-3.6-flash": (1.50, 7.50),
     "gemini-3.1-pro": (2.00, 12.00),
 }
 

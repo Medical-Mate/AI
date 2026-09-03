@@ -14,7 +14,9 @@ import argparse
 import io
 import json
 import os
+import re
 import sys
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -55,15 +57,49 @@ def estimate(cases, model_id: str, in_tok: int = 800, out_tok: int = 150) -> tup
     return calls, (calls * in_tok * i + calls * out_tok * o) / 1_000_000
 
 
+def _is_rate_limit(e: Exception) -> bool:
+    msg = str(e)
+    return "429" in msg or "RESOURCE_EXHAUSTED" in msg or "RateLimit" in type(e).__name__
+
+
+def _retry_delay(e: Exception, default: float = 60.0) -> float:
+    m = re.search(r"retry in ([\d.]+)s", str(e), re.I) or re.search(r"retryDelay': '(\d+)s", str(e))
+    return float(m.group(1)) + 2 if m else default
+
+
+def _call_with_retry(extractor, utterance, axis, max_wait: float = 600.0):
+    waited = 0.0
+    while True:
+        try:
+            return extractor.extract_raw(utterance, axis)
+        except BudgetExceeded:
+            raise
+        except Exception as e:  # noqa: BLE001
+            if not _is_rate_limit(e) or waited >= max_wait:
+                raise
+            d = _retry_delay(e)
+            print(f"\n  429 — {d:.0f}s 대기", end="", flush=True)
+            time.sleep(d)
+            waited += d
+
+
 def run(extractor, cases, out_path: Path) -> list[dict]:
-    rows = []
+    """결과 파일이 있으면 이어서 실행한다(같은 case_id/rep는 건너뜀). 호출을 아낀다."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    with out_path.open("w", encoding="utf-8") as f:
+    rows = []
+    if out_path.exists():
+        rows = [json.loads(ln) for ln in out_path.read_text(encoding="utf-8").splitlines() if ln]
+        if rows:
+            print(f"이어서 실행: {len(rows)}건 저장됨")
+    done = {(r["case_id"], r["rep"]) for r in rows}
+    with out_path.open("a", encoding="utf-8") as f:
         for c in cases:
             axis = Axis(c["asked_axis"]) if c["asked_axis"] else None
             for rep in range(c["k"]):
+                if (c["id"], rep) in done:
+                    continue
                 try:
-                    r = extractor.extract_raw(c["utterance"], axis)
+                    r = _call_with_retry(extractor, c["utterance"], axis)
                 except BudgetExceeded as e:
                     print(f"\n!! {e} — 중단. 지금까지 결과는 저장됨", file=sys.stderr)
                     return rows
