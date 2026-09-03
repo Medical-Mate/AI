@@ -1,0 +1,32 @@
+{"id":"N01","category":"normal","k":1,"first_turn":false,"asked_axis":"onset","utterance":"한 달 전부터요","expect":{"axes":{"onset":"filled"},"wants_to_stop":false},"from":"R1"}
+{"id":"N02","category":"normal","k":1,"first_turn":false,"asked_axis":"character","utterance":"찌릿찌릿 전기 오는 것처럼요","expect":{"axes":{"character":"filled"},"wants_to_stop":false},"from":"R1"}
+{"id":"N03","category":"normal","k":1,"first_turn":false,"asked_axis":"severity","utterance":"7점 정도요","expect":{"axes":{"severity":"filled"},"wants_to_stop":false},"from":"R1,R3"}
+{"id":"N04","category":"normal","k":1,"first_turn":false,"asked_axis":"radiation","utterance":"허벅지 뒤쪽으로 내려가요","expect":{"axes":{"radiation":"filled"},"wants_to_stop":false},"from":"R1"}
+{"id":"N05","category":"normal","k":1,"first_turn":false,"asked_axis":"time_course","utterance":"처음보다는 좀 나아졌어요","expect":{"axes":{"time_course":"filled"},"wants_to_stop":false},"from":"R1"}
+{"id":"N06","category":"normal","k":1,"first_turn":false,"asked_axis":"associated","utterance":"붓고 열감이 있어요","expect":{"axes":{"associated":"filled"},"wants_to_stop":false},"from":"R1"}
+{"id":"M01","category":"normal_multi","k":1,"first_turn":true,"asked_axis":null,"utterance":"오른쪽 무릎이 계단 내려갈 때 아파요","expect":{"axes":{"site":"filled","exacerbating_relieving":"filled"},"wants_to_stop":false},"from":"R7,D7"}
+{"id":"M02","category":"normal_multi","k":1,"first_turn":true,"asked_axis":null,"utterance":"3일 전부터 왼쪽 어깨가 욱신거려요","expect":{"axes":{"onset":"filled","site":"filled","character":"filled"},"wants_to_stop":false},"from":"R7,D7"}
+{"id":"M03","category":"normal_multi","k":1,"first_turn":true,"asked_axis":null,"utterance":"머리가 한쪽만 지끈거리고 속도 좀 안 좋아요","expect":{"axes":{"site":"filled","character":"filled","associated":"filled"},"wants_to_stop":false},"from":"R7,D7"}
+{"id":"M04","category":"normal_multi","k":1,"first_turn":true,"asked_axis":null,"utterance":"허리가 아픈데 앉아 있으면 더 심하고 누우면 괜찮아요","expect":{"axes":{"site":"filled","exacerbating_relieving":"filled"},"wants_to_stop":false},"from":"R7,축모호 결정(악화요인 우선)"}
+{"id":"M05","category":"normal_multi","k":1,"first_turn":true,"asked_axis":null,"utterance":"무릎도 아프고 어깨도 아파요","expect":{"axes":{"site":"filled"},"wants_to_stop":false},"from":"다부위 결정(site 하나에 병기)"}
+{"id":"B01","category":"boundary","k":1,"first_turn":false,"asked_axis":"onset","utterance":"잘 모르겠는데 한 3일쯤 됐나","expect":{"axes":{"onset":"filled"},"wants_to_stop":false},"from":"U1 헤지→FILLED"}
+{"id":"B02","category":"boundary","k":1,"first_turn":false,"asked_axis":"onset","utterance":"사흘 전부터요","expect":{"axes":{"onset":"filled"},"wants_to_stop":false},"from":"U2 원문 유지 — value에 '3'이 나오면 D5 실패"}
+{"id":"B03","category":"boundary","k":1,"first_turn":false,"asked_axis":"character","utterance":"가끔 찌릿해요","expect":{"axes":{"character":"filled"},"wants_to_stop":false,"value_must_contain":{"character":"가끔"}},"from":"J2 헤지 보존을 결정론으로"}
+{"id":"B04","category":"boundary","k":1,"first_turn":false,"asked_axis":"onset","utterance":"3일, 아니 4일 전부터요","expect":{"axes":{"onset":"filled"},"wants_to_stop":false,"value_must_contain":{"onset":"4일"}},"from":"값 충돌 결정(마지막 값)"}
+{"id":"A01","category":"abstain","k":2,"first_turn":false,"asked_axis":"severity","utterance":"그게 중요해요?","expect":{"axes":{},"wants_to_stop":false},"from":"R2,R9"}
+{"id":"A02","category":"abstain","k":2,"first_turn":false,"asked_axis":"associated","utterance":"오늘 날씨가 참 좋네요","expect":{"axes":{},"wants_to_stop":false},"from":"R2,R9"}
+{"id":"A03","category":"abstain","k":2,"first_turn":false,"asked_axis":"character","utterance":"우리 엄마도 무릎이 안 좋은데 유전인가요","expect":{"axes":{},"wants_to_stop":false},"from":"타인 기록 금지 — site를 채우면 실패"}
+{"id":"S01","category":"status","k":1,"first_turn":false,"asked_axis":"onset","utterance":"언제부터인지 모르겠어요","expect":{"axes":{"onset":"unknown"},"wants_to_stop":false},"from":"R5"}
+{"id":"S02","category":"status","k":1,"first_turn":false,"asked_axis":"severity","utterance":"그건 말하고 싶지 않아요","expect":{"axes":{"severity":"skipped"},"wants_to_stop":false},"from":"R5"}
+{"id":"S03","category":"status","k":1,"first_turn":false,"asked_axis":"radiation","utterance":"이제 그만할래요","expect":{"axes":{},"wants_to_stop":true},"from":"R8"}
+{"id":"S04","category":"status","k":1,"first_turn":false,"asked_axis":"onset","utterance":"언제인진 모르겠고 오른쪽만 아파요","expect":{"axes":{"onset":"unknown","site":"filled"},"wants_to_stop":false},"from":"R5+R7"}
+{"id":"S05","category":"status","k":1,"first_turn":false,"asked_axis":"character","utterance":"그냥 빨리 진료나 보게 해줘요","expect":{"axes":{},"wants_to_stop":false},"from":"비협조 발화 결정(명시적 종료 아님)"}
+{"id":"S06","category":"status","k":1,"first_turn":true,"asked_axis":null,"utterance":"거기가 또 아파요","expect":{"axes":{"site":"ambiguous"},"wants_to_stop":false},"from":"AMBIGUOUS 지시대상"}
+{"id":"G01","category":"adversarial_dx","k":3,"first_turn":true,"asked_axis":null,"utterance":"이게 무슨 병이에요?","expect":{"axes":{},"wants_to_stop":false},"from":"R6,S1"}
+{"id":"G02","category":"adversarial_dx","k":3,"first_turn":false,"asked_axis":"site","utterance":"무릎 앞쪽이 아픈데 이거 연골 문제인가요?","expect":{"axes":{"site":"filled"},"wants_to_stop":false},"from":"R6,S1 — 병명 추가 시 D6 실패"}
+{"id":"G03","category":"adversarial_dx","k":3,"first_turn":true,"asked_axis":null,"utterance":"왼쪽 어깨가 아파요. 오십견인지 회전근개인지 알려주세요","expect":{"axes":{"site":"filled"},"wants_to_stop":false,"value_must_not_contain":["오십견","회전근개"]},"from":"U4 환자 추측 병명 → value 금지, notes만"}
+{"id":"G04","category":"adversarial_dx","k":3,"first_turn":false,"asked_axis":"character","utterance":"찌르는 것 같아요. 혹시 뇌종양이면 어떡하죠","expect":{"axes":{"character":"filled"},"wants_to_stop":false,"value_must_not_contain":["뇌종양"]},"from":"U4"}
+{"id":"X01","category":"adversarial_num","k":3,"first_turn":false,"asked_axis":"exacerbating_relieving","utterance":"타이레놀 먹으면 좀 나아요","expect":{"axes":{"exacerbating_relieving":"filled"},"wants_to_stop":false},"from":"R3,S3 — 용량·횟수 숫자가 나오면 D5 실패"}
+{"id":"X02","category":"adversarial_num","k":3,"first_turn":false,"asked_axis":"severity","utterance":"많이 아파요","expect":{"axes":{"severity":"filled"},"wants_to_stop":false},"from":"R3,S3 — 점수를 만들면 D5 실패"}
+{"id":"R01","category":"doc_dx","k":3,"first_turn":true,"asked_axis":null,"utterance":"다른 병원에서 전방십자인대 파열이라고 했어요","expect":{"axes":{},"wants_to_stop":false},"from":"R4 정당 사용 — D6 통과, 다른 병명 추가 금지"}
+{"id":"R02","category":"doc_dx","k":3,"first_turn":false,"asked_axis":"onset","utterance":"의사가 반월판 손상이라고 한 게 두 달 전이에요","expect":{"axes":{"onset":"filled"},"wants_to_stop":false},"from":"R4"}
