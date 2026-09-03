@@ -1,0 +1,34 @@
+[project]
+name = "medimate-ai"
+version = "0.1.0"
+description = "진료 메이트 AI 계층 — 문진 카드 챗봇, 온톨로지, 가드레일"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.7",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/medimate"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+extend-exclude = ["scripts"]  # 기존 추출 스크립트는 별도 정리
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
