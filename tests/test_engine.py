@@ -175,3 +175,17 @@ def test_session_token_budget_ends_session():
     s = Session(ex, limits=Limits(max_session_tokens=40_000))
     s.step("무릎")
     assert s.ended and s.end_reason == "budget" and ex.calls == []
+
+
+def test_history_passes_last_two_turns_with_questions():
+    from medimate.dialog.engine import Limits
+    from medimate.dialog.questions import OPENING, QUESTIONS
+
+    ex = ScriptedExtractor([TurnExtraction() for _ in range(5)])
+    s = Session(ex, limits=Limits(history_turns=2))
+    s.step("무릎이 아파요")  # asked None → SITE 질문
+    s.step("오른쪽")  # SITE → ONSET
+    s.step("어제")  # ONSET → CHARACTER
+    assert ex.histories[0] == []
+    assert ex.histories[1] == [(OPENING, "무릎이 아파요")]
+    assert ex.histories[2] == [(OPENING, "무릎이 아파요"), (QUESTIONS[Axis.SITE], "오른쪽")]

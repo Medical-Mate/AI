@@ -37,7 +37,7 @@ class DryRunExtractor:
     def __init__(self, cases):
         self._by_utt = {c["utterance"]: c for c in cases}
 
-    def extract_raw(self, utterance, asked_axis) -> RawResult:
+    def extract_raw(self, utterance, asked_axis, history=()) -> RawResult:
         c = self._by_utt[utterance]
         must = c["expect"].get("value_must_contain", {})
         ext = TurnExtraction(
@@ -67,11 +67,11 @@ def _retry_delay(e: Exception, default: float = 60.0) -> float:
     return float(m.group(1)) + 2 if m else default
 
 
-def _call_with_retry(extractor, utterance, axis, max_wait: float = 600.0):
+def _call_with_retry(extractor, utterance, axis, history=(), max_wait: float = 600.0):
     waited = 0.0
     while True:
         try:
-            return extractor.extract_raw(utterance, axis)
+            return extractor.extract_raw(utterance, axis, history)
         except BudgetExceeded:
             raise
         except Exception as e:  # noqa: BLE001
@@ -99,7 +99,8 @@ def run(extractor, cases, out_path: Path) -> list[dict]:
                 if (c["id"], rep) in done:
                     continue
                 try:
-                    r = _call_with_retry(extractor, c["utterance"], axis)
+                    hist = [tuple(t) for t in c.get("history", [])]
+                    r = _call_with_retry(extractor, c["utterance"], axis, hist)
                 except BudgetExceeded as e:
                     print(f"\n!! {e} — 중단. 지금까지 결과는 저장됨", file=sys.stderr)
                     return rows

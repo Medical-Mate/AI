@@ -43,6 +43,9 @@ class Limits:
     max_utterance_chars: int = 300
     max_turns: int = 20
     max_session_tokens: int = 40_000  # 턴당 ~1.1K × 20턴 + 여유
+    history_turns: int = (
+        2  # Extractor에 넘기는 최근 대화 수. 수정 발화("아까 3일이라고 했는데") 대응
+    )
 
 
 @dataclass
@@ -89,7 +92,7 @@ class Session:
         if self._session_tokens() >= self.limits.max_session_tokens:
             return self.end("budget")
 
-        ext = self.extractor.extract(utterance, self.asked_axis)
+        ext = self.extractor.extract(utterance, self.asked_axis, self._history())
         self.logs.append(TurnLog(len(self.logs) + 1, self.asked_axis, utterance, ext))
         self._apply(ext)
 
@@ -120,6 +123,22 @@ class Session:
         return CLOSING
 
     # ------------------------------------------------------------------
+    def _history(self) -> list[tuple[str, str]]:
+        """최근 N턴의 (질문, 답). 각 로그의 asked_axis로 그때 낸 질문을 복원한다."""
+        n = self.limits.history_turns
+        if n <= 0:
+            return []
+        out = []
+        for log in self.logs[-n:]:
+            if log.asked_axis is None:
+                q = OPENING
+            elif log.asked_axis in self.clarified and log is self.logs[-1]:
+                q = CLARIFY[log.asked_axis]
+            else:
+                q = QUESTIONS[log.asked_axis]
+            out.append((q, log.utterance))
+        return out
+
     def _current_question(self) -> str:
         if self.asked_axis is None:
             return OPENING

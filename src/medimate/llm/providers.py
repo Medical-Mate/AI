@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
-from medimate.llm.base import TurnExtraction
+from medimate.llm.base import Turn, TurnExtraction
 from medimate.llm.prompt import PROMPT_VERSION, system_prompt, user_message
 from medimate.schema.card import Axis
 
@@ -71,16 +72,20 @@ class LLMExtractor:
     usage: Usage = field(default_factory=Usage)
     _client: object = field(default=None, repr=False)
 
-    def extract(self, utterance: str, asked_axis: Axis | None) -> TurnExtraction:
-        r = self.extract_raw(utterance, asked_axis)
+    def extract(
+        self, utterance: str, asked_axis: Axis | None, history: Sequence[Turn] = ()
+    ) -> TurnExtraction:
+        r = self.extract_raw(utterance, asked_axis, history)
         if r.parsed is None:
             raise ValueError(r.error)
         return r.parsed
 
-    def extract_raw(self, utterance: str, asked_axis: Axis | None) -> RawResult:
+    def extract_raw(
+        self, utterance: str, asked_axis: Axis | None, history: Sequence[Turn] = ()
+    ) -> RawResult:
         if self.usage.cost_usd(self.model_id) >= self.budget_usd:
             raise BudgetExceeded(f"{self.model_id}: ${self.budget_usd} 상한 도달")
-        text, i, o = self._call(system_prompt(), user_message(utterance, asked_axis))
+        text, i, o = self._call(system_prompt(), user_message(utterance, asked_axis, history))
         self.usage.calls += 1
         self.usage.input_tokens += i
         self.usage.output_tokens += o
