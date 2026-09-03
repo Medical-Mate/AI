@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import os
 import sys
 from collections import Counter
 from pathlib import Path
@@ -128,10 +129,21 @@ def report(rows: list[dict], cases) -> None:
 def main() -> None:
     # Windows 콘솔(cp949)에서 한글·기호 출력이 깨지지 않게
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(ROOT / ".env")  # 없으면 조용히 넘어간다
+    except ImportError:
+        pass
     ap = argparse.ArgumentParser()
     ap.add_argument("--provider", choices=["anthropic", "openai", "google"])
     ap.add_argument("--model")
-    ap.add_argument("--budget", type=float, default=0.50, help="모델당 지출 상한 USD")
+    ap.add_argument(
+        "--budget",
+        type=float,
+        default=float(os.environ.get("MEDIMATE_EVAL_BUDGET_USD", "0.50")),
+        help="모델당 지출 상한 USD",
+    )
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--report", type=Path, help="저장된 결과를 재채점만")
     ap.add_argument("--yes", action="store_true", help="예상 비용 확인 생략")
