@@ -51,8 +51,24 @@ class Provenance(BaseModel):
     ontology_snapshot: str | None = None  # 온톨로지 매핑을 붙이기 전까지 None
 
 
+class SiteSelectionRecord(BaseModel):
+    """인체도에서 짚은 부위의 기록 (dialog/site.py가 만든다).
+
+    진료과 안내는 노드에 적힌 값 그대로. 고르지 않는다.
+    """
+
+    node_id: str
+    anchor_id: str
+    side: str | None = None
+    label: str
+    departments: list[str] = Field(default_factory=list)
+    departments_source: str = ""
+    ontology_snapshot: str
+
+
 class PreVisitCard(BaseModel):
     chief_complaint: str | None = None  # 주 호소 한 문장. 환자 표현 그대로
+    site_selection: SiteSelectionRecord | None = None  # 인체도 선택. 없으면 문답으로 SITE를 묻는다
     axes: dict[Axis, AxisEntry] = Field(default_factory=lambda: {a: AxisEntry() for a in Axis})
     red_flags: list[str] = Field(default_factory=list)  # 자문 전. 자리만 둔다
     patient_notes: list[str] = Field(default_factory=list)  # 축에 안 들어가는 환자 말
