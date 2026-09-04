@@ -83,10 +83,11 @@ curl -L -o uberon-basic.obo http://purl.obolibrary.org/obo/uberon/basic.obo   # 
 
 ```python
 from medimate.ontology import load_ontology
-onto = load_ontology()                 # data/ontology 기본. 검증 실패 시 OntologyError
-onto.widen("UBERON:0003671")           # ACL → (term, anchor=무릎, region=하지, path)
+
+onto = load_ontology()  # data/ontology 기본. 검증 실패 시 OntologyError
+onto.widen("UBERON:0003671")  # ACL → (term, anchor=무릎, region=하지, path)
 onto.lca(["UBERON:0003671", "MAN:001"])  # {무릎관절}
-onto.snapshot_id                       # CSV 해시 12자. Provenance.ontology_snapshot에 쓸 값
+onto.snapshot_id  # CSV 해시 12자. Provenance.ontology_snapshot에 쓸 값
 ```
 
 - `part_of`·`is_a` 둘 다 위로 탄다. ACL은 is_a로만 십자인대 계열을 지나므로 part_of만 타면 앵커에 못 닿는다
