@@ -71,7 +71,8 @@ class PreVisitCard(BaseModel):
     site_selection: SiteSelectionRecord | None = None  # 인체도 선택. 없으면 문답으로 SITE를 묻는다
     axes: dict[Axis, AxisEntry] = Field(default_factory=lambda: {a: AxisEntry() for a in Axis})
     red_flags: list[str] = Field(default_factory=list)  # 자문 전. 자리만 둔다
-    patient_notes: list[str] = Field(default_factory=list)  # 축에 안 들어가는 환자 말
+    patient_notes: list[str] = Field(default_factory=list)  # 축에 안 들어가는 환자 말(자동)
+    patient_message: str | None = None  # 마지막 질문에 환자가 의사에게 남긴 말. 원문 그대로
     provenance: Provenance | None = None
 
     # --- 종료 조건 -------------------------------------------------------

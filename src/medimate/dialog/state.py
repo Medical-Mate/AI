@@ -24,6 +24,7 @@ class SessionState(BaseModel):
     clarified: list[Axis] = Field(default_factory=list)  # 확인 질문을 이미 한 축(축당 한 번)
     history: list[HistoryTurn] = Field(default_factory=list)  # 최근 N턴만 유지
     turn: int = 0  # 처리한 발화 수(빈 입력은 세지 않는다)
+    message_asked: bool = False  # 8축 뒤 "전하고 싶은 말" 질문을 냈는가. 답이 오면 종료
     session_tokens: int = 0  # 이 세션의 LLM 입력+출력 누적. 세션 예산 상한 판정용
     ended: bool = False
     end_reason: str | None = None  # None | "stop" | "complete" | "max_turns" | "budget"

@@ -64,12 +64,53 @@ def test_update_without_evidence_is_dropped():
     assert s.card.axes[Axis.SEVERITY].status == FieldStatus.NOT_ASKED
 
 
-def test_all_axes_answered_ends_session():
+def test_all_axes_answered_asks_for_message_then_ends():
+    from medimate.dialog.questions import MESSAGE_QUESTION
+
     updates = [filled(a, "x", "x") for a in Axis]
-    ex = ScriptedExtractor([TurnExtraction(chief_complaint="c", updates=updates)])
+    ex = ScriptedExtractor([TurnExtraction(chief_complaint="c", updates=updates), TurnExtraction()])
     s = Session(ex)
-    assert s.step("전부 말함") == CLOSING
-    assert s.card.completeness() == 1.0
+    assert s.step("전부 말함") == MESSAGE_QUESTION  # 8축이 닫혀도 바로 끝내지 않는다
+    assert s.card.completeness() == 1.0 and not s.ended
+    assert s.step("수술은 피하고 싶어요") == CLOSING
+    assert s.ended and s.end_reason == "complete"
+    assert s.card.patient_message == "수술은 피하고 싶어요"  # 원문 그대로
+
+
+def test_no_message_answer_leaves_field_empty():
+    updates = [filled(a, "x", "x") for a in Axis]
+    ex = ScriptedExtractor([TurnExtraction(updates=updates), TurnExtraction()])
+    s = Session(ex)
+    s.step("전부")
+    assert s.step("없어요.") == CLOSING
+    assert s.card.patient_message is None
+
+
+def test_message_turn_still_extracts_symptoms_into_axes():
+    # 마지막 질문에 증상이 섞여 나오면 축에도 들어간다
+    updates = [filled(a, "x", "x") for a in Axis if a != Axis.RADIATION]
+    ex = ScriptedExtractor(
+        [
+            TurnExtraction(updates=updates),
+            TurnExtraction(),  # RADIATION 질문에 무응답 → skipped
+            TurnExtraction(updates=[filled(Axis.RADIATION, "종아리까지", "종아리까지 저려요")]),
+        ]
+    )
+    s = Session(ex)
+    s.step("거의 다 말함")  # RADIATION만 남음 → 그 질문
+    s.step("...")  # skipped → 8축 닫힘 → 마지막 질문
+    s.step("아 그리고 종아리까지 저려요")
+    assert s.ended
+    assert s.card.axes[Axis.RADIATION].value == "종아리까지"
+    assert s.card.patient_message == "아 그리고 종아리까지 저려요"
+
+
+def test_stop_skips_message_question():
+    updates = [filled(a, "x", "x") for a in Axis]
+    ex = ScriptedExtractor([TurnExtraction(updates=updates, wants_to_stop=True)])
+    s = Session(ex)
+    assert s.step("다 말했고 이만 할래요") == CLOSING
+    assert s.card.patient_message is None
 
 
 def test_provenance_and_log_are_stamped():
@@ -150,14 +191,14 @@ def test_turn_cap_ends_session_with_reason():
 
 
 def test_normal_flow_never_hits_default_turn_cap():
-    # 8축 모두 무응답 → 첫 발화 + 8질문 = 9턴에서 자연 종료. 20에 닿지 않는다
+    # 8축 모두 무응답 → 첫 발화 + 8질문 + 전할 말 = 10턴에서 자연 종료. 20에 닿지 않는다
     ex = ScriptedExtractor([TurnExtraction() for _ in range(30)])
     s = Session(ex)
     n = 0
     while not s.ended and n < 50:
         s.step("...")
         n += 1
-    assert s.end_reason == "complete" and n <= 17
+    assert s.end_reason == "complete" and n <= 18
 
 
 def test_session_token_budget_ends_session():
