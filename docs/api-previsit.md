@@ -45,6 +45,83 @@ AI 서버는 무상태다. 인증·세션 식별·저장은 백엔드가 한다(
 `ended`가 true여도 종료를 강제하지 않는다 — 환자가 언제 나가도 마지막 `card`가 결과다.
 `ended` 뒤에 또 턴을 보내면 마무리 문장만 돌아오고 상태는 바뀌지 않는다.
 
+### 실제 응답 예 (2026-09-04, gpt-5.6-terra, 1턴, 8.4초)
+
+입력: `오른쪽 무릎이 계단 내려갈 때 시큰하게 아파요. 한 달쯤 됐어요`
+
+```json
+{
+  "reply": "가장 심할 때를 10점이라고 하면 지금은 몇 점 정도인가요?",
+  "ended": false,
+  "end_reason": null,
+  "state": {
+    "...": "불투명. 그대로 다음 요청에"
+  },
+  "card": {
+    "chief_complaint": "오른쪽 무릎이 계단 내려갈 때 시큰하게 아파요.",
+    "axes": {
+      "site": {
+        "status": "filled",
+        "value": "오른쪽 무릎",
+        "evidence": [
+          "오른쪽 무릎"
+        ]
+      },
+      "onset": {
+        "status": "filled",
+        "value": "한 달쯤 됐어요",
+        "evidence": [
+          "한 달쯤 됐어요"
+        ]
+      },
+      "severity": {
+        "status": "not_asked",
+        "value": null,
+        "evidence": []
+      }
+    },
+    "...": "나머지 5축 동일 구조",
+    "minimally_complete": true,
+    "completeness": 0.5,
+    "provenance": {
+      "prompt_version": "extract-v3",
+      "model_id": "gpt-5.6-terra",
+      "ontology_snapshot": null
+    }
+  },
+  "audit": {
+    "turn": 1,
+    "asked_axis": null,
+    "utterance": "오른쪽 무릎이 계단 내려갈 때 시큰하게 아파요. 한 달쯤 됐어요",
+    "extraction": {
+      "chief_complaint": "오른쪽 무릎이 계단 내려갈 때 시큰하게 아파요.",
+      "updates": [
+        {
+          "axis": "site",
+          "status": "filled",
+          "value": "오른쪽 무릎",
+          "evidence": "오른쪽 무릎"
+        },
+        {
+          "axis": "character",
+          "status": "filled",
+          "value": "시큰하게",
+          "evidence": "시큰하게"
+        }
+      ],
+      "...": "..."
+    },
+    "usage": {
+      "input_tokens": 1140,
+      "output_tokens": 153,
+      "cost_usd": 0.004116
+    }
+  }
+}
+```
+
+지연은 턴당 1.4~8.4초(3턴 스모크). 앱은 대기 표시가 필요하다.
+
 ## 상한 (앱·백엔드·AI 동일값, 팀 합의 임시)
 
 | 항목 | 값 | 넘으면 |
