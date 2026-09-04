@@ -91,6 +91,13 @@ def score(
         if not u.evidence.strip() or _norm(u.evidence) not in _norm(utt):
             s.fail("D4", f"{u.axis} evidence={u.evidence!r}")
 
+    # D4S — 엄격판: 공백까지 그대로 원문의 부분 문자열인가. 안전 조건은 아니다(의미는 같다).
+    # 띄어쓰기 없는 입력(STT·빠른 타이핑)에서 모델이 정규화해 돌려주는지 보는 관측용
+    s.checks["D4S"] = True
+    for u in parsed.updates:
+        if u.evidence.strip() and u.evidence.strip() not in utt:
+            s.fail("D4S", f"{u.axis} evidence not verbatim: {u.evidence!r}")
+
     # D5 — 출력의 숫자는 발화에 있어야
     s.checks["D5"] = True
     utt_nums = set(re.findall(r"\d+", utt))
