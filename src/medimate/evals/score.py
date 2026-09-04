@@ -130,11 +130,15 @@ def score(
         s.reasons.append(f"D7: axes got={sorted(got)} want={sorted(want)}")
 
     # D8 — 축별 status
+    #  accept_status: 정답이 둘 이상인 축 (완곡어법은 filled·ambiguous 둘 다 맞다). 어느 쪽이
+    #  나왔는지는 reasons가 아니라 report의 관측 항목으로 본다
     s.checks["D8"] = True
+    accept = exp.get("accept_status", {})
     for u in parsed.updates:
         w = exp["axes"].get(u.axis.value)
-        if w is not None and u.status.value != w:
-            s.fail("D8", f"{u.axis} status got={u.status.value} want={w}")
+        ok = set(accept.get(u.axis.value, [])) | ({w} if w else set())
+        if ok and u.status.value not in ok:
+            s.fail("D8", f"{u.axis} status got={u.status.value} want={sorted(ok)}")
 
     # D9 — wants_to_stop
     s.checks["D9"] = parsed.wants_to_stop == exp["wants_to_stop"]
@@ -165,4 +169,9 @@ def score(
 
 
 def load_cases(path: Path = ROOT / "evals" / "cases.jsonl") -> list[dict[str, Any]]:
-    return [json.loads(ln) for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    cases = [json.loads(ln) for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    ids = [c["id"] for c in cases]
+    dup = sorted({i for i in ids if ids.count(i) > 1})
+    if dup:  # 중복 ID는 결과 파일의 이어서 실행과 채점을 둘 다 망친다 (2026-09-04 실수)
+        raise ValueError(f"cases.jsonl 중복 id: {dup}")
+    return cases
