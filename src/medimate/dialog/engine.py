@@ -217,6 +217,11 @@ class Session:
             if not u.evidence.strip():
                 continue  # 근거 없는 값은 카드에 넣지 않는다
             entry = self.card.axes[u.axis]
+            if u.axis == Axis.SITE and self._preselected_site() and u.status != FieldStatus.FILLED:
+                # 부위는 인체도에서 이미 골랐다. 모델이 "아래쪽"만 보고 애매하다 해도
+                # 다시 묻지 않는다.
+                # 환자가 더 좁혀 말하면(FILLED) 받아서 라벨 뒤에 붙인다
+                continue
             entry.status = u.status
             if u.status == FieldStatus.FILLED:
                 entry.value = self._merge_site_label(u.axis, entry, u.value)
