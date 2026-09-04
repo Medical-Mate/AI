@@ -2,6 +2,9 @@
 
 매 턴: 환자 발화 → Extractor로 축 갱신 → 카드 반영 → 다음 질문 선택.
 종료를 강제하지 않는다. 언제 끝내도 그 시점 카드가 결과다.
+
+상태는 `SessionState`(직렬화 가능) 하나에 모두 들어 있다. 무상태 API는
+요청마다 `Session.from_state`로 복원하고 `to_state`로 돌려준다.
 """
 
 from __future__ import annotations
@@ -14,9 +17,12 @@ from medimate.dialog.questions import (
     CLOSING,
     EMPTY_INPUT,
     OPENING,
+    OPENING_WITH_SITE,
     QUESTIONS,
+    SITE_PRESELECTED,
     TRUNCATED_NOTICE,
 )
+from medimate.dialog.state import HistoryTurn, SessionState
 from medimate.llm.base import Extractor, TurnExtraction
 from medimate.schema.card import Axis, FieldStatus, PreVisitCard, Provenance
 
@@ -58,14 +64,67 @@ class Session:
     ended: bool = False
     limits: Limits = field(default_factory=Limits)
     end_reason: str | None = None  # None | "stop" | "complete" | "max_turns" | "budget"
+    history: list[HistoryTurn] = field(default_factory=list)  # 최근 N턴의 (질문, 답)
+    turn: int = 0  # 처리한 발화 수. logs 길이와 같지만 복원 시 logs는 비어 있다
+    # 이전 요청들에서 쓴 토큰(상태로 넘어온 값). 현재 extractor.usage는 여기 더해서 본다
+    carried_tokens: int = 0
 
     def __post_init__(self) -> None:
-        self.card.provenance = Provenance(
-            prompt_version=self.extractor.prompt_version,
-            model_id=self.extractor.model_id,
+        if self.card.provenance is None:
+            self.card.provenance = Provenance(
+                prompt_version=self.extractor.prompt_version,
+                model_id=self.extractor.model_id,
+            )
+
+    # --- 직렬화 --------------------------------------------------------
+    @classmethod
+    def from_state(
+        cls, extractor: Extractor, state: SessionState, limits: Limits | None = None
+    ) -> Session:
+        """백엔드가 들고 있던 상태로 세션을 복원한다. 판정 로그는 복원하지 않는다."""
+        return cls(
+            extractor=extractor,
+            card=state.card,
+            asked_axis=state.asked_axis,
+            clarified=set(state.clarified),
+            ended=state.ended,
+            end_reason=state.end_reason,
+            history=list(state.history),
+            turn=state.turn,
+            carried_tokens=state.session_tokens,
+            limits=limits or Limits(),
         )
 
+    def to_state(self) -> SessionState:
+        return SessionState(
+            card=self.card,
+            asked_axis=self.asked_axis,
+            clarified=sorted(self.clarified),
+            history=list(self.history),
+            turn=self.turn,
+            session_tokens=self._session_tokens(),
+            ended=self.ended,
+            end_reason=self.end_reason,
+        )
+
+    # --- 대화 ----------------------------------------------------------
+    def preselect_site(self, label: str) -> None:
+        """인체도에서 짚은 부위로 SITE를 채운다. evidence는 발화가 아니라 UI 선택임을 표시.
+
+        온톨로지 노드 ID 연결은 #5에서. 지금은 라벨 문자열만 받는다.
+        """
+        label = label.strip()
+        if not label:
+            return
+        entry = self.card.axes[Axis.SITE]
+        entry.status = FieldStatus.FILLED
+        entry.value = label
+        entry.evidence.append(f"{SITE_PRESELECTED} {label}")
+
     def opening(self) -> str:
+        site = self.card.axes[Axis.SITE]
+        if site.status == FieldStatus.FILLED and site.value:
+            return OPENING_WITH_SITE.format(site=site.value)
         return OPENING
 
     def step(self, utterance: str) -> str:
@@ -85,15 +144,18 @@ class Session:
             notice = TRUNCATED_NOTICE + " "
 
         # 턴 상한 — 정상 흐름은 닿지 않는다
-        if len(self.logs) >= self.limits.max_turns:
+        if self.turn >= self.limits.max_turns:
             return self.end("max_turns")
 
         # 세션 토큰 예산 — 어댑터가 usage를 노출하면 적용
         if self._session_tokens() >= self.limits.max_session_tokens:
             return self.end("budget")
 
-        ext = self.extractor.extract(utterance, self.asked_axis, self._history())
-        self.logs.append(TurnLog(len(self.logs) + 1, self.asked_axis, utterance, ext))
+        asked_question = self._current_question()
+        ext = self.extractor.extract(utterance, self.asked_axis, self.history)
+        self.turn += 1
+        self.logs.append(TurnLog(self.turn, self.asked_axis, utterance, ext))
+        self._remember(asked_question, utterance)
         self._apply(ext)
 
         # 물었는데 닫히지 않은 축은 SKIPPED로 닫는다. 같은 질문을 반복하지 않는다.
@@ -123,25 +185,18 @@ class Session:
         return CLOSING
 
     # ------------------------------------------------------------------
-    def _history(self) -> list[tuple[str, str]]:
-        """최근 N턴의 (질문, 답). 각 로그의 asked_axis로 그때 낸 질문을 복원한다."""
+    def _remember(self, question: str, utterance: str) -> None:
+        """이번 턴의 (질문, 답)을 이력에 넣고 최근 N턴만 남긴다. 요약 생성 없음."""
         n = self.limits.history_turns
         if n <= 0:
-            return []
-        out = []
-        for log in self.logs[-n:]:
-            if log.asked_axis is None:
-                q = OPENING
-            elif log.asked_axis in self.clarified and log is self.logs[-1]:
-                q = CLARIFY[log.asked_axis]
-            else:
-                q = QUESTIONS[log.asked_axis]
-            out.append((q, log.utterance))
-        return out
+            self.history = []
+            return
+        self.history.append((question, utterance))
+        del self.history[:-n]
 
     def _current_question(self) -> str:
         if self.asked_axis is None:
-            return OPENING
+            return self.opening()
         if self.asked_axis in self.clarified:
             return CLARIFY[self.asked_axis]
         return QUESTIONS[self.asked_axis]
@@ -149,8 +204,9 @@ class Session:
     def _session_tokens(self) -> int:
         usage = getattr(self.extractor, "usage", None)
         if usage is None:
-            return 0
-        return int(getattr(usage, "input_tokens", 0)) + int(getattr(usage, "output_tokens", 0))
+            return self.carried_tokens
+        now = int(getattr(usage, "input_tokens", 0)) + int(getattr(usage, "output_tokens", 0))
+        return self.carried_tokens + now
 
     # ------------------------------------------------------------------
     def _apply(self, ext: TurnExtraction) -> None:
@@ -161,10 +217,32 @@ class Session:
             if not u.evidence.strip():
                 continue  # 근거 없는 값은 카드에 넣지 않는다
             entry = self.card.axes[u.axis]
+            if u.axis == Axis.SITE and self._preselected_site() and u.status != FieldStatus.FILLED:
+                # 부위는 인체도에서 이미 골랐다. 모델이 "아래쪽"만 보고 애매하다 해도
+                # 다시 묻지 않는다.
+                # 환자가 더 좁혀 말하면(FILLED) 받아서 라벨 뒤에 붙인다
+                continue
             entry.status = u.status
             if u.status == FieldStatus.FILLED:
-                entry.value = u.value
+                entry.value = self._merge_site_label(u.axis, entry, u.value)
             entry.evidence.append(u.evidence)
+
+    def _preselected_site(self) -> str | None:
+        """인체도에서 짚은 부위 라벨. evidence의 [부위 선택] 표시로 구분한다."""
+        for ev in self.card.axes[Axis.SITE].evidence:
+            if ev.startswith(SITE_PRESELECTED):
+                return ev[len(SITE_PRESELECTED) :].strip() or None
+        return None
+
+    def _merge_site_label(self, axis: Axis, entry, value: str | None) -> str | None:
+        """SITE에 부위가 미리 선택돼 있으면 환자의 세부 표현("아래쪽 중앙")이 라벨을 지우지 않게
+        앞에 붙인다. 모델은 선택된 부위를 모르므로 엔진이 지킨다."""
+        if axis != Axis.SITE or not value:
+            return value
+        label = self._preselected_site()
+        if label and label not in value:
+            return f"{label} {value}"
+        return value
 
     def _next_axis(self) -> Axis | None:
         # 확인이 필요한 축이 먼저, 그 다음 아직 안 물은 축
