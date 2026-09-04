@@ -5,12 +5,12 @@
 ## 무엇인가
 
 `docs/ai-design.md` §3의 부위 partonomy를 **UBERON에서 실제로 뽑아본 것**.
-무릎·어깨 구조 **38개** + 상부 5 · 앵커 12 · 표면 구역 33 (2026-09-04). 총 **88 노드 / 84 엣지**.
+무릎·어깨 구조 **38개** + 상부 5 · 앵커 13 · 표면 구역 33 (2026-09-04). 총 **89 노드 / 85 엣지**.
 현황 표는 `uv run python scripts/ontology_report.py`.
 
 | 파일 | 내용 |
 |---|---|
-| `nodes.csv` | 노드. `id, name_en, name_ko, region, structure_type, sctid, fma, definition_en, source, is_anchor, tier, kind, laterality` |
+| `nodes.csv` | 노드. `id, name_en, name_ko, region, structure_type, sctid, fma, definition_en, source, is_anchor, tier, kind, laterality, departments, departments_source` |
 | `edges.csv` | `child, relation, parent, source` — `part_of` / `is_a` (상위) / `located_in` (구조→구역, 출처 필수) |
 | `manual/nodes.csv`, `manual/edges.csv` | **손으로 관리하는 유일한 출처**: 상부·앵커·표면 구역·located_in. 여기를 고치고 빌드한다 |
 | `../../scripts/build_ontology.py` | UBERON·MAN 구조 행 + manual/ → nodes.csv/edges.csv 재조립. obo 불필요 |
@@ -44,6 +44,17 @@ curl -L -o uberon-basic.obo http://purl.obolibrary.org/obo/uberon/basic.obo   # 
 - "목"은 둘이다: 목 안(삼킬 때·기침) / 목 뒤·옆(근육·뼈). 환자는 같은 말로 부르니 구역에서 가른다
 - 위치 없는 증상(발열·오한·피로)은 앵커 「전신」. 구역 없음. UI는 사이드 탭
 - 뺀 것(2026-09-04 결정): 치아(치과 영역), 사타구니. 엉덩이는 구역 없이 앵커만 누른다
+- 앵커 「피부」(2026-09-04): 마네킹 구역이 안 맞는 피부 증상. 구역 없음, 사이드 탭, 상부는 전신 묶음. 위치는 마네킹 앵커로 따로 받는다
+
+### 진료과 안내 — `departments` (docs/decisions/2026-09-04-department-guidance.md)
+
+- 부위 노드의 속성이다. **구역에 값이 있으면 구역, 없으면 앵커** — 이 대체 규칙은 소비자(카드 export)가 적용한다. 로더는 값을 그대로 노출만 한다
+- 복수는 `;` 구분. 순서에 의미 없음. 괄호 병기 항목도 전부 들어 있다(아랫배: 내과;소화기내과;산부인과;비뇨의학과)
+- 로더는 고르지 않고, 정렬하지 않고, 증상 축을 참조하지 않는다. 테스트가 소스 코드를 검사해 강제한다
+- **우리 콘텐츠다. 인용이 아니다.** `departments_source` = "팀 결정 2026-09-04, 의료인 자문 확인 전". 값이 있으면 출처가 필수(로더 검증)
+- 무릎·어깨 앵커는 UBERON 행이라 값을 `scripts/build_ontology.py`가 붙인다. 나머지는 `manual/nodes.csv`
+- 가슴은 응급 안내가 진료과보다 먼저다. 그 순서는 카드 쪽 책임이고 여기서는 값만 든다
+- 자문 회신 시 표 전체 재검토
 - `laterality`: 좌/우를 물을 노드인가. 노드를 좌우로 쪼개지 않는다(양쪽 표현 위해)
 
 ### 두 층의 연결 — `located_in` (구조 → 구역)
@@ -79,7 +90,7 @@ onto.snapshot_id                       # CSV 해시 12자. Provenance.ontology_s
 - 자손 조회(내려가기)는 두지 않는다. 좁히기는 감별이다 (`docs/ai-design.md` §3)
 - 같은 거리에 앵커가 둘이면 `AmbiguousAnchorError`. 데이터가 정해야 할 일을 코드가 임의로 고르지 않는다
 - `lca(무릎쪽, 어깨쪽)`은 빈 집합(상부가 다르고 상부 위는 없다). `lca(무릎 앞, 발목)` = 「하지」
-- `zones(앵커)` 구역 목록(CSV 순서), `anchors_in_order()` 첫 화면 앵커 12개, `structures_under(구역)`
+- `zones(앵커)` 구역 목록(CSV 순서), `anchors_in_order()` 앵커 13개(마네킹 11 + 사이드 탭 전신·피부), `structures_under(구역)`
 
 ## 원본
 
