@@ -12,6 +12,11 @@
   거기서 part_of로 무릎관절 → 무릎에 닿는다. 한 관계만 타면 앵커에 못 닿는다.
 - 앵커(`is_anchor`)는 디자이너 인체도 부위 단위와 같아야 한다. 확정 전이라 무릎·어깨만 임시.
 
+등급(`tier`) — 환자에게 보이는 3등급. 그래프 깊이가 아니다:
+- 1 상부: 다부위 정리용 묶음(상지·하지·몸통·머리·목). LCA가 여기서 멈춘다. 부모 없음
+- 2 앵커: 환자가 말하는 단위(무릎·어깨). 넓히기가 여기서 멈춘다. 상부 정확히 하나에 닿는다
+- 3 세부: 차트에서 인식만. 앵커 정확히 하나에 닿는다. 세부끼리의 깊이는 자유(힘줄⊂근육 유지)
+
 검증:
 - partonomy는 DAG여야 한다. 손보강 노드가 들어오면 사이클이 생길 수 있어 로드 시 검출한다.
 - 엣지가 없는 노드를 가리키면 실패. 조용히 넘어가지 않는다.
@@ -54,6 +59,7 @@ class Node:
     definition_en: str
     source: str
     is_anchor: bool
+    tier: int  # 1 상부 / 2 앵커 / 3 세부
 
     @property
     def display_name(self) -> str:
@@ -67,6 +73,7 @@ class Widening:
 
     term: Node
     anchor: Node | None  # 올라가서 닿은 앵커. 없으면 None (앵커 밖의 노드)
+    region: Node | None  # 앵커 위의 상부(등급 1). 앵커가 없으면 None
     path: tuple[str, ...]  # term → … → anchor. 감사·디버깅용
 
 
@@ -76,9 +83,11 @@ class Ontology:
     parents: dict[str, list[tuple[str, str]]]  # child → [(relation, parent)]
     snapshot_id: str  # CSV 바이트 해시. Provenance.ontology_snapshot에 박는 값
     anchors: frozenset[str] = field(init=False)
+    regions: frozenset[str] = field(init=False)  # 등급 1
 
     def __post_init__(self) -> None:
         self.anchors = frozenset(n.id for n in self.nodes.values() if n.is_anchor)
+        self.regions = frozenset(n.id for n in self.nodes.values() if n.tier == 1)
 
     # ── 기본 조회 ──────────────────────────────────────────────
 
@@ -154,14 +163,28 @@ class Ontology:
             raise AmbiguousAnchorError(f"{node_id}: 같은 거리에 앵커가 여럿 {found}")
         return found[0]
 
+    def region_of(self, node_id: str) -> str | None:
+        """등급 1 상부. 자기 자신이 상부면 자기 자신. 여럿이면 데이터 오류라 validate가 잡는다."""
+        node = self.get(node_id)
+        if node.tier == 1:
+            return node_id
+        found = sorted(a for a in self.ancestors(node_id) if a in self.regions)
+        if len(found) > 1:
+            raise AmbiguousAnchorError(f"{node_id}: 상부가 여럿 {found}")
+        return found[0] if found else None
+
     def widen(self, node_id: str) -> Widening:
-        """차트 용어 → (용어, 앵커, 경로). 설명문은 만들지 않는다. 형태만 준다."""
+        """차트 용어 → (용어, 앵커, 상부, 경로). 설명문은 만들지 않는다. 형태만 준다."""
         term = self.get(node_id)
         anchor_id = self.anchor_of(node_id)
         if anchor_id is None:
-            return Widening(term=term, anchor=None, path=(node_id,))
+            return Widening(term=term, anchor=None, region=None, path=(node_id,))
+        region_id = self.region_of(anchor_id)
         return Widening(
-            term=term, anchor=self.nodes[anchor_id], path=self._path(node_id, anchor_id)
+            term=term,
+            anchor=self.nodes[anchor_id],
+            region=self.nodes[region_id] if region_id else None,
+            path=self._path(node_id, anchor_id),
         )
 
     def _path(self, src: str, dst: str) -> tuple[str, ...]:
@@ -224,6 +247,25 @@ class Ontology:
         for n in self.nodes.values():
             if not n.structure_type:
                 problems.append(f"nodes: structure_type 비어 있음 {n.id}")
+            if n.tier not in (1, 2, 3):
+                problems.append(f"nodes: tier는 1/2/3 {n.id}={n.tier}")
+            if (n.tier == 2) != n.is_anchor:
+                problems.append(f"nodes: tier 2 ⇔ is_anchor 불일치 {n.id}")
+        if self.find_cycles():
+            return problems  # 아래 도달성 검사는 DAG 전제
+        for n in self.nodes.values():
+            if n.tier == 1 and self.parents.get(n.id):
+                problems.append(f"tier: 상부는 부모가 없어야 한다 {n.id}")
+            if n.tier == 2:
+                regs = [a for a in self.ancestors(n.id) if a in self.regions]
+                if len(regs) != 1:
+                    problems.append(f"tier: 앵커는 상부 정확히 하나에 닿아야 한다 {n.id} -> {regs}")
+            if n.tier == 3:
+                found = self.nearest_anchors(n.id)
+                if len(found) != 1:
+                    problems.append(
+                        f"tier: 세부는 앵커 정확히 하나에 닿아야 한다 {n.id} -> {found}"
+                    )
         return problems
 
     def find_cycles(self) -> list[tuple[str, ...]]:
@@ -288,6 +330,7 @@ def load_ontology(directory: Path | str = DEFAULT_DIR, *, strict: bool = True) -
             definition_en=row.get("definition_en", "").strip(),
             source=row.get("source", "").strip(),
             is_anchor=_truthy(row.get("is_anchor") or ""),
+            tier=int(row.get("tier") or 3),  # 컬럼이 없으면 세부로 본다
         )
 
     parents: dict[str, list[tuple[str, str]]] = {nid: [] for nid in nodes}

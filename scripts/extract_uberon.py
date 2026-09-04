@@ -101,6 +101,8 @@ for root, region in [('UBERON:0001465', '무릎'), ('UBERON:0001467', '어깨')]
             'definition_en': T[x]['def'][:200], 'source': 'UBERON',
             # 앵커(환자 어휘 수준, docs/ai-design.md §3). 디자이너 인체도 확정 전 임시로 무릎·어깨만
             'is_anchor': '1' if x in ('UBERON:0001465', 'UBERON:0001467') else '',
+            # 등급: 1 상부(다부위 정리) / 2 앵커(환자 어휘) / 3 세부(차트 인식). 그래프 깊이가 아니다
+            'tier': '2' if x in ('UBERON:0001465', 'UBERON:0001467') else '3',
         }
 
 for x in list(nodes):
@@ -125,17 +127,31 @@ MAN = [
 for i, en, ko, reg, st, note in MAN:
     nodes[i] = {'id': i, 'name_en': en, 'name_ko': ko, 'region': reg, 'structure_type': st,
                 'sctid': '', 'fma': '', 'definition_en': '', 'source': '수동(' + note + ')',
-                'is_anchor': ''}
+                'is_anchor': '', 'tier': '3'}
+
+# 상부(등급 1). UBERON은 다종 비교해부학이라 머리·목 묶음이 없어 REG: 접두로 직접 둔다
+REG = [
+    ('REG:001', 'upper limb', '상지', 'UBERON:0002102 forelimb'),
+    ('REG:002', 'lower limb', '하지', 'UBERON:0002103 hindlimb'),
+    ('REG:003', 'trunk', '몸통', 'UBERON:0002100 trunk'),
+    ('REG:004', 'head and neck', '머리·목', 'UBERON:0000033 head + UBERON:0000974 neck'),
+]
+for i, en, ko, ref in REG:
+    nodes[i] = {'id': i, 'name_en': en, 'name_ko': ko, 'region': ko, 'structure_type': '부위',
+                'sctid': '', 'fma': '', 'definition_en': '', 'source': '수동(상부 묶음, 참고 ' + ref + ')',
+                'is_anchor': '', 'tier': '1'}
 
 edges += [('MAN:001', 'part_of', 'UBERON:0001485'), ('MAN:002', 'part_of', 'UBERON:0001485'),
           ('MAN:003', 'part_of', 'UBERON:0001485'), ('MAN:004', 'part_of', 'UBERON:0001485'),
           ('MAN:005', 'part_of', 'UBERON:0001485'), ('MAN:006', 'part_of', 'UBERON:0001467'),
           ('MAN:007', 'part_of', 'UBERON:0001467'),
           ('MAN:008', 'part_of', 'UBERON:0001467'), ('MAN:009', 'part_of', 'UBERON:0001467'),
-          ('MAN:010', 'part_of', 'UBERON:0001467'), ('MAN:011', 'part_of', 'MAN:008')]
+          ('MAN:010', 'part_of', 'UBERON:0001467'), ('MAN:011', 'part_of', 'MAN:008'),
+          # 앵커 → 상부. 상부는 부위마다 하나만 (어깨는 상지에만, 몸통에 걸치지 않는다)
+          ('UBERON:0001465', 'part_of', 'REG:002'), ('UBERON:0001467', 'part_of', 'REG:001')]
 
 cols = ['id', 'name_en', 'name_ko', 'region', 'structure_type', 'sctid', 'fma', 'definition_en', 'source',
-        'is_anchor']
+        'is_anchor', 'tier']
 with io.open(os.path.join(OUT, 'nodes.csv'), 'w', encoding='utf-8-sig', newline='') as f:
     w = csv.DictWriter(f, fieldnames=cols); w.writeheader()
     for x in sorted(nodes.values(), key=lambda d: (d['region'], d['name_en'])):
