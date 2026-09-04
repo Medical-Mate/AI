@@ -25,13 +25,11 @@ OUT = os.path.join(ROOT, 'data', 'ontology')
 MANUAL = os.path.join(OUT, 'manual')
 
 NODE_COLS = ['id', 'name_en', 'name_ko', 'region', 'structure_type', 'sctid', 'fma', 'definition_en',
-             'source', 'is_anchor', 'tier', 'kind', 'laterality', 'departments', 'departments_source']
-# 무릎·어깨 앵커는 UBERON 추출 행이라 manual/nodes.csv 에 없다. 진료과 값은 여기서 붙인다
-# (docs/decisions/2026-09-04-department-guidance.md 매핑 v1). 다른 앵커·구역은 manual/nodes.csv 가 출처
-DEPARTMENTS_SOURCE = '팀 결정 2026-09-04, 의료인 자문 확인 전'
-UBERON_ANCHOR_DEPARTMENTS = {'UBERON:0001465': '정형외과', 'UBERON:0001467': '정형외과'}
+             'source', 'is_anchor', 'tier', 'kind', 'laterality', 'view', 'departments', 'departments_source']
+# 2026-09-04 통합: 무릎·어깨(UBERON)는 앵커가 아니라 팔·다리 앵커 아래 구조 노드다.
+# 앵커 → 상부, 무릎·어깨 → 팔·다리 엣지는 manual/edges.csv 에 있다. 진료과 값은 manual/nodes.csv 가 유일한 출처
 EDGE_COLS = ['child', 'relation', 'parent', 'source']
-ANCHORS_FROM_UBERON = {'UBERON:0001465', 'UBERON:0001467'}  # 무릎·어깨
+ANCHORS_FROM_UBERON = set()  # 통합 전에는 무릎·어깨였다. 비워 두되 자리는 남긴다
 
 
 def read(path):
@@ -56,10 +54,10 @@ for r in read(os.path.join(OUT, 'nodes.csv')):
     if not is_structure_row(r):
         continue
     if r['id'] in ANCHORS_FROM_UBERON:
-        r.update(is_anchor='1', tier='2', kind='anchor', laterality='left_right',
-                 departments=UBERON_ANCHOR_DEPARTMENTS[r['id']], departments_source=DEPARTMENTS_SOURCE)
+        r.update(is_anchor='1', tier='2', kind='anchor', laterality='left_right')
     else:
-        r.update(is_anchor='', tier='3', kind='structure', laterality=r.get('laterality') or 'left_right')
+        r.update(is_anchor='', tier='3', kind='structure', laterality=r.get('laterality') or 'left_right',
+                 view='none', departments='', departments_source='')
     nodes.append(r)
 nodes += read(os.path.join(MANUAL, 'nodes.csv'))
 
@@ -77,8 +75,9 @@ for e in manual_edges:
     edges.append(e)
 
 # 앵커 순서 = 인체도 첫 화면 배치(위→아래, 전신 마지막). 로더의 anchors_in_order()가 이 순서를 그대로 쓴다
-ANCHOR_ORDER = ['ANC:001', 'ANC:002', 'ANC:003', 'ANC:004', 'ANC:005', 'UBERON:0001467', 'ANC:006',
-                'ANC:007', 'ANC:008', 'UBERON:0001465', 'ANC:009', 'ANC:010', 'ANC:011']  # 전신·피부는 사이드 탭
+ANCHOR_ORDER = ['ANC:001', 'ANC:002', 'ANC:003', 'ANC:004', 'ANC:013', 'ANC:014',  # 앞면 위→아래
+                'ANC:012',  # 뒷면
+                'ANC:010', 'ANC:011']  # 사이드 탭
 KIND_ORDER = {'region': 0, 'anchor': 1, 'surface': 2, 'structure': 3}
 
 

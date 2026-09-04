@@ -48,6 +48,7 @@ RELATIONS = frozenset({"part_of", "is_a"})  # 상위로 타는 관계
 ASSOC_RELATIONS = frozenset({"located_in"})  # 층 사이 연결. 조상 계산에 쓰지 않는다
 KINDS = frozenset({"region", "anchor", "structure", "surface"})
 LATERALITIES = frozenset({"none", "left_right"})
+VIEWS = frozenset({"front", "back", "none"})  # 인체도 앞면/뒷면/화면에 없음(사이드 탭·구조·상부)
 DEFAULT_DIR = Path(__file__).resolve().parents[3] / "data" / "ontology"
 
 
@@ -78,6 +79,7 @@ class Node:
     tier: int  # 1 상부 / 2 앵커 / 3 세부
     kind: str  # region / anchor / structure / surface
     laterality: str  # none / left_right — 좌·우를 물을 수 있는 노드인가
+    view: str = "none"  # front / back / none — 인체도 어느 면에 그려지는가. 앵커·구역만 의미 있다
     departments: tuple[str, ...] = ()  # 진료과 안내. CSV 순서 그대로, 의미 있는 순서 아님
     departments_source: str = ""  # "팀 결정 …, 자문 확인 전". 인용 아님을 값마다 명시
 
@@ -322,6 +324,8 @@ class Ontology:
                 problems.append(f"nodes: tier 3은 structure/surface {n.id}={n.kind}")
             if n.laterality not in LATERALITIES:
                 problems.append(f"nodes: laterality는 {sorted(LATERALITIES)} {n.id}={n.laterality}")
+            if n.view not in VIEWS:
+                problems.append(f"nodes: view는 {sorted(VIEWS)} {n.id}={n.view}")
             if n.departments and not n.departments_source:
                 problems.append(f"nodes: departments에는 departments_source가 필수 {n.id}")
             if n.departments and n.kind not in ("anchor", "surface"):
@@ -427,6 +431,7 @@ def load_ontology(directory: Path | str = DEFAULT_DIR, *, strict: bool = True) -
             tier=int(row.get("tier") or 3),  # 컬럼이 없으면 세부로 본다
             kind=(row.get("kind") or "").strip() or _default_kind(row),
             laterality=(row.get("laterality") or "").strip() or "left_right",
+            view=(row.get("view") or "").strip() or "none",
             departments=_split_departments(row.get("departments") or ""),
             departments_source=(row.get("departments_source") or "").strip(),
         )

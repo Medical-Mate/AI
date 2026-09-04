@@ -29,6 +29,9 @@ INFRASPINATUS_TENDON = "UBERON:0012118"
 UPPER_LIMB = "REG:001"
 LOWER_LIMB = "REG:002"
 WHOLE_BODY = "ANC:010"
+ARM = "ANC:013"
+LEG = "ANC:014"
+BACK_HIP = "ANC:012"
 
 
 @pytest.fixture(scope="module")
@@ -41,35 +44,37 @@ def onto() -> Ontology:
 
 def test_real_data_loads_clean(onto: Ontology):
     kinds = {k: sum(1 for n in onto.nodes.values() if n.kind == k) for k in KINDS}
-    assert kinds == {"region": 5, "anchor": 13, "structure": 38, "surface": 33}
-    assert len(onto) == 89
+    # 2026-09-04 통합: 무릎·어깨는 팔·다리 아래 구조 노드가 됐다 (38 + 2)
+    assert kinds == {"region": 5, "anchor": 9, "structure": 40, "surface": 25}
+    assert len(onto) == 79
     assert onto.validate() == []
-    assert {KNEE, SHOULDER, WHOLE_BODY} <= onto.anchors
+    assert {ARM, LEG, BACK_HIP, WHOLE_BODY} <= onto.anchors
+    assert KNEE not in onto.anchors and SHOULDER not in onto.anchors
     assert onto.regions == {"REG:001", "REG:002", "REG:003", "REG:004", "REG:005"}
     assert len(onto.snapshot_id) == 12
 
 
 def test_acl_climbs_to_knee_via_is_a_then_part_of(onto: Ontology):
-    # README: ACL → 십자인대 → 무릎관절 인대 →(part_of)→ 무릎관절 →(part_of)→ 무릎
-    assert onto.anchor_of(ACL) == KNEE
+    # ACL → 십자인대 → 무릎관절 인대 →(part_of)→ 무릎관절 →(part_of)→ 무릎 →(part_of)→ 다리(앵커)
+    assert onto.anchor_of(ACL) == LEG
     w = onto.widen(ACL)
-    assert w.anchor is not None and w.anchor.id == KNEE
+    assert w.anchor is not None and w.anchor.id == LEG
     assert w.region is not None and w.region.id == LOWER_LIMB
-    assert w.path[0] == ACL and w.path[-1] == KNEE
-    assert KNEE_JOINT in w.path
+    assert w.path[0] == ACL and w.path[-1] == LEG
+    assert KNEE_JOINT in w.path and KNEE in w.path
     assert w.term.structure_type == "인대"
 
 
 def test_part_of_alone_does_not_reach_anchor_from_acl(onto: Ontology):
     # is_a를 빼면 ACL은 십자인대 계열을 못 타고 끊긴다. 둘 다 타야 하는 이유
-    assert KNEE not in onto.ancestors(ACL, relations=["part_of"])
-    assert KNEE in onto.ancestors(ACL)
+    assert LEG not in onto.ancestors(ACL, relations=["part_of"])
+    assert LEG in onto.ancestors(ACL)
 
 
 def test_manual_nodes_climb_too(onto: Ontology):
-    assert onto.anchor_of(MCL) == KNEE
-    assert onto.anchor_of(ACROMION) == SHOULDER  # MAN:011 → MAN:008 → 어깨
-    assert onto.widen(ACROMION).path == (ACROMION, SCAPULA, SHOULDER)
+    assert onto.anchor_of(MCL) == LEG
+    assert onto.anchor_of(ACROMION) == ARM  # MAN:011 → MAN:008 → 어깨 → 팔
+    assert onto.widen(ACROMION).path == (ACROMION, SCAPULA, SHOULDER, ARM)
 
 
 def test_every_detail_and_anchor_reaches_exactly_one_anchor(onto: Ontology):
@@ -87,16 +92,17 @@ def test_tiers_are_presentation_levels_not_graph_depth(onto: Ontology):
     up = onto.ancestors(INFRASPINATUS_TENDON)
     assert INFRASPINATUS in up and ROTATOR_CUFF in up
     w = onto.widen(INFRASPINATUS_TENDON)
-    assert w.anchor is not None and w.anchor.id == SHOULDER
-    assert w.path == (INFRASPINATUS_TENDON, "UBERON:0003579", SHOULDER)
+    assert w.anchor is not None and w.anchor.id == ARM
+    assert w.path == (INFRASPINATUS_TENDON, "UBERON:0003579", SHOULDER, ARM)
     assert onto.region_of(INFRASPINATUS_TENDON) == UPPER_LIMB
     assert onto.region_of(SHOULDER) == UPPER_LIMB
     assert onto.region_of(UPPER_LIMB) == UPPER_LIMB
 
 
 def test_anchor_of_anchor_is_itself(onto: Ontology):
-    assert onto.anchor_of(KNEE) == KNEE
-    assert onto.widen(KNEE).path == (KNEE,)
+    assert onto.anchor_of(ARM) == ARM
+    assert onto.widen(ARM).path == (ARM,)
+    assert onto.get(KNEE).kind == "structure"  # 통합 후 무릎은 앵커가 아니다
 
 
 def test_lca_same_region(onto: Ontology):
@@ -106,10 +112,11 @@ def test_lca_same_region(onto: Ontology):
 
 
 def test_lca_across_anchors_stops_at_region(onto: Ontology):
-    # 「무릎도 발목도」 → 하지. 「어깨도 무릎도」 → 상부가 달라 공통 없음
-    assert onto.lca([KNEE, "ANC:009"]) == {LOWER_LIMB}
-    assert onto.lca(["SUR:091", "SUR:101"]) == {LOWER_LIMB}  # 무릎 앞 + 발목
+    # 「무릎도 발목도」 → 다리(같은 앵커). 「팔도 다리도」 → 상부가 달라 공통 없음
+    assert onto.lca(["SUR:091", "SUR:101"]) == {LEG}  # 무릎 + 발목 구역
     assert onto.lca([ACL, ACROMION]) == set()
+    assert onto.lca([ARM, LEG]) == set()
+    assert onto.lca([LEG, LOWER_LIMB]) == {LOWER_LIMB}
     assert onto.lca([ACL, KNEE]) == {KNEE}
     assert onto.lca([ACL]) == {ACL}
     assert onto.lca([]) == set()
@@ -132,28 +139,38 @@ def test_display_name_falls_back_to_english(onto: Ontology):
 
 
 def test_surface_zones_per_anchor(onto: Ontology):
-    names = [z.display_name for z in onto.zones(SHOULDER)]
-    assert names == ["어깨 앞", "어깨 옆(바깥)", "어깨 뒤", "어깨 위"]
-    assert all(z.kind == "surface" for z in onto.zones(KNEE))  # 구조 노드는 섞이지 않는다
+    names = [z.display_name for z in onto.zones(ARM)]
+    assert names == ["어깨", "위팔", "팔꿈치", "아래팔", "손목", "손"]  # 팔 이미지 한 장을 세로로
+    assert [z.display_name for z in onto.zones(LEG)] == ["허벅지", "무릎", "종아리", "발목", "발"]
+    assert all(z.kind == "surface" for z in onto.zones(LEG))  # 구조 노드(무릎 등)는 섞이지 않는다
     assert onto.zones(WHOLE_BODY) == []  # 전신: 구역 없음, 선택 건너뜀
-    assert onto.zones("ANC:008") == []  # 엉덩이: 구역 하나뿐이라 앵커만 누른다
     assert onto.get("SUR:005").display_name == "입"  # 치아는 치과 영역, 제외
     assert onto.get("SUR:001").display_name == "머리 전체·이마"  # 두피는 피부 탭
     assert "치과" not in {d for n in onto.nodes.values() for d in n.departments}
-    # 허리는 앞/뒤가 아니라 가운데/옆. 구역 축은 앵커마다 다르다
-    assert [z.display_name for z in onto.zones("ANC:005")] == ["허리 가운데", "허리 옆"]
+    # 허리·엉덩이는 뒷면 한 점. 구역 축은 앵커마다 다르다
+    assert [z.display_name for z in onto.zones(BACK_HIP)] == ["허리 가운데", "허리 옆", "엉덩이"]
 
 
 def test_zones_reject_non_anchor(onto: Ontology):
     with pytest.raises(ValueError):
         onto.zones(ACL)
+    with pytest.raises(ValueError):
+        onto.zones(SHOULDER)  # 통합 후 어깨는 구조 노드다
 
 
 def test_anchor_order_and_laterality(onto: Ontology):
-    assert len(onto.anchors_in_order()) == 13
+    order = [a.id for a in onto.anchors_in_order()]
+    assert len(order) == 9
+    assert order[-3:] == [BACK_HIP, WHOLE_BODY, "ANC:011"]  # 앞면 6 → 뒷면 1 → 사이드 탭 2
     assert onto.get("ANC:001").laterality == "none"  # 머리
     assert onto.get("SUR:002").laterality == "left_right"  # 눈은 좌우가 있다
-    assert onto.get(KNEE).laterality == "left_right"
+    assert onto.get(ARM).laterality == "left_right"  # 팔·다리는 누른 점으로 좌우가 정해진다
+    # 인체도 면: 앞/뒤/없음
+    assert onto.get(ARM).view == "front" and onto.get(BACK_HIP).view == "back"
+    assert onto.get(WHOLE_BODY).view == "none" and onto.get("SUR:081").view == "back"
+    assert onto.get(KNEE).view == "none"  # 구조 노드는 화면에 없다
+    front = [a for a in onto.anchors_in_order() if a.view == "front"]
+    assert [a.display_name for a in front] == ["머리", "목", "가슴", "배", "팔", "다리"]
 
 
 def test_surface_zone_widens_to_anchor_and_region(onto: Ontology):
@@ -179,8 +196,10 @@ def test_departments_follow_decision_table(onto: Ontology):
     assert onto.get("ANC:001").departments == ("신경과", "가정의학과")  # 머리
     assert onto.get("ANC:002").departments == ()  # 목: 구역 필수
     assert onto.get("ANC:003").departments == ("내과", "심장내과", "호흡기내과")  # 가슴
-    assert onto.get(KNEE).departments == ("정형외과",)
-    assert onto.get(SHOULDER).departments == ("정형외과",)
+    assert onto.get(ARM).departments == ("정형외과",)
+    assert onto.get(LEG).departments == ("정형외과",)
+    assert onto.get(BACK_HIP).departments == ("정형외과", "신경외과")
+    assert onto.get(KNEE).departments == ()  # 구조 노드에는 진료과가 없다
     assert onto.get(WHOLE_BODY).departments == ("내과", "가정의학과")
     # 구역
     assert onto.get("SUR:002").departments == ("안과",)
@@ -188,7 +207,10 @@ def test_departments_follow_decision_table(onto: Ontology):
     assert onto.get("SUR:011").departments == ("이비인후과", "내과")
     assert onto.get("SUR:032").departments == ("내과", "소화기내과", "산부인과", "비뇨의학과")
     assert onto.get("SUR:042").departments == ("내과", "비뇨의학과", "정형외과")
-    assert onto.get("SUR:051").departments == ()  # 어깨 앞: 값 없음 → 소비자가 앵커 값을 쓴다
+    assert (
+        onto.get("SUR:051").departments == ()
+    )  # 어깨 구역: 값 없음 → 소비자가 앵커 값(정형외과)을 쓴다
+    assert onto.get("SUR:081").departments == ()  # 엉덩이: 앵커 값(정형외과·신경외과)
     # 값이 있으면 출처가 붙어 있고, 그 출처는 "인용 아님"을 말한다
     for n in onto.nodes.values():
         if n.departments:
@@ -412,6 +434,7 @@ def test_old_file_without_tier_and_kind_columns(tmp_path: Path):
     onto = load_ontology(tmp_path, strict=False)
     n = onto.get("n1")
     assert n.tier == 3 and n.kind == "structure" and n.laterality == "left_right"
+    assert n.view == "none"
 
 
 def test_located_in_requires_source_and_is_not_an_ancestor(tmp_path: Path):
