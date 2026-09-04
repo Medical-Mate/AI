@@ -24,6 +24,12 @@
 - "이 구역이 아프면 무엇이 원인인가"는 감별이라 하지 않는다. 고르거나 순위 매기는 API가 없다
 - 출처가 빈 located_in은 조회에서 뺀다. 자문 회신 전 임시 채움을 구조로 막는다
 
+진료과 안내 (docs/decisions/2026-09-04-department-guidance.md):
+- `departments`는 부위 노드(구역 우선, 없으면 앵커)에 적힌 값이다. 로더는 **그대로 노출만** 한다.
+  고르지 않고, 정렬하지 않고, 증상 축을 보지 않는다. 그 셋 중 하나라도 하면 감별이다.
+- "구역에 값이 없으면 앵커 값"은 소비자(카드 export)가 적용한다. 여기에는 그 규칙조차 두지 않는다.
+- 우리 콘텐츠다. 인용이 아니다. `departments_source`가 그 사실을 값마다 달고 다닌다.
+
 검증:
 - partonomy는 DAG여야 한다. 손보강 노드가 들어오면 사이클이 생길 수 있어 로드 시 검출한다.
 - 엣지가 없는 노드를 가리키면 실패. 조용히 넘어가지 않는다.
@@ -72,6 +78,8 @@ class Node:
     tier: int  # 1 상부 / 2 앵커 / 3 세부
     kind: str  # region / anchor / structure / surface
     laterality: str  # none / left_right — 좌·우를 물을 수 있는 노드인가
+    departments: tuple[str, ...] = ()  # 진료과 안내. CSV 순서 그대로, 의미 있는 순서 아님
+    departments_source: str = ""  # "팀 결정 …, 자문 확인 전". 인용 아님을 값마다 명시
 
     @property
     def display_name(self) -> str:
@@ -314,6 +322,10 @@ class Ontology:
                 problems.append(f"nodes: tier 3은 structure/surface {n.id}={n.kind}")
             if n.laterality not in LATERALITIES:
                 problems.append(f"nodes: laterality는 {sorted(LATERALITIES)} {n.id}={n.laterality}")
+            if n.departments and not n.departments_source:
+                problems.append(f"nodes: departments에는 departments_source가 필수 {n.id}")
+            if n.departments and n.kind not in ("anchor", "surface"):
+                problems.append(f"nodes: departments는 앵커·구역에만 {n.id} (kind={n.kind})")
         for s_id, z_id, _ in self.located_in:
             if s_id not in self.nodes or z_id not in self.nodes:
                 problems.append(f"located_in: 없는 노드 {s_id} -> {z_id}")
@@ -371,6 +383,11 @@ def _truthy(value: str) -> bool:
     return value.strip().lower() in {"1", "true", "y", "yes"}
 
 
+def _split_departments(value: str) -> tuple[str, ...]:
+    """';' 구분. 공백 제거, 빈 항목 제외. 순서는 CSV 그대로(정렬하지 않는다)."""
+    return tuple(d.strip() for d in value.split(";") if d.strip())
+
+
 def _default_kind(row: dict[str, str]) -> str:
     """kind 컬럼이 없는 옛 파일용. tier로 유추하고 세부는 구조로 본다."""
     tier = (row.get("tier") or "3").strip()
@@ -410,6 +427,8 @@ def load_ontology(directory: Path | str = DEFAULT_DIR, *, strict: bool = True) -
             tier=int(row.get("tier") or 3),  # 컬럼이 없으면 세부로 본다
             kind=(row.get("kind") or "").strip() or _default_kind(row),
             laterality=(row.get("laterality") or "").strip() or "left_right",
+            departments=_split_departments(row.get("departments") or ""),
+            departments_source=(row.get("departments_source") or "").strip(),
         )
 
     parents: dict[str, list[tuple[str, str]]] = {nid: [] for nid in nodes}

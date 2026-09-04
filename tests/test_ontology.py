@@ -1,5 +1,6 @@
 """온톨로지 로더·그래프 연산. LLM 호출 없음, 실제 CSV + 합성 그래프."""
 
+import inspect
 from pathlib import Path
 
 import pytest
@@ -40,8 +41,8 @@ def onto() -> Ontology:
 
 def test_real_data_loads_clean(onto: Ontology):
     kinds = {k: sum(1 for n in onto.nodes.values() if n.kind == k) for k in KINDS}
-    assert kinds == {"region": 5, "anchor": 12, "structure": 38, "surface": 33}
-    assert len(onto) == 88
+    assert kinds == {"region": 5, "anchor": 13, "structure": 38, "surface": 33}
+    assert len(onto) == 89
     assert onto.validate() == []
     assert {KNEE, SHOULDER, WHOLE_BODY} <= onto.anchors
     assert onto.regions == {"REG:001", "REG:002", "REG:003", "REG:004", "REG:005"}
@@ -147,7 +148,7 @@ def test_zones_reject_non_anchor(onto: Ontology):
 
 
 def test_anchor_order_and_laterality(onto: Ontology):
-    assert len(onto.anchors_in_order()) == 12
+    assert len(onto.anchors_in_order()) == 13
     assert onto.get("ANC:001").laterality == "none"  # 머리
     assert onto.get("SUR:002").laterality == "left_right"  # 눈은 좌우가 있다
     assert onto.get(KNEE).laterality == "left_right"
@@ -165,6 +166,111 @@ def test_structures_under_is_empty_until_sourced(onto: Ontology):
     assert onto.structures_under("SUR:051") == []
     with pytest.raises(ValueError):
         onto.structures_under(ACL)  # 구조 노드로는 묻지 못한다. 방향이 반대다
+
+
+# ── 진료과 안내 (docs/decisions/2026-09-04-department-guidance.md) ──
+
+
+def test_departments_follow_decision_table(onto: Ontology):
+    src = "팀 결정 2026-09-04, 의료인 자문 확인 전"
+    # 앵커
+    assert onto.get("ANC:001").departments == ("신경과", "가정의학과")  # 머리
+    assert onto.get("ANC:002").departments == ()  # 목: 구역 필수
+    assert onto.get("ANC:003").departments == ("내과", "심장내과", "호흡기내과")  # 가슴
+    assert onto.get(KNEE).departments == ("정형외과",)
+    assert onto.get(SHOULDER).departments == ("정형외과",)
+    assert onto.get(WHOLE_BODY).departments == ("내과", "가정의학과")
+    # 구역
+    assert onto.get("SUR:002").departments == ("안과",)
+    assert onto.get("SUR:005").departments == ("이비인후과", "치과")
+    assert onto.get("SUR:011").departments == ("이비인후과", "내과")
+    assert onto.get("SUR:032").departments == ("내과", "소화기내과", "산부인과", "비뇨의학과")
+    assert onto.get("SUR:042").departments == ("내과", "비뇨의학과", "정형외과")
+    assert onto.get("SUR:051").departments == ()  # 어깨 앞: 값 없음 → 소비자가 앵커 값을 쓴다
+    # 값이 있으면 출처가 붙어 있고, 그 출처는 "인용 아님"을 말한다
+    for n in onto.nodes.values():
+        if n.departments:
+            assert n.departments_source == src, n.id
+            assert n.kind in ("anchor", "surface"), n.id
+
+
+def test_skin_anchor_is_side_tab_under_whole_body(onto: Ontology):
+    skin = onto.get("ANC:011")
+    assert skin.kind == "anchor" and skin.display_name == "피부"
+    assert onto.zones("ANC:011") == []  # 구역 없음. 위치는 마네킹 앵커로 따로 받는다
+    assert onto.region_of("ANC:011") == "REG:005"  # 전신 묶음. 상부 하나에만 닿는다
+    assert skin.departments == ("피부과", "내과")
+    assert [a.id for a in onto.anchors_in_order()][-2:] == [
+        "ANC:010",
+        "ANC:011",
+    ]  # 사이드 탭은 마지막
+
+
+def test_departments_are_exposed_only_never_selected(onto: Ontology):
+    """로더는 진료과를 고르지도, 정렬하지도, 증상 축을 보지도 않는다.
+
+    셋 중 하나라도 하면 감별이다.
+    """
+    import medimate.ontology.graph as graph
+
+    source = inspect.getsource(graph)
+    # 증상 축(schema.Axis)을 참조하지 않는다 — import도, 축 이름도 없다
+    assert "medimate.schema" not in source and "medimate.dialog" not in source
+    for axis in (
+        "chief_complaint",
+        "onset",
+        "character",
+        "radiation",
+        "associated",
+        "time_course",
+        "exacerbating",
+        "severity",
+        "symptom",
+    ):
+        assert axis not in source, axis
+    # departments를 다루는 메서드가 없다. Node 필드로만 존재한다
+    dept_methods = [
+        name
+        for name, _ in inspect.getmembers(Ontology, inspect.isfunction)
+        if "depart" in name.lower() or "recommend" in name.lower()
+    ]
+    assert dept_methods == []
+    assert "recommend" not in source.lower()
+    # 값은 CSV 순서 그대로. 정렬돼 있지 않다 (아랫배: 내과가 먼저, 비뇨의학과가 마지막)
+    assert onto.get("SUR:032").departments[0] == "내과"
+    assert onto.get("SUR:032").departments != tuple(sorted(onto.get("SUR:032").departments))
+
+
+def test_departments_require_source_and_only_on_anchor_or_surface(tmp_path: Path):
+    cols = NODE_COLS.rstrip("\n") + ",departments,departments_source\n"
+    (tmp_path / "nodes.csv").write_text(
+        cols
+        + "R1,,,,x,,,,,,1,region,,\n"
+        + "A1,,,,x,,,,,1,2,anchor,내과,\n"  # 출처 없음
+        + "s1,,,,x,,,,,,3,structure,정형외과,팀 결정\n",  # 구조 노드에 진료과
+        encoding="utf-8",
+    )
+    (tmp_path / "edges.csv").write_text(
+        "child,relation,parent,source\nA1,part_of,R1,\ns1,part_of,A1,\n", encoding="utf-8"
+    )
+    with pytest.raises(OntologyError) as ei:
+        load_ontology(tmp_path)
+    msg = str(ei.value)
+    assert "departments_source가 필수" in msg and "앵커·구역에만" in msg
+
+
+def test_departments_split_and_strip(tmp_path: Path):
+    cols = NODE_COLS.rstrip("\n") + ",departments,departments_source\n"
+    (tmp_path / "nodes.csv").write_text(
+        cols + "R1,,,,x,,,,,,1,region,,\nA1,,,,x,,,,,1,2,anchor, 내과 ;;가정의학과 ,팀 결정\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "edges.csv").write_text(
+        "child,relation,parent,source\nA1,part_of,R1,\n", encoding="utf-8"
+    )
+    onto = load_ontology(tmp_path)
+    assert onto.get("A1").departments == ("내과", "가정의학과")
+    assert onto.get("R1").departments == ()
 
 
 # ── 합성 그래프 ─────────────────────────────────────────────
