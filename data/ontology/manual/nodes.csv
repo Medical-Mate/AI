@@ -11,14 +11,14 @@ ANC:004,abdomen,배,배,부위,,,,수동(앵커),1,2,anchor,none
 ANC:005,lower back,허리,허리,부위,,,,수동(앵커),1,2,anchor,none
 ANC:006,elbow,팔꿈치,팔꿈치,부위,,,,수동(앵커),1,2,anchor,left_right
 ANC:007,wrist and hand,손목·손,손목·손,부위,,,,수동(앵커),1,2,anchor,left_right
-ANC:008,hip,엉덩이,엉덩이,부위,,,,수동(앵커. 고관절 포함),1,2,anchor,left_right
+ANC:008,hip,엉덩이,엉덩이,부위,,,,"수동(앵커. 고관절 포함. 구역 없음 — 앵커만 누른다)",1,2,anchor,left_right
 ANC:009,ankle and foot,발목·발,발목·발,부위,,,,수동(앵커),1,2,anchor,left_right
 ANC:010,whole body,전신,전신,부위,,,,"수동(앵커. 발열·오한·피로 등 위치 없는 증상. 사이드 탭)",1,2,anchor,none
 SUR:001,scalp and forehead,머리(두피·이마),머리,표면,,,,수동(구역),,3,surface,none
 SUR:002,eye,눈,머리,표면,,,,수동(구역),,3,surface,left_right
 SUR:003,ear,귀,머리,표면,,,,수동(구역),,3,surface,left_right
 SUR:004,nose,코,머리,표면,,,,수동(구역),,3,surface,none
-SUR:005,mouth and teeth,입·치아,머리,표면,,,,수동(구역),,3,surface,none
+SUR:005,mouth,입,머리,표면,,,,"수동(구역. 구순염·구내염. 치아는 치과 영역이라 제외)",,3,surface,none
 SUR:011,throat,목 안(목구멍),목,표면,,,,"수동(구역. 삼킬 때·기침. 환자는 '목'이라 부른다)",,3,surface,none
 SUR:012,back and side of neck,목 뒤·옆,목,표면,,,,수동(구역. 근육·뼈 쪽),,3,surface,left_right
 SUR:021,center of chest,가슴 가운데,가슴,표면,,,,수동(구역),,3,surface,none
@@ -38,8 +38,6 @@ SUR:071,wrist,손목,손목·손,표면,,,,수동(구역),,3,surface,left_right
 SUR:072,palm,손바닥,손목·손,표면,,,,수동(구역),,3,surface,left_right
 SUR:073,back of hand,손등,손목·손,표면,,,,수동(구역),,3,surface,left_right
 SUR:074,fingers,손가락,손목·손,표면,,,,수동(구역),,3,surface,left_right
-SUR:081,buttock,엉덩이,엉덩이,표면,,,,수동(구역),,3,surface,left_right
-SUR:082,groin,사타구니(고관절 앞),엉덩이,표면,,,,수동(구역),,3,surface,left_right
 SUR:091,front of knee,무릎 앞,무릎,표면,,,,수동(구역),,3,surface,left_right
 SUR:092,back of knee,무릎 뒤(오금),무릎,표면,,,,수동(구역),,3,surface,left_right
 SUR:093,inner knee,무릎 안쪽,무릎,표면,,,,수동(구역),,3,surface,left_right

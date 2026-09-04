@@ -40,8 +40,8 @@ def onto() -> Ontology:
 
 def test_real_data_loads_clean(onto: Ontology):
     kinds = {k: sum(1 for n in onto.nodes.values() if n.kind == k) for k in KINDS}
-    assert kinds == {"region": 5, "anchor": 12, "structure": 38, "surface": 35}
-    assert len(onto) == 90
+    assert kinds == {"region": 5, "anchor": 12, "structure": 38, "surface": 33}
+    assert len(onto) == 88
     assert onto.validate() == []
     assert {KNEE, SHOULDER, WHOLE_BODY} <= onto.anchors
     assert onto.regions == {"REG:001", "REG:002", "REG:003", "REG:004", "REG:005"}
@@ -135,6 +135,8 @@ def test_surface_zones_per_anchor(onto: Ontology):
     assert names == ["어깨 앞", "어깨 옆(바깥)", "어깨 뒤", "어깨 위"]
     assert all(z.kind == "surface" for z in onto.zones(KNEE))  # 구조 노드는 섞이지 않는다
     assert onto.zones(WHOLE_BODY) == []  # 전신: 구역 없음, 선택 건너뜀
+    assert onto.zones("ANC:008") == []  # 엉덩이: 구역 하나뿐이라 앵커만 누른다
+    assert onto.get("SUR:005").display_name == "입"  # 치아는 치과 영역, 제외
     # 허리는 앞/뒤가 아니라 가운데/옆. 구역 축은 앵커마다 다르다
     assert [z.display_name for z in onto.zones("ANC:005")] == ["허리 가운데", "허리 옆"]
 
