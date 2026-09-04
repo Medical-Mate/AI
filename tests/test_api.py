@@ -179,3 +179,39 @@ def test_preselected_site_fills_axis_and_anchors_opening():
     ).json()
     assert t["reply"] == QUESTIONS[Axis.ONSET]
     assert t["state"]["history"][0][0] == b["reply"]  # 이력의 첫 질문도 앵커된 오프닝
+
+
+def test_site_node_selection_fills_site_and_department_guidance():
+    client, _ = make_client([TurnExtraction(chief_complaint="허리가 뻐근하다")])
+    r = client.post("/v1/previsit/sessions", json={"site_node_id": "SUR:042", "side": "left"})
+    assert r.status_code == 200, r.text
+    b = r.json()
+    assert b["reply"].startswith("왼쪽 허리 옆")
+    card = b["state"]["card"]
+    assert card["axes"]["site"]["value"] == "왼쪽 허리 옆"
+    assert card["site_selection"]["anchor_id"] == "ANC:012"
+    assert card["provenance"]["ontology_snapshot"]  # 스냅샷이 박힌다
+    t = client.post(
+        "/v1/previsit/turns", json={"state": b["state"], "utterance": "뻐근해요"}
+    ).json()
+    dg = t["card"]["department_guidance"]
+    assert dg["departments"] == ["내과", "비뇨의학과", "정형외과"]  # 구역 값 그대로, 순서 유지
+    assert "자문 확인 전" in dg["source"]
+
+
+def test_zone_without_departments_falls_back_to_anchor():
+    client, _ = make_client([TurnExtraction()])
+    b = client.post(
+        "/v1/previsit/sessions", json={"site_node_id": "SUR:091", "side": "right"}
+    ).json()
+    assert b["state"]["card"]["axes"]["site"]["value"] == "오른쪽 무릎"
+    t = client.post("/v1/previsit/turns", json={"state": b["state"], "utterance": "아파요"}).json()
+    assert t["card"]["department_guidance"]["departments"] == ["정형외과"]  # 앵커 「다리」의 값
+
+
+def test_side_on_non_lateral_zone_is_rejected():
+    client, _ = make_client([])
+    r = client.post("/v1/previsit/sessions", json={"site_node_id": "SUR:041", "side": "left"})
+    assert r.status_code == 422  # 허리 가운데에는 좌우가 없다
+    r = client.post("/v1/previsit/sessions", json={"site_node_id": "UBERON:0001465"})
+    assert r.status_code == 422  # 구조 노드는 짚는 대상이 아니다

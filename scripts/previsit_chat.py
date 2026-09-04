@@ -46,11 +46,38 @@ def show_card(card: dict) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--verbose", action="store_true")
-    ap.add_argument("--site", help="인체도에서 미리 짚은 부위 (예: 허리). SITE 축 사전 채움")
+    ap.add_argument("--site", help="인체도에서 짚은 부위. 온톨로지 이름(허리 가운데)·ID(SUR:041)·자유 라벨")
+    ap.add_argument("--side", choices=["left", "right", "both"], help="좌우 (laterality 있는 부위만)")
+    ap.add_argument("--list", action="store_true", help="짚을 수 있는 앵커·구역 목록을 보고 끝낸다")
     a = ap.parse_args()
 
+    if a.list:
+        from medimate.ontology import load_ontology
+
+        onto = load_ontology()
+        for anc in onto.anchors_in_order():
+            lr = " (좌/우)" if anc.laterality == "left_right" else ""
+            print(f"{anc.id:<8} {anc.display_name}{lr}")
+            for z in onto.zones(anc.id):
+                lr = " (좌/우)" if z.laterality == "left_right" else ""
+                print(f"  {z.id:<8} {z.display_name}{lr}")
+        return
+
+    body = None
+    if a.site:
+        from medimate.dialog.site import find_site_by_name
+        from medimate.ontology import load_ontology
+
+        onto = load_ontology()
+        node_id = a.site if a.site in onto else find_site_by_name(onto, a.site)
+        if node_id:
+            body = {"site_node_id": node_id, "side": a.side}
+        else:
+            print(f"[온톨로지에 없는 이름 → 자유 라벨로 사용: {a.site}]")
+            body = {"site_label": a.site}
+
     c = TestClient(app)
-    r = c.post("/v1/previsit/sessions", json={"site_label": a.site} if a.site else None)
+    r = c.post("/v1/previsit/sessions", json=body)
     r.raise_for_status()
     state = r.json()["state"]
     print(f"[모델 {state['card']['provenance']['model_id']}] /card /state /quit")
@@ -100,6 +127,9 @@ def main() -> None:
 
     if last:
         show_card(last["card"])
+        dg = last["card"].get("department_guidance")
+        if dg:
+            print(f"  진료과 안내: {' / '.join(dg['departments'])}  ({dg['note']})  — {dg['source']}\n")
     print(f"턴 {len(transcript)}  누적 ${total:.4f}")
     out = ROOT / "evals" / "results" / f"chat-{time.strftime('%Y%m%d-%H%M%S')}.json"
     out.parent.mkdir(parents=True, exist_ok=True)

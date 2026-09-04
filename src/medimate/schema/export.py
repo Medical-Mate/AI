@@ -28,4 +28,19 @@ def to_backend_payload(card: PreVisitCard) -> dict[str, Any]:
         "minimally_complete": card.is_minimally_complete(),
         "completeness": card.completeness(),
         "provenance": card.provenance.model_dump() if card.provenance else None,
+        # 진료과 안내 — 부위 노드 속성. 증상 축과 무관. 추천 아님(안내 어투는 앱이 붙인다)
+        # docs/decisions/2026-09-04-department-guidance.md
+        "department_guidance": _department_guidance(card),
+    }
+
+
+def _department_guidance(card: PreVisitCard) -> dict[str, Any] | None:
+    sel = card.site_selection
+    if sel is None or not sel.departments:
+        return None
+    return {
+        "site_label": sel.label,
+        "departments": list(sel.departments),  # 순서에 의미 없음. 전부 보여준다
+        "source": sel.departments_source,  # 인용이 아님을 함께 내보낸다
+        "note": "접수 시 확인해 주세요",
     }

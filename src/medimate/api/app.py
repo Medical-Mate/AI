@@ -23,10 +23,12 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from medimate.dialog.engine import Limits, Session
+from medimate.dialog.site import resolve_site
 from medimate.dialog.state import SessionState
 from medimate.llm.base import Extractor, TurnExtraction
 from medimate.llm.providers import BudgetExceeded, LLMExtractor
-from medimate.schema.card import Axis
+from medimate.ontology import load_ontology
+from medimate.schema.card import Axis, SiteSelectionRecord
 from medimate.schema.export import to_backend_payload
 
 DEFAULT_PROVIDER = "openai"
@@ -39,8 +41,11 @@ ExtractorFactory = Callable[[], Extractor]
 class StartRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # 인체도에서 먼저 짚은 부위의 표시 이름. 있으면 SITE 축을 채우고 첫 질문을 그 부위에 앵커한다.
-    # 온톨로지 노드 ID로 바꾸는 것은 #5
+    # 인체도 선택 (앱 1l). 노드 ID(앵커 또는 구역) + 좌우. SITE 축을 채우고 첫 질문을 앵커하며
+    # 진료과 안내가 카드에 붙는다
+    site_node_id: str | None = Field(default=None, max_length=40)
+    side: str | None = Field(default=None, pattern="^(left|right|both)$")
+    # 온톨로지 없이 라벨만 넘길 때(테스트·임시). site_node_id가 있으면 무시된다
     site_label: str | None = Field(default=None, max_length=40)
 
 
@@ -139,6 +144,7 @@ def create_app(extractor_factory: ExtractorFactory | None = None) -> FastAPI:
     )
     app.state.extractor_factory = extractor_factory
     app.state.limits = Limits()
+    app.state.ontology = None  # 첫 요청에 로드. data/ontology CSV, 로드 시 검증
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -147,7 +153,17 @@ def create_app(extractor_factory: ExtractorFactory | None = None) -> FastAPI:
     @app.post("/v1/previsit/sessions", response_model=StartResponse)
     def start_session(extractor: Ex, body: StartRequest | None = None) -> StartResponse:
         s = Session(extractor, limits=app.state.limits)
-        if body and body.site_label:
+        if body and body.site_node_id:
+            if app.state.ontology is None:
+                app.state.ontology = load_ontology()
+            try:
+                sel = resolve_site(app.state.ontology, body.site_node_id, body.side)
+            except ValueError as e:
+                raise HTTPException(status_code=422, detail=str(e)) from e
+            s.preselect_site(sel.label)
+            s.card.site_selection = SiteSelectionRecord(**sel.model_dump())
+            s.card.provenance.ontology_snapshot = sel.ontology_snapshot
+        elif body and body.site_label:
             s.preselect_site(body.site_label)
         return StartResponse(reply=s.opening(), state=s.to_state())
 
