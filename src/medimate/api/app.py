@@ -5,7 +5,8 @@
 갱신된 `state`를 받아 저장한다. 서버 여러 대·재시작에 영향받지 않는다.
 
 엔드포인트 두 개:
-- POST /v1/previsit/sessions  세션 시작. 첫 질문과 초기 상태. LLM 호출 0
+- POST /v1/previsit/sessions  세션 시작. 첫 질문과 초기 상태. LLM 호출 0.
+                              {site_label}이 있으면 부위 사전 채움
 - POST /v1/previsit/turns     발화 한 개 처리. 다음 질문·갱신 상태·카드·판정 로그. LLM 호출 ≤1
 
 실행:  uv run uvicorn medimate.api.app:app --reload
@@ -35,6 +36,14 @@ ExtractorFactory = Callable[[], Extractor]
 
 
 # --- 요청·응답 -----------------------------------------------------------
+class StartRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # 인체도에서 먼저 짚은 부위의 표시 이름. 있으면 SITE 축을 채우고 첫 질문을 그 부위에 앵커한다.
+    # 온톨로지 노드 ID로 바꾸는 것은 #5
+    site_label: str | None = Field(default=None, max_length=40)
+
+
 class StartResponse(BaseModel):
     reply: str  # 환자에게 보여줄 첫 질문
     state: SessionState
@@ -136,8 +145,10 @@ def create_app(extractor_factory: ExtractorFactory | None = None) -> FastAPI:
         return {"status": "ok"}
 
     @app.post("/v1/previsit/sessions", response_model=StartResponse)
-    def start_session(extractor: Ex) -> StartResponse:
+    def start_session(extractor: Ex, body: StartRequest | None = None) -> StartResponse:
         s = Session(extractor, limits=app.state.limits)
+        if body and body.site_label:
+            s.preselect_site(body.site_label)
         return StartResponse(reply=s.opening(), state=s.to_state())
 
     @app.post("/v1/previsit/turns", response_model=TurnResponse)

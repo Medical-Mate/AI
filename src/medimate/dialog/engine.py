@@ -17,7 +17,9 @@ from medimate.dialog.questions import (
     CLOSING,
     EMPTY_INPUT,
     OPENING,
+    OPENING_WITH_SITE,
     QUESTIONS,
+    SITE_PRESELECTED,
     TRUNCATED_NOTICE,
 )
 from medimate.dialog.state import HistoryTurn, SessionState
@@ -106,7 +108,23 @@ class Session:
         )
 
     # --- 대화 ----------------------------------------------------------
+    def preselect_site(self, label: str) -> None:
+        """인체도에서 짚은 부위로 SITE를 채운다. evidence는 발화가 아니라 UI 선택임을 표시.
+
+        온톨로지 노드 ID 연결은 #5에서. 지금은 라벨 문자열만 받는다.
+        """
+        label = label.strip()
+        if not label:
+            return
+        entry = self.card.axes[Axis.SITE]
+        entry.status = FieldStatus.FILLED
+        entry.value = label
+        entry.evidence.append(f"{SITE_PRESELECTED} {label}")
+
     def opening(self) -> str:
+        site = self.card.axes[Axis.SITE]
+        if site.status == FieldStatus.FILLED and site.value:
+            return OPENING_WITH_SITE.format(site=site.value)
         return OPENING
 
     def step(self, utterance: str) -> str:
@@ -178,7 +196,7 @@ class Session:
 
     def _current_question(self) -> str:
         if self.asked_axis is None:
-            return OPENING
+            return self.opening()
         if self.asked_axis in self.clarified:
             return CLARIFY[self.asked_axis]
         return QUESTIONS[self.asked_axis]

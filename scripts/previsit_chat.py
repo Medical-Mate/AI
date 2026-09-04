@@ -5,6 +5,7 @@
 
   uv run python scripts/previsit_chat.py            # 기본 모델(.env 또는 gpt-5.6-terra)
   uv run python scripts/previsit_chat.py --verbose  # 턴마다 추출 결과·비용 표시
+  uv run python scripts/previsit_chat.py --site 허리  # 인체도에서 부위를 먼저 짚은 상황
 
 입력 중 명령:  /card 현재 카드   /state 상태 JSON   /quit 종료(카드 저장)
 끝나면 evals/results/chat-<시각>.json 에 전체 기록을 남긴다 (gitignore).
@@ -45,10 +46,11 @@ def show_card(card: dict) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--verbose", action="store_true")
+    ap.add_argument("--site", help="인체도에서 미리 짚은 부위 (예: 허리). SITE 축 사전 채움")
     a = ap.parse_args()
 
     c = TestClient(app)
-    r = c.post("/v1/previsit/sessions")
+    r = c.post("/v1/previsit/sessions", json={"site_label": a.site} if a.site else None)
     r.raise_for_status()
     state = r.json()["state"]
     print(f"[모델 {state['card']['provenance']['model_id']}] /card /state /quit")

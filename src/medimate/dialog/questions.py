@@ -7,6 +7,9 @@
 from medimate.schema.card import Axis
 
 OPENING = "어디가 어떻게 불편해서 오셨는지 편하게 말씀해 주세요."
+# 인체도에서 부위를 먼저 짚고 들어온 경우. 부위를 다시 묻지 않고 그 부위에 앵커한다
+OPENING_WITH_SITE = "{site} 쪽이 어떻게 불편하신지 편하게 말씀해 주세요."
+SITE_PRESELECTED = "[부위 선택]"  # UI 선택으로 채운 SITE의 evidence 표시. 발화가 아님을 드러낸다
 
 QUESTIONS: dict[Axis, str] = {
     Axis.SITE: "불편한 곳이 정확히 어디쯤인가요?",

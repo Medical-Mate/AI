@@ -163,3 +163,19 @@ def test_extractor_parse_failure_is_502_and_state_untouched():
 def test_health(path):
     client, _ = make_client([])
     assert client.get(path).json() == {"status": "ok"}
+
+
+def test_preselected_site_fills_axis_and_anchors_opening():
+    client, made = make_client([TurnExtraction(chief_complaint="허리가 뻐근하다")])
+    r = client.post("/v1/previsit/sessions", json={"site_label": "허리"})
+    b = r.json()
+    assert "허리" in b["reply"] and b["reply"] != OPENING
+    site = b["state"]["card"]["axes"]["site"]
+    assert site["status"] == "filled" and site["value"] == "허리"
+    assert site["evidence"][0].startswith("[부위 선택]")  # 발화가 아님이 드러난다
+    # 첫 턴 뒤 SITE를 다시 묻지 않고 ONSET으로 간다
+    t = client.post(
+        "/v1/previsit/turns", json={"state": b["state"], "utterance": "뻐근해요"}
+    ).json()
+    assert t["reply"] == QUESTIONS[Axis.ONSET]
+    assert t["state"]["history"][0][0] == b["reply"]  # 이력의 첫 질문도 앵커된 오프닝
