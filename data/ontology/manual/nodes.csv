@@ -1,0 +1,40 @@
+id,name_en,name_ko,region,structure_type,sctid,fma,definition_en,source,is_anchor,tier,kind,laterality,view,departments,departments_source
+REG:001,upper limb,상지,상지,부위,,,,"수동(상부 묶음, 참고 UBERON:0002102 forelimb)",,1,region,none,none,,
+REG:002,lower limb,하지,하지,부위,,,,"수동(상부 묶음, 참고 UBERON:0002103 hindlimb)",,1,region,none,none,,
+REG:003,trunk,몸통,몸통,부위,,,,"수동(상부 묶음, 참고 UBERON:0002100 trunk)",,1,region,none,none,,
+REG:004,head and neck,머리·목,머리·목,부위,,,,"수동(상부 묶음, 참고 UBERON:0000033 head + UBERON:0000974 neck)",,1,region,none,none,,
+REG:005,whole body,전신,전신,부위,,,,수동(위치 없는 증상용 묶음. 전신·피부 사이드 탭),,1,region,none,none,,
+ANC:001,head,머리,머리,부위,,,,수동(앵커. UBERON:0000033 대조 전),1,2,anchor,none,front,신경과;가정의학과,"팀 결정 2026-09-04, 의료인 자문 확인 전"
+ANC:002,neck,목,목,부위,,,,수동(앵커. UBERON:0000974 대조 전. 진료과는 구역 필수),1,2,anchor,none,front,,
+ANC:003,chest,가슴,가슴,부위,,,,수동(앵커. 응급 안내 입력 자리. 응급 안내가 진료과보다 먼저),1,2,anchor,none,front,내과;심장내과;호흡기내과,"팀 결정 2026-09-04, 의료인 자문 확인 전"
+ANC:004,abdomen,배,배,부위,,,,수동(앵커),1,2,anchor,none,front,내과;소화기내과,"팀 결정 2026-09-04, 의료인 자문 확인 전"
+ANC:012,lower back and hip,허리·엉덩이,허리·엉덩이,부위,,,,"수동(앵커. 2026-09-04 통합: 허리+엉덩이. 뒷면 등 아래 한 점)",1,2,anchor,none,back,정형외과;신경외과,"팀 결정 2026-09-04, 의료인 자문 확인 전"
+ANC:013,arm,팔,팔,부위,,,,"수동(앵커. 2026-09-04 통합: 어깨+팔꿈치+손목·손. 좌우 점 두 개)",1,2,anchor,left_right,front,정형외과,"팀 결정 2026-09-04, 의료인 자문 확인 전"
+ANC:014,leg,다리,다리,부위,,,,"수동(앵커. 2026-09-04 통합: 무릎+발목·발. 좌우 점 두 개)",1,2,anchor,left_right,front,정형외과,"팀 결정 2026-09-04, 의료인 자문 확인 전"
+ANC:010,whole body,전신,전신,부위,,,,"수동(앵커. 발열·오한·피로 등 위치 없는 증상. 사이드 탭)",1,2,anchor,none,none,내과;가정의학과,"팀 결정 2026-09-04, 의료인 자문 확인 전"
+ANC:011,skin,피부,전신,부위,,,,"수동(앵커. 마네킹 구역이 안 맞는 피부 증상. 사이드 탭, 구역 없음)",1,2,anchor,none,none,피부과;내과,"팀 결정 2026-09-04, 의료인 자문 확인 전"
+SUR:001,head and forehead,머리 전체·이마,머리,표면,,,,"수동(구역. 두피 증상은 피부 탭 — 두피 표시 안 함)",,3,surface,none,front,신경과;가정의학과,"팀 결정 2026-09-04, 의료인 자문 확인 전"
+SUR:002,eye,눈,머리,표면,,,,수동(구역),,3,surface,left_right,front,안과,"팀 결정 2026-09-04, 의료인 자문 확인 전"
+SUR:003,ear,귀,머리,표면,,,,수동(구역),,3,surface,left_right,front,이비인후과,"팀 결정 2026-09-04, 의료인 자문 확인 전"
+SUR:004,nose,코,머리,표면,,,,수동(구역),,3,surface,none,front,이비인후과,"팀 결정 2026-09-04, 의료인 자문 확인 전"
+SUR:005,mouth,입,머리,표면,,,,"수동(구역. 구순염·구내염. 치아·치과는 연결하지 않는다 — 2026-09-04 결정)",,3,surface,none,front,이비인후과,"팀 결정 2026-09-04, 의료인 자문 확인 전"
+SUR:011,throat,목 안(목구멍),목,표면,,,,"수동(구역. 삼킬 때·기침. 환자는 '목'이라 부른다)",,3,surface,none,front,이비인후과;내과,"팀 결정 2026-09-04, 의료인 자문 확인 전"
+SUR:012,back and side of neck,목 뒤·옆,목,표면,,,,수동(구역. 근육·뼈 쪽),,3,surface,left_right,front,정형외과;신경외과,"팀 결정 2026-09-04, 의료인 자문 확인 전"
+SUR:021,center of chest,가슴 가운데,가슴,표면,,,,수동(구역. 응급 안내 우선),,3,surface,none,front,내과;심장내과;호흡기내과,"팀 결정 2026-09-04, 의료인 자문 확인 전"
+SUR:022,side of chest,가슴 옆(갈비),가슴,표면,,,,수동(구역),,3,surface,left_right,front,내과;정형외과,"팀 결정 2026-09-04, 의료인 자문 확인 전"
+SUR:031,upper abdomen,윗배(명치),배,표면,,,,수동(구역),,3,surface,left_right,front,내과;소화기내과,"팀 결정 2026-09-04, 의료인 자문 확인 전"
+SUR:032,lower abdomen,아랫배,배,표면,,,,수동(구역. 산부인과는 성별 미참조 항상 병기),,3,surface,left_right,front,내과;소화기내과;산부인과;비뇨의학과,"팀 결정 2026-09-04, 의료인 자문 확인 전"
+SUR:041,center of lower back,허리 가운데,허리·엉덩이,표면,,,,수동(구역),,3,surface,none,back,,
+SUR:042,side of lower back,허리 옆,허리·엉덩이,표면,,,,수동(구역),,3,surface,left_right,back,내과;비뇨의학과;정형외과,"팀 결정 2026-09-04, 의료인 자문 확인 전"
+SUR:081,buttock,엉덩이,허리·엉덩이,표면,,,,수동(구역. 고관절 포함),,3,surface,left_right,back,,
+SUR:051,shoulder,어깨,팔,표면,,,,"수동(구역. 2026-09-04 통합으로 앵커→구역. 앞/옆/뒤/위 방향 구역은 제거)",,3,surface,left_right,front,,
+SUR:055,upper arm,위팔,팔,표면,,,,수동(구역. 팔 이미지가 전체라 생기는 칸),,3,surface,left_right,front,,
+SUR:061,elbow,팔꿈치,팔,표면,,,,수동(구역. 통합으로 앵커→구역),,3,surface,left_right,front,,
+SUR:065,forearm,아래팔,팔,표면,,,,수동(구역. 팔 이미지가 전체라 생기는 칸),,3,surface,left_right,front,,
+SUR:071,wrist,손목,팔,표면,,,,수동(구역),,3,surface,left_right,front,,
+SUR:072,hand,손,팔,표면,,,,수동(구역. 손바닥·손등·손가락은 하나로),,3,surface,left_right,front,,
+SUR:090,thigh,허벅지,다리,표면,,,,수동(구역. 다리 이미지가 전체라 생기는 칸),,3,surface,left_right,front,,
+SUR:091,knee,무릎,다리,표면,,,,"수동(구역. 2026-09-04 통합으로 앵커→구역. 앞/뒤/안/바깥 방향 구역은 제거)",,3,surface,left_right,front,,
+SUR:097,calf,종아리,다리,표면,,,,수동(구역. 다리 이미지가 전체라 생기는 칸),,3,surface,left_right,front,,
+SUR:101,ankle,발목,다리,표면,,,,수동(구역),,3,surface,left_right,front,,
+SUR:102,foot,발,다리,표면,,,,수동(구역. 발등·발바닥·발뒤꿈치·발가락은 하나로),,3,surface,left_right,front,,

@@ -99,6 +99,10 @@ for root, region in [('UBERON:0001465', '무릎'), ('UBERON:0001467', '어깨')]
             'sctid': next((r.split(':')[1] for r in T[x]['xref'] if r.startswith('SCTID')), ''),
             'fma': next((r.split(':')[1] for r in T[x]['xref'] if r.startswith('FMA')), ''),
             'definition_en': T[x]['def'][:200], 'source': 'UBERON',
+            # 앵커(환자 어휘 수준, docs/ai-design.md §3). 디자이너 인체도 확정 전 임시로 무릎·어깨만
+            'is_anchor': '1' if x in ('UBERON:0001465', 'UBERON:0001467') else '',
+            # 등급: 1 상부(다부위 정리) / 2 앵커(환자 어휘) / 3 세부(차트 인식). 그래프 깊이가 아니다
+            'tier': '2' if x in ('UBERON:0001465', 'UBERON:0001467') else '3',
         }
 
 for x in list(nodes):
@@ -122,7 +126,10 @@ MAN = [
 ]
 for i, en, ko, reg, st, note in MAN:
     nodes[i] = {'id': i, 'name_en': en, 'name_ko': ko, 'region': reg, 'structure_type': st,
-                'sctid': '', 'fma': '', 'definition_en': '', 'source': '수동(' + note + ')'}
+                'sctid': '', 'fma': '', 'definition_en': '', 'source': '수동(' + note + ')',
+                'is_anchor': '', 'tier': '3'}
+
+# 상부·앵커·표면 구역은 data/ontology/manual/ 이 출처다. 추출 후 scripts/build_ontology.py 로 합친다
 
 edges += [('MAN:001', 'part_of', 'UBERON:0001485'), ('MAN:002', 'part_of', 'UBERON:0001485'),
           ('MAN:003', 'part_of', 'UBERON:0001485'), ('MAN:004', 'part_of', 'UBERON:0001485'),
@@ -131,7 +138,8 @@ edges += [('MAN:001', 'part_of', 'UBERON:0001485'), ('MAN:002', 'part_of', 'UBER
           ('MAN:008', 'part_of', 'UBERON:0001467'), ('MAN:009', 'part_of', 'UBERON:0001467'),
           ('MAN:010', 'part_of', 'UBERON:0001467'), ('MAN:011', 'part_of', 'MAN:008')]
 
-cols = ['id', 'name_en', 'name_ko', 'region', 'structure_type', 'sctid', 'fma', 'definition_en', 'source']
+cols = ['id', 'name_en', 'name_ko', 'region', 'structure_type', 'sctid', 'fma', 'definition_en', 'source',
+        'is_anchor', 'tier']
 with io.open(os.path.join(OUT, 'nodes.csv'), 'w', encoding='utf-8-sig', newline='') as f:
     w = csv.DictWriter(f, fieldnames=cols); w.writeheader()
     for x in sorted(nodes.values(), key=lambda d: (d['region'], d['name_en'])):
