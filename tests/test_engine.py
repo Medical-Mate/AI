@@ -189,3 +189,25 @@ def test_history_passes_last_two_turns_with_questions():
     assert ex.histories[0] == []
     assert ex.histories[1] == [(OPENING, "무릎이 아파요")]
     assert ex.histories[2] == [(OPENING, "무릎이 아파요"), (QUESTIONS[Axis.SITE], "오른쪽")]
+
+
+def test_preselected_site_label_survives_patient_refinement():
+    from medimate.dialog.questions import CLARIFY
+
+    amb = AxisUpdate(
+        axis=Axis.SITE, status=FieldStatus.AMBIGUOUS, value="아래쪽", evidence="아래쪽"
+    )
+    ex = ScriptedExtractor(
+        [
+            TurnExtraction(chief_complaint="아래쪽이 아파요", updates=[amb]),
+            TurnExtraction(updates=[filled(Axis.SITE, "아래쪽 중앙부", "아래쪽 중앙부요")]),
+        ]
+    )
+    s = Session(ex)
+    s.preselect_site("허리")
+    assert s.opening().startswith("허리")
+    assert s.step("아래쪽이 아파요") == CLARIFY[Axis.SITE]
+    s.step("아래쪽 중앙부요")
+    site = s.card.axes[Axis.SITE]
+    assert site.value == "허리 아래쪽 중앙부"  # 선택 부위가 지워지지 않는다
+    assert site.evidence[0] == "[부위 선택] 허리"

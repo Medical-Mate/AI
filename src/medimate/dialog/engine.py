@@ -219,8 +219,25 @@ class Session:
             entry = self.card.axes[u.axis]
             entry.status = u.status
             if u.status == FieldStatus.FILLED:
-                entry.value = u.value
+                entry.value = self._merge_site_label(u.axis, entry, u.value)
             entry.evidence.append(u.evidence)
+
+    def _preselected_site(self) -> str | None:
+        """인체도에서 짚은 부위 라벨. evidence의 [부위 선택] 표시로 구분한다."""
+        for ev in self.card.axes[Axis.SITE].evidence:
+            if ev.startswith(SITE_PRESELECTED):
+                return ev[len(SITE_PRESELECTED) :].strip() or None
+        return None
+
+    def _merge_site_label(self, axis: Axis, entry, value: str | None) -> str | None:
+        """SITE에 부위가 미리 선택돼 있으면 환자의 세부 표현("아래쪽 중앙")이 라벨을 지우지 않게
+        앞에 붙인다. 모델은 선택된 부위를 모르므로 엔진이 지킨다."""
+        if axis != Axis.SITE or not value:
+            return value
+        label = self._preselected_site()
+        if label and label not in value:
+            return f"{label} {value}"
+        return value
 
     def _next_axis(self) -> Axis | None:
         # 확인이 필요한 축이 먼저, 그 다음 아직 안 물은 축
