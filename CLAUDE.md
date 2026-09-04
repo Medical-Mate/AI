@@ -22,7 +22,8 @@
 ## 구조
 ```
 src/medimate/schema/   카드 내부 모델(PreVisitCard, 8축 × 상태 × 근거). export.py가 백엔드 형식 어댑터
-src/medimate/dialog/   문진 상태 기계. 질문은 템플릿, LLM은 추출만
+src/medimate/dialog/   문진 상태 기계. 질문은 템플릿, LLM은 추출만. state.py가 직렬화 상태
+src/medimate/api/      무상태 FastAPI(세션 시작·턴 처리). 백엔드가 state를 들고 다닌다. docs/api-previsit.md
 src/medimate/llm/      Extractor 프로토콜, 프롬프트(버전 명시), 공급자 어댑터, 가격표·지출 가드
 src/medimate/evals/    결정론 채점기(D1~D10)와 러너
 evals/                 확정 시트, cases.jsonl, 병명 사전, RESULTS.md. results/는 gitignore
@@ -32,10 +33,11 @@ docs/decisions/        팀 공유용 결정 리포트
 
 ## 명령
 ```
-uv sync --group dev --group providers
+uv sync --group dev --group providers --group api
 uv run pytest -q                                  # 커밋 전 필수
 uv run ruff format . && uv run ruff check .
 uv run python -m medimate.evals.run --dry-run     # 호출 0
+uv run uvicorn medimate.api.app:app --reload      # API 로컬 실행, 문서 /docs
 uv run python -m medimate.evals.run --report evals/results/<model>.jsonl   # 재채점, 호출 0
 uv run python -m medimate.evals.run --provider openai --model gpt-5.6-terra  # 실호출
 ```
