@@ -11,7 +11,7 @@
 - 설명문을 생성하지 않고 인용한다. 우리가 보증하는 것은 "출처와 일치한다"뿐
 - 예외: 응급 안내는 한다
 - 타인의 진료기록은 받지 않는다. 사진은 서버로 보내지 않는다. 필요한 필드만 뽑는다(화이트리스트)
-- 증상 → 진료과 추천은 감별이므로 하지 않는다 (진료과 "안내"는 결정 대기 이슈)
+- 증상 → 진료과 추천은 감별이므로 하지 않는다. 부위 노드 속성으로만 진료과를 "안내"한다(증상 축 미참조, 안내 어투). `docs/decisions/2026-09-04-department-guidance.md`
 
 ## 출력 형식
 - 한국어를 포함한 모든 non-ASCII 문자는 코드 변환 없이 글자 그대로 출력한다.
@@ -22,7 +22,8 @@
 ## 구조
 ```
 src/medimate/schema/   카드 내부 모델(PreVisitCard, 8축 × 상태 × 근거). export.py가 백엔드 형식 어댑터
-src/medimate/dialog/   문진 상태 기계. 질문은 템플릿, LLM은 추출만
+src/medimate/dialog/   문진 상태 기계. 질문은 템플릿, LLM은 추출만. state.py가 직렬화 상태
+src/medimate/api/      무상태 FastAPI(세션 시작·턴 처리). 백엔드가 state를 들고 다닌다. docs/api-previsit.md
 src/medimate/llm/      Extractor 프로토콜, 프롬프트(버전 명시), 공급자 어댑터, 가격표·지출 가드
 src/medimate/evals/    결정론 채점기(D1~D10)와 러너
 evals/                 확정 시트, cases.jsonl, 병명 사전, RESULTS.md. results/는 gitignore
@@ -32,10 +33,11 @@ docs/decisions/        팀 공유용 결정 리포트
 
 ## 명령
 ```
-uv sync --group dev --group providers
+uv sync --group dev --group providers --group api
 uv run pytest -q                                  # 커밋 전 필수
 uv run ruff format . && uv run ruff check .
 uv run python -m medimate.evals.run --dry-run     # 호출 0
+uv run uvicorn medimate.api.app:app --reload      # API 로컬 실행, 문서 /docs
 uv run python -m medimate.evals.run --report evals/results/<model>.jsonl   # 재채점, 호출 0
 uv run python -m medimate.evals.run --provider openai --model gpt-5.6-terra  # 실호출
 ```
@@ -67,6 +69,5 @@ uv run python -m medimate.evals.run --provider openai --model gpt-5.6-terra  # �
 ## 결정 대기 (착수 근거로 쓰지 말 것)
 - 디자이너 인체도 부위 단위 → 앵커 노드. 지금은 무릎·어깨 임시
 - 부위 여러 개 선택 시 대화 방식 (순차 진행안 제안 중)
-- 브리핑 카드 "추천 진료과" (설계와 충돌, Notion 이슈)
 - 국가건강정보포털 라이선스 회신, 의료인 자문 회신
 - OCR·화이트리스트 파서는 챗봇 완료 후
