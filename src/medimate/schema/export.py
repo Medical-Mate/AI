@@ -25,6 +25,7 @@ def to_backend_payload(card: PreVisitCard) -> dict[str, Any]:
         },
         "red_flags": card.red_flags,
         "patient_notes": card.patient_notes,
+        "patient_message": card.patient_message,  # 의사에게 전하는 말. 원문. 없으면 null
         "minimally_complete": card.is_minimally_complete(),
         "completeness": card.completeness(),
         "provenance": card.provenance.model_dump() if card.provenance else None,

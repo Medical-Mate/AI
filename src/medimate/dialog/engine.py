@@ -16,6 +16,8 @@ from medimate.dialog.questions import (
     CLARIFY,
     CLOSING,
     EMPTY_INPUT,
+    MESSAGE_QUESTION,
+    NO_MESSAGE,
     OPENING,
     OPENING_WITH_SITE,
     QUESTIONS,
@@ -42,7 +44,7 @@ class Limits:
     """세션 안전 상한. 정상 문진은 닿지 않는다 — 걸리면 버그·공격이다.
 
     - max_utterance_chars: 팀 합의 임시값 300 (앱 카운터·백엔드 계약과 같은 값). 이중 방어
-    - max_turns: 정상 최대 17(첫 발화 1 + 8축 + 확인 8). 20은 안전 정지선
+    - max_turns: 정상 최대 18(첫 발화 1 + 8축 + 확인 8 + 전할 말 1). 20은 안전 정지선
     - max_session_tokens: 이 세션의 LLM 입력+출력 누적 상한. Extractor가 usage를 주면 적용
     """
 
@@ -66,6 +68,7 @@ class Session:
     end_reason: str | None = None  # None | "stop" | "complete" | "max_turns" | "budget"
     history: list[HistoryTurn] = field(default_factory=list)  # 최근 N턴의 (질문, 답)
     turn: int = 0  # 처리한 발화 수. logs 길이와 같지만 복원 시 logs는 비어 있다
+    message_asked: bool = False  # 마지막 "전하고 싶은 말" 질문을 냈는가
     # 이전 요청들에서 쓴 토큰(상태로 넘어온 값). 현재 extractor.usage는 여기 더해서 본다
     carried_tokens: int = 0
 
@@ -91,6 +94,7 @@ class Session:
             end_reason=state.end_reason,
             history=list(state.history),
             turn=state.turn,
+            message_asked=state.message_asked,
             carried_tokens=state.session_tokens,
             limits=limits or Limits(),
         )
@@ -102,6 +106,7 @@ class Session:
             clarified=sorted(self.clarified),
             history=list(self.history),
             turn=self.turn,
+            message_asked=self.message_asked,
             session_tokens=self._session_tokens(),
             ended=self.ended,
             end_reason=self.end_reason,
@@ -169,9 +174,19 @@ class Session:
 
         if ext.wants_to_stop:
             return notice + self.end("stop")
+
+        # 마지막 질문의 답: 원문을 카드에 남기고 끝낸다 (축 반영은 위 _apply에서 이미 됐다)
+        if self.message_asked:
+            if utterance.rstrip(".!~ ") not in NO_MESSAGE:
+                self.card.patient_message = utterance
+            return notice + self.end("complete")
+
         nxt = self._next_axis()
         if nxt is None:
-            return notice + self.end("complete")
+            # 8축이 닫혔다. 끝내기 전에 의사에게 전할 말을 한 번 묻는다
+            self.asked_axis = None
+            self.message_asked = True
+            return notice + MESSAGE_QUESTION
         self.asked_axis = nxt
         if self.card.axes[nxt].status == FieldStatus.AMBIGUOUS:
             self.clarified.add(nxt)
@@ -196,7 +211,7 @@ class Session:
 
     def _current_question(self) -> str:
         if self.asked_axis is None:
-            return self.opening()
+            return MESSAGE_QUESTION if self.message_asked else self.opening()
         if self.asked_axis in self.clarified:
             return CLARIFY[self.asked_axis]
         return QUESTIONS[self.asked_axis]

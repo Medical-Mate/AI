@@ -215,3 +215,19 @@ def test_side_on_non_lateral_zone_is_rejected():
     assert r.status_code == 422  # 허리 가운데에는 좌우가 없다
     r = client.post("/v1/previsit/sessions", json={"site_node_id": "UBERON:0001465"})
     assert r.status_code == 422  # 구조 노드는 짚는 대상이 아니다
+
+
+def test_patient_message_round_trips_through_state():
+    from medimate.dialog.questions import MESSAGE_QUESTION
+
+    updates = [AxisUpdate(axis=a, status=FieldStatus.FILLED, value="x", evidence="x") for a in Axis]
+    client, _ = make_client(
+        [TurnExtraction(chief_complaint="c", updates=updates), TurnExtraction()]
+    )
+    state = client.post("/v1/previsit/sessions").json()["state"]
+    b1 = client.post("/v1/previsit/turns", json={"state": state, "utterance": "전부"}).json()
+    assert b1["reply"] == MESSAGE_QUESTION and b1["state"]["message_asked"] is True
+    b2 = client.post(
+        "/v1/previsit/turns", json={"state": b1["state"], "utterance": "약은 최소로 부탁드려요"}
+    ).json()
+    assert b2["ended"] and b2["card"]["patient_message"] == "약은 최소로 부탁드려요"

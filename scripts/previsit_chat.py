@@ -40,6 +40,8 @@ def show_card(card: dict) -> None:
         val = e["value"] or ""
         ev = f"  ← {e['evidence']}" if e["evidence"] else ""
         print(f"  {mark} {axis:<24} {val}{ev}")
+    if card.get("patient_message"):
+        print(f"  의사에게: {card['patient_message']}")
     print(f"  완성도 {card['completeness']:.0%}  최소 완성 {card['minimally_complete']}\n")
 
 
