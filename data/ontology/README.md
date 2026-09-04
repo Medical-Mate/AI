@@ -9,9 +9,29 @@
 
 | 파일 | 내용 |
 |---|---|
-| `nodes.csv` | 노드. `id, name_en, name_ko, region, structure_type, sctid, fma, definition_en, source` |
+| `nodes.csv` | 노드. `id, name_en, name_ko, region, structure_type, sctid, fma, definition_en, source, is_anchor` |
 | `edges.csv` | `child, relation, parent` — `part_of` / `is_a` |
 | `../../scripts/extract_uberon.py` | 추출 스크립트. 저장소 루트에서 실행하되 `uberon-basic.obo`가 루트에 있어야 한다 |
+| `../../src/medimate/ontology/` | 로더. 조상 조회 · 앵커 올리기 · LCA · 사이클 검출. 로드 시 DAG·참조 무결성 검증 |
+
+```
+curl -L -o uberon-basic.obo http://purl.obolibrary.org/obo/uberon/basic.obo   # 12MB, 커밋 금지(*.obo)
+```
+
+## 로더 (2026-09-04)
+
+```python
+from medimate.ontology import load_ontology
+onto = load_ontology()                 # data/ontology 기본. 검증 실패 시 OntologyError
+onto.widen("UBERON:0003671")           # ACL → (term, anchor=무릎, path)
+onto.lca(["UBERON:0003671", "MAN:001"])  # {무릎관절}
+onto.snapshot_id                       # CSV 해시 12자. Provenance.ontology_snapshot에 쓸 값
+```
+
+- `part_of`·`is_a` 둘 다 위로 탄다. ACL은 is_a로만 십자인대 계열을 지나므로 part_of만 타면 앵커에 못 닿는다
+- 자손 조회(내려가기)는 두지 않는다. 좁히기는 감별이다 (`docs/ai-design.md` §3)
+- 같은 거리에 앵커가 둘이면 `AmbiguousAnchorError`. 데이터가 정해야 할 일을 코드가 임의로 고르지 않는다
+- 무릎·어깨 위에 상위 부위 노드가 없어 `lca(무릎쪽, 어깨쪽)`은 빈 집합. 「하지」 같은 상위 노드는 인체도 확정 후
 
 ## 원본
 
@@ -51,10 +71,9 @@ UBERON은 **다종(multi-species) 비교해부학** 온톨로지다. 사람 임�
 3. **환자 표현은 앵커 노드에만 붙인다** — 무릎·어깨 2개.
    세부 38개는 "차트에서 인식"만 하면 되므로 이름·타입·SNOMED ID로 충분하다
    ( 「번역 방향」 — 좁히지 않고 넓힌다)
-4. ** 컬럼 추가** — 어디서 멈출지. 디자이너 인체도 부위와 같아야 한다
 4. **`common-confusion` 엣지** — ACL ↔ 반월판 ↔ 슬개골. 자문 회신 후
 5. **`laterality`** — 좌/우. 지금 노드에 없다. 속성으로 넣을지 노드로 쪼갤지 결정
-6. **`is_anchor` 컬럼 추가** — 올라가다 어디서 멈출지. **디자이너 인체도 부위와 같아야 한다**
+6. ~~`is_anchor` 컬럼 추가~~ — 2026-09-04 추가. 지금은 무릎·어깨 2개 **임시**. **디자이너 인체도 부위와 같아야 한다**
 7. **디자이너 인체도가 나오면 그 부위 단위에 맞춰 조정** (`docs/ai-design.md` §7)
 
 ## 안 한 것

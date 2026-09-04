@@ -1,41 +1,41 @@
-﻿id,name_en,name_ko,region,structure_type,sctid,fma,definition_en,source
-UBERON:0003671,anterior cruciate ligament of knee joint,앞십자인대(전방십자인대),무릎,인대,182443006,44614,A major stabilizing ligament in the knee that attaches the surfaces of the femur and tibia.,UBERON
-UBERON:0014899,anterolateral ligament of knee,,무릎,인대,,,"A ligament on the lateral aspect of the human knee, anterior to the fibular collateral ligament.",UBERON
-MAN:005,articular cartilage of knee,무릎 관절연골,무릎,연골,,,,수동(UBERON에 없음)
-UBERON:0006659,cruciate ligament of knee,십자인대,무릎,인대,,44611,"One of a pair of ligaments arranged like a letter X.[1] They occur in several joints of the body, such as the knee. In a fashion similar to the cords in a toy Jacob's ladder, the crossed ligaments sta",UBERON
-UBERON:0009005,femorotibial joint,넙다리정강관절(대퇴경골관절),무릎,관절,182203004,43571,"One of the two primary bendings of a typical leg, pertains to the femur and the tibia.",UBERON
-UBERON:0016400,infrapatellar fat pad,무릎아래지방체(슬개하지방체),무릎,지방체,282128003,58772,"The infrapatellar fat pad, also known as Hoffa's fat pad, is a cylindrical piece of fat that is situated under and behind the patella bone within the knee.",UBERON
-UBERON:0001465,knee,무릎,무릎,부위,361291001,24974,A segment of the hindlimb that corresponds to the joint connecting a hindlimb stylopod and zeugopod.,UBERON
-UBERON:0003577,knee connective tissue,무릎 결합조직,무릎,결합조직,,,A portion of connective tissue that is part of a knee [Automatically generated definition].,UBERON
-UBERON:0001485,knee joint,무릎관절(슬관절),무릎,관절,182204005,35175,"The knee joint joins the thigh with the leg and consists of two articulations: one between the femur and tibia, and one between the femur and patella. It is the largest and most complicated joint in t",UBERON
-MAN:002,lateral collateral ligament of knee,가쪽곁인대(외측측부인대),무릎,인대,,,,수동(UBERON에 없음)
-MAN:004,lateral meniscus,가쪽반달연골(외측반월판),무릎,연골,,,,수동(같음)
-UBERON:0011088,ligament of knee joint,무릎관절 인대,무릎,인대,182440009,44580,A ligament that is part of a knee joint.,UBERON
-MAN:001,medial collateral ligament of knee,안쪽곁인대(내측측부인대),무릎,인대,,,,수동(UBERON에 없음 - FMA/SNOMED 확인 필요)
-MAN:003,medial meniscus,안쪽반달연골(내측반월판),무릎,연골,,,,수동(UBERON meniscus는 무릎 하위가 아님)
-UBERON:0002446,patella,무릎뼈(슬개골),무릎,뼈,182083008,24485,A large sesamoid bone found in the distal femur/proximal tibial region of the hindlimb of tetrapods. The patella is the attachment site for proximal hindlimb tendons.[PHENOSCAPE:ad].,UBERON
-UBERON:0003676,patellar ligament,무릎인대(슬개인대),무릎,인대,244639004,44581,The central portion of the common tendon of the quadriceps femoris. It is attached to the apex of the PATELLA and to the lower part of the tubercle of the TIBIA.,UBERON
-UBERON:0011166,patellofemoral joint,무릎넙다리관절(슬개대퇴관절),무릎,관절,182202009,43574,,UBERON
-UBERON:0003680,posterior cruciate ligament of knee joint,뒤십자인대(후방십자인대),무릎,인대,182445004,44617,,UBERON
-UBERON:0001510,skin of knee,무릎 피부,무릎,피부,181552001,37800,A zone of skin that is part of a knee [Automatically generated definition].,UBERON
-UBERON:0003692,acromioclavicular joint,,어깨,관절,182166001,25898,Any joint connecting the acromonion of the scapula and clavicle.,UBERON
-MAN:011,acromion,봉우리(견봉),어깨,뼈,,,,수동(같음)
-UBERON:0011960,articular capsule of glenohumeral joint,,어깨,관절주머니,361836001,34944,An articular capsule that is part of the glenohumeral joint.,UBERON
-MAN:007,biceps long head tendon,위팔두갈래근 긴갈래 힘줄,어깨,힘줄,,,,수동(어깨 하위 미포함)
-MAN:009,clavicle,빗장뼈(쇄골),어깨,뼈,,,,수동(같음)
-UBERON:0034736,coracoclavicular ligament,부리빗장인대(오구쇄골인대),어깨,인대,361899005,26029,Any ligament that connects the coracoid process with the clavicle.,UBERON
-UBERON:0001470,glenohumeral joint,오목위팔관절(관절와상완관절),어깨,관절,182168000,25912,"The glenohumeral joint, commonly known as the shoulder joint, is a multiaxial synovial ball and socket joint and involves articulation between the glenoid fossa of the scapula (shoulder blade) and the",UBERON
-UBERON:0011959,glenoid labrum of scapula,오목테두리(관절와순),어깨,연골,182391008,23290,A ring of fibrocartilage attached to the margin of the glenoid cavity of the scapula.,UBERON
-MAN:010,humerus,위팔뼈(상완골),어깨,뼈,,,,수동(같음)
-UBERON:0001477,infraspinatus muscle,가시아래근(극하근),어깨,근육,277439009,32546,"The infraspinatus muscle is a thick triangular muscle, which occupies the chief part of the infraspinatous fossa. The infraspinatus is a muscle of the rotator cuff. [WP,unvetted].",UBERON
-UBERON:0012118,infraspinatus tendon,가시아래근힘줄,어깨,힘줄,,37076,The infraspinatus muscle inserts at this tendon to the distal greater tubercle of the humerus. This tendon stretches across the shoulder joint to attach to the humerus and in doing so acts as a very s,UBERON
-UBERON:0003683,rotator cuff,돌림근띠(회전근개),어깨,근육군,,37018,A group of muscles and their tendons that act to stabilize the shoulder. The four muscles of the rotator cuff are over half of the seven scapulohumeral muscles.,UBERON
-MAN:008,scapula,어깨뼈(견갑골),어깨,뼈,,,,수동(UBERON은 pectoral girdle 하위 - 어깨 subtree 밖)
-UBERON:0001467,shoulder,어깨,어깨,부위,361103004,25202,"A subdivision of the pectoral complex consisting of the structures in the region of the shoulder joint (which connects the humerus, scapula and clavicle).",UBERON
-UBERON:0003579,shoulder connective tissue,,어깨,결합조직,,,A portion of connective tissue that is part of a shoulder [Automatically generated definition].,UBERON
-UBERON:0016884,shoulder joint,어깨관절(견관절),어깨,관절,361835002,,"The joint that is formed by the union of the humerus, the scapula (or shoulder blade), and the clavicle (or collarbone). Commonly thought of as a single joint, the shoulder is actually made up of two ",UBERON
-UBERON:0001483,skin of shoulder,어깨 피부,어깨,피부,244131002,34830,A zone of skin that is part of a shoulder region.,UBERON
-MAN:006,subacromial bursa,봉우리밑주머니(견봉하 점액낭),어깨,활액낭,,,,수동(UBERON에 없음)
-UBERON:0001129,subscapularis muscle,어깨밑근(견갑하근),어깨,근육,277446000,13413,"The subscapularis is a large triangular muscle which fills the subscapular fossa and inserts into the lesser tubercle of the humerus and the front of the capsule of the shoulder-joint. [WP,unvetted].",UBERON
-UBERON:0002383,supraspinatus muscle,가시위근(극상근),어깨,근육,181626001,9629,The supraspinatus is a relatively small muscle of the upper limb that takes its name from its origin from the supraspinous fossa superior to the spine of the scapula. It is one of the four rotator cuf,UBERON
-UBERON:0010496,teres minor muscle,작은원근(소원근),어깨,근육,277445001,32550,"A narrow, elongated muscle of the rotator cuff.",UBERON
+﻿id,name_en,name_ko,region,structure_type,sctid,fma,definition_en,source,is_anchor
+UBERON:0003671,anterior cruciate ligament of knee joint,앞십자인대(전방십자인대),무릎,인대,182443006,44614,A major stabilizing ligament in the knee that attaches the surfaces of the femur and tibia.,UBERON,
+UBERON:0014899,anterolateral ligament of knee,,무릎,인대,,,"A ligament on the lateral aspect of the human knee, anterior to the fibular collateral ligament.",UBERON,
+MAN:005,articular cartilage of knee,무릎 관절연골,무릎,연골,,,,수동(UBERON에 없음),
+UBERON:0006659,cruciate ligament of knee,십자인대,무릎,인대,,44611,"One of a pair of ligaments arranged like a letter X.[1] They occur in several joints of the body, such as the knee. In a fashion similar to the cords in a toy Jacob's ladder, the crossed ligaments sta",UBERON,
+UBERON:0009005,femorotibial joint,넙다리정강관절(대퇴경골관절),무릎,관절,182203004,43571,"One of the two primary bendings of a typical leg, pertains to the femur and the tibia.",UBERON,
+UBERON:0016400,infrapatellar fat pad,무릎아래지방체(슬개하지방체),무릎,지방체,282128003,58772,"The infrapatellar fat pad, also known as Hoffa's fat pad, is a cylindrical piece of fat that is situated under and behind the patella bone within the knee.",UBERON,
+UBERON:0001465,knee,무릎,무릎,부위,361291001,24974,A segment of the hindlimb that corresponds to the joint connecting a hindlimb stylopod and zeugopod.,UBERON,1
+UBERON:0003577,knee connective tissue,무릎 결합조직,무릎,결합조직,,,A portion of connective tissue that is part of a knee [Automatically generated definition].,UBERON,
+UBERON:0001485,knee joint,무릎관절(슬관절),무릎,관절,182204005,35175,"The knee joint joins the thigh with the leg and consists of two articulations: one between the femur and tibia, and one between the femur and patella. It is the largest and most complicated joint in t",UBERON,
+MAN:002,lateral collateral ligament of knee,가쪽곁인대(외측측부인대),무릎,인대,,,,수동(UBERON에 없음),
+MAN:004,lateral meniscus,가쪽반달연골(외측반월판),무릎,연골,,,,수동(같음),
+UBERON:0011088,ligament of knee joint,무릎관절 인대,무릎,인대,182440009,44580,A ligament that is part of a knee joint.,UBERON,
+MAN:001,medial collateral ligament of knee,안쪽곁인대(내측측부인대),무릎,인대,,,,수동(UBERON에 없음 - FMA/SNOMED 확인 필요),
+MAN:003,medial meniscus,안쪽반달연골(내측반월판),무릎,연골,,,,수동(UBERON meniscus는 무릎 하위가 아님),
+UBERON:0002446,patella,무릎뼈(슬개골),무릎,뼈,182083008,24485,A large sesamoid bone found in the distal femur/proximal tibial region of the hindlimb of tetrapods. The patella is the attachment site for proximal hindlimb tendons.[PHENOSCAPE:ad].,UBERON,
+UBERON:0003676,patellar ligament,무릎인대(슬개인대),무릎,인대,244639004,44581,The central portion of the common tendon of the quadriceps femoris. It is attached to the apex of the PATELLA and to the lower part of the tubercle of the TIBIA.,UBERON,
+UBERON:0011166,patellofemoral joint,무릎넙다리관절(슬개대퇴관절),무릎,관절,182202009,43574,,UBERON,
+UBERON:0003680,posterior cruciate ligament of knee joint,뒤십자인대(후방십자인대),무릎,인대,182445004,44617,,UBERON,
+UBERON:0001510,skin of knee,무릎 피부,무릎,피부,181552001,37800,A zone of skin that is part of a knee [Automatically generated definition].,UBERON,
+UBERON:0003692,acromioclavicular joint,,어깨,관절,182166001,25898,Any joint connecting the acromonion of the scapula and clavicle.,UBERON,
+MAN:011,acromion,봉우리(견봉),어깨,뼈,,,,수동(같음),
+UBERON:0011960,articular capsule of glenohumeral joint,,어깨,관절주머니,361836001,34944,An articular capsule that is part of the glenohumeral joint.,UBERON,
+MAN:007,biceps long head tendon,위팔두갈래근 긴갈래 힘줄,어깨,힘줄,,,,수동(어깨 하위 미포함),
+MAN:009,clavicle,빗장뼈(쇄골),어깨,뼈,,,,수동(같음),
+UBERON:0034736,coracoclavicular ligament,부리빗장인대(오구쇄골인대),어깨,인대,361899005,26029,Any ligament that connects the coracoid process with the clavicle.,UBERON,
+UBERON:0001470,glenohumeral joint,오목위팔관절(관절와상완관절),어깨,관절,182168000,25912,"The glenohumeral joint, commonly known as the shoulder joint, is a multiaxial synovial ball and socket joint and involves articulation between the glenoid fossa of the scapula (shoulder blade) and the",UBERON,
+UBERON:0011959,glenoid labrum of scapula,오목테두리(관절와순),어깨,연골,182391008,23290,A ring of fibrocartilage attached to the margin of the glenoid cavity of the scapula.,UBERON,
+MAN:010,humerus,위팔뼈(상완골),어깨,뼈,,,,수동(같음),
+UBERON:0001477,infraspinatus muscle,가시아래근(극하근),어깨,근육,277439009,32546,"The infraspinatus muscle is a thick triangular muscle, which occupies the chief part of the infraspinatous fossa. The infraspinatus is a muscle of the rotator cuff. [WP,unvetted].",UBERON,
+UBERON:0012118,infraspinatus tendon,가시아래근힘줄,어깨,힘줄,,37076,The infraspinatus muscle inserts at this tendon to the distal greater tubercle of the humerus. This tendon stretches across the shoulder joint to attach to the humerus and in doing so acts as a very s,UBERON,
+UBERON:0003683,rotator cuff,돌림근띠(회전근개),어깨,근육군,,37018,A group of muscles and their tendons that act to stabilize the shoulder. The four muscles of the rotator cuff are over half of the seven scapulohumeral muscles.,UBERON,
+MAN:008,scapula,어깨뼈(견갑골),어깨,뼈,,,,수동(UBERON은 pectoral girdle 하위 - 어깨 subtree 밖),
+UBERON:0001467,shoulder,어깨,어깨,부위,361103004,25202,"A subdivision of the pectoral complex consisting of the structures in the region of the shoulder joint (which connects the humerus, scapula and clavicle).",UBERON,1
+UBERON:0003579,shoulder connective tissue,,어깨,결합조직,,,A portion of connective tissue that is part of a shoulder [Automatically generated definition].,UBERON,
+UBERON:0016884,shoulder joint,어깨관절(견관절),어깨,관절,361835002,,"The joint that is formed by the union of the humerus, the scapula (or shoulder blade), and the clavicle (or collarbone). Commonly thought of as a single joint, the shoulder is actually made up of two ",UBERON,
+UBERON:0001483,skin of shoulder,어깨 피부,어깨,피부,244131002,34830,A zone of skin that is part of a shoulder region.,UBERON,
+MAN:006,subacromial bursa,봉우리밑주머니(견봉하 점액낭),어깨,활액낭,,,,수동(UBERON에 없음),
+UBERON:0001129,subscapularis muscle,어깨밑근(견갑하근),어깨,근육,277446000,13413,"The subscapularis is a large triangular muscle which fills the subscapular fossa and inserts into the lesser tubercle of the humerus and the front of the capsule of the shoulder-joint. [WP,unvetted].",UBERON,
+UBERON:0002383,supraspinatus muscle,가시위근(극상근),어깨,근육,181626001,9629,The supraspinatus is a relatively small muscle of the upper limb that takes its name from its origin from the supraspinous fossa superior to the spine of the scapula. It is one of the four rotator cuf,UBERON,
+UBERON:0010496,teres minor muscle,작은원근(소원근),어깨,근육,277445001,32550,"A narrow, elongated muscle of the rotator cuff.",UBERON,
