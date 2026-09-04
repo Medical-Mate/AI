@@ -15,7 +15,14 @@
 등급(`tier`) — 환자에게 보이는 3등급. 그래프 깊이가 아니다:
 - 1 상부: 다부위 정리용 묶음(상지·하지·몸통·머리·목). LCA가 여기서 멈춘다. 부모 없음
 - 2 앵커: 환자가 말하는 단위(무릎·어깨). 넓히기가 여기서 멈춘다. 상부 정확히 하나에 닿는다
-- 3 세부: 차트에서 인식만. 앵커 정확히 하나에 닿는다. 세부끼리의 깊이는 자유(힘줄⊂근육 유지)
+- 3 세부: 앵커 정확히 하나에 닿는다. 두 종류(`kind`)가 있다
+  - structure: 차트에 적히는 해부 구조. 차트 용어 → 앵커로 넓힐 때 쓴다. 깊이는 자유(힘줄⊂근육 유지)
+  - surface: 환자가 인체도에서 누르는 표면 구역(어깨 앞, 목 안, 아랫배). 진료 전 카드 SITE 축이 쓴다
+
+두 층은 앵커에서 만난다. 그리고 `located_in`(structure → surface, 출처 필수)로만 이어진다.
+- "이 구역 아래에 무엇이 있나"는 해부학 사실이라 한다. `structures_under()`는 전체를 이름순으로 준다
+- "이 구역이 아프면 무엇이 원인인가"는 감별이라 하지 않는다. 고르거나 순위 매기는 API가 없다
+- 출처가 빈 located_in은 조회에서 뺀다. 자문 회신 전 임시 채움을 구조로 막는다
 
 검증:
 - partonomy는 DAG여야 한다. 손보강 노드가 들어오면 사이클이 생길 수 있어 로드 시 검출한다.
@@ -31,7 +38,10 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-RELATIONS = frozenset({"part_of", "is_a"})
+RELATIONS = frozenset({"part_of", "is_a"})  # 상위로 타는 관계
+ASSOC_RELATIONS = frozenset({"located_in"})  # 층 사이 연결. 조상 계산에 쓰지 않는다
+KINDS = frozenset({"region", "anchor", "structure", "surface"})
+LATERALITIES = frozenset({"none", "left_right"})
 DEFAULT_DIR = Path(__file__).resolve().parents[3] / "data" / "ontology"
 
 
@@ -60,6 +70,8 @@ class Node:
     source: str
     is_anchor: bool
     tier: int  # 1 상부 / 2 앵커 / 3 세부
+    kind: str  # region / anchor / structure / surface
+    laterality: str  # none / left_right — 좌·우를 물을 수 있는 노드인가
 
     @property
     def display_name(self) -> str:
@@ -82,12 +94,23 @@ class Ontology:
     nodes: dict[str, Node]
     parents: dict[str, list[tuple[str, str]]]  # child → [(relation, parent)]
     snapshot_id: str  # CSV 바이트 해시. Provenance.ontology_snapshot에 박는 값
+    located_in: list[tuple[str, str, str]] = field(
+        default_factory=list
+    )  # (structure, surface, source)
+    _children: dict[str, list[str]] = field(
+        default_factory=dict, repr=False
+    )  # part_of 역방향(구역용)
     anchors: frozenset[str] = field(init=False)
     regions: frozenset[str] = field(init=False)  # 등급 1
 
     def __post_init__(self) -> None:
         self.anchors = frozenset(n.id for n in self.nodes.values() if n.is_anchor)
         self.regions = frozenset(n.id for n in self.nodes.values() if n.tier == 1)
+        self._children = {}
+        for child, rels in self.parents.items():
+            for rel, parent in rels:
+                if rel == "part_of":
+                    self._children.setdefault(parent, []).append(child)
 
     # ── 기본 조회 ──────────────────────────────────────────────
 
@@ -206,6 +229,37 @@ class Ontology:
                     q.append(p)
         return (src,)
 
+    # ── 표면 층: 인체도 입력 ──────────────────────────────────
+
+    def anchors_in_order(self) -> list[Node]:
+        """인체도 첫 화면의 앵커 목록. CSV 순서 그대로(디자이너 배치 순서를 데이터가 가진다)."""
+        return [n for n in self.nodes.values() if n.kind == "anchor"]
+
+    def zones(self, anchor_id: str) -> list[Node]:
+        """앵커 아래 표면 구역. CSV 순서. 구조 노드는 섞이지 않는다.
+
+        환자가 앵커를 누른 뒤 보는 2단계 선택지다. 비어 있으면(전신) 구역 선택을 건너뛴다.
+        """
+        node = self.get(anchor_id)
+        if node.kind != "anchor":
+            raise ValueError(f"{anchor_id}: 앵커가 아니다 (kind={node.kind})")
+        return [
+            self.nodes[c]
+            for c in self._children.get(anchor_id, ())
+            if self.nodes[c].kind == "surface"
+        ]
+
+    def structures_under(self, surface_id: str) -> list[Node]:
+        """이 표면 구역 아래에 놓인 구조. 해부학 사실의 인용이고 감별이 아니다.
+
+        전체를 이름순으로 준다. 고르지 않고 순위도 없다. 출처가 비어 있는 엣지는 뺀다.
+        """
+        node = self.get(surface_id)
+        if node.kind != "surface":
+            raise ValueError(f"{surface_id}: 표면 구역이 아니다 (kind={node.kind})")
+        ids = {s for s, z, src in self.located_in if z == surface_id and src.strip()}
+        return sorted((self.nodes[i] for i in ids), key=lambda n: n.display_name)
+
     # ── LCA: 다부위 정리 ──────────────────────────────────────
 
     def lca(self, node_ids: Iterable[str]) -> set[str]:
@@ -251,6 +305,21 @@ class Ontology:
                 problems.append(f"nodes: tier는 1/2/3 {n.id}={n.tier}")
             if (n.tier == 2) != n.is_anchor:
                 problems.append(f"nodes: tier 2 ⇔ is_anchor 불일치 {n.id}")
+            if n.kind not in KINDS:
+                problems.append(f"nodes: kind는 {sorted(KINDS)} {n.id}={n.kind}")
+            expected_kind = {1: "region", 2: "anchor"}.get(n.tier)
+            if expected_kind and n.kind != expected_kind:
+                problems.append(f"nodes: tier {n.tier}는 kind={expected_kind} {n.id}={n.kind}")
+            if n.tier == 3 and n.kind not in ("structure", "surface"):
+                problems.append(f"nodes: tier 3은 structure/surface {n.id}={n.kind}")
+            if n.laterality not in LATERALITIES:
+                problems.append(f"nodes: laterality는 {sorted(LATERALITIES)} {n.id}={n.laterality}")
+        for s_id, z_id, _ in self.located_in:
+            if s_id not in self.nodes or z_id not in self.nodes:
+                problems.append(f"located_in: 없는 노드 {s_id} -> {z_id}")
+                continue
+            if self.nodes[s_id].kind != "structure" or self.nodes[z_id].kind != "surface":
+                problems.append(f"located_in: structure → surface 방향만 {s_id} -> {z_id}")
         if self.find_cycles():
             return problems  # 아래 도달성 검사는 DAG 전제
         for n in self.nodes.values():
@@ -266,6 +335,8 @@ class Ontology:
                     problems.append(
                         f"tier: 세부는 앵커 정확히 하나에 닿아야 한다 {n.id} -> {found}"
                     )
+                if n.kind == "surface" and self.parent_ids(n.id) != found:
+                    problems.append(f"tier: 표면 구역은 앵커의 직접 자식이어야 한다 {n.id}")
         return problems
 
     def find_cycles(self) -> list[tuple[str, ...]]:
@@ -300,6 +371,12 @@ def _truthy(value: str) -> bool:
     return value.strip().lower() in {"1", "true", "y", "yes"}
 
 
+def _default_kind(row: dict[str, str]) -> str:
+    """kind 컬럼이 없는 옛 파일용. tier로 유추하고 세부는 구조로 본다."""
+    tier = (row.get("tier") or "3").strip()
+    return {"1": "region", "2": "anchor"}.get(tier, "structure")
+
+
 def load_ontology(directory: Path | str = DEFAULT_DIR, *, strict: bool = True) -> Ontology:
     """nodes.csv + edges.csv → Ontology. strict면 검증 실패 시 OntologyError."""
     directory = Path(directory)
@@ -331,9 +408,12 @@ def load_ontology(directory: Path | str = DEFAULT_DIR, *, strict: bool = True) -
             source=row.get("source", "").strip(),
             is_anchor=_truthy(row.get("is_anchor") or ""),
             tier=int(row.get("tier") or 3),  # 컬럼이 없으면 세부로 본다
+            kind=(row.get("kind") or "").strip() or _default_kind(row),
+            laterality=(row.get("laterality") or "").strip() or "left_right",
         )
 
     parents: dict[str, list[tuple[str, str]]] = {nid: [] for nid in nodes}
+    located_in: list[tuple[str, str, str]] = []
     seen_edges: set[tuple[str, str, str]] = set()
     for row in csv.DictReader(edges_bytes.decode("utf-8-sig").splitlines()):
         child, rel, parent = (row[k].strip() for k in ("child", "relation", "parent"))
@@ -342,9 +422,12 @@ def load_ontology(directory: Path | str = DEFAULT_DIR, *, strict: bool = True) -
             problems.append(f"edges: 중복 {child} -{rel}-> {parent}")
             continue
         seen_edges.add(key)
-        parents.setdefault(child, []).append((rel, parent))
+        if rel in ASSOC_RELATIONS:
+            located_in.append((child, parent, (row.get("source") or "").strip()))
+        else:
+            parents.setdefault(child, []).append((rel, parent))
 
-    onto = Ontology(nodes=nodes, parents=parents, snapshot_id=snapshot)
+    onto = Ontology(nodes=nodes, parents=parents, snapshot_id=snapshot, located_in=located_in)
     problems.extend(onto.validate())
     if strict and problems:
         raise OntologyError(f"{directory}: 문제 {len(problems)}건\n" + "\n".join(problems))

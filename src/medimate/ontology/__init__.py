@@ -6,6 +6,7 @@
 
 from medimate.ontology.graph import (
     DEFAULT_DIR,
+    KINDS,
     AmbiguousAnchorError,
     Node,
     Ontology,
@@ -17,6 +18,7 @@ from medimate.ontology.graph import (
 
 __all__ = [
     "DEFAULT_DIR",
+    "KINDS",
     "AmbiguousAnchorError",
     "Node",
     "Ontology",

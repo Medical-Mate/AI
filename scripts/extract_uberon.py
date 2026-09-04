@@ -129,26 +129,14 @@ for i, en, ko, reg, st, note in MAN:
                 'sctid': '', 'fma': '', 'definition_en': '', 'source': '수동(' + note + ')',
                 'is_anchor': '', 'tier': '3'}
 
-# 상부(등급 1). UBERON은 다종 비교해부학이라 머리·목 묶음이 없어 REG: 접두로 직접 둔다
-REG = [
-    ('REG:001', 'upper limb', '상지', 'UBERON:0002102 forelimb'),
-    ('REG:002', 'lower limb', '하지', 'UBERON:0002103 hindlimb'),
-    ('REG:003', 'trunk', '몸통', 'UBERON:0002100 trunk'),
-    ('REG:004', 'head and neck', '머리·목', 'UBERON:0000033 head + UBERON:0000974 neck'),
-]
-for i, en, ko, ref in REG:
-    nodes[i] = {'id': i, 'name_en': en, 'name_ko': ko, 'region': ko, 'structure_type': '부위',
-                'sctid': '', 'fma': '', 'definition_en': '', 'source': '수동(상부 묶음, 참고 ' + ref + ')',
-                'is_anchor': '', 'tier': '1'}
+# 상부·앵커·표면 구역은 data/ontology/manual/ 이 출처다. 추출 후 scripts/build_ontology.py 로 합친다
 
 edges += [('MAN:001', 'part_of', 'UBERON:0001485'), ('MAN:002', 'part_of', 'UBERON:0001485'),
           ('MAN:003', 'part_of', 'UBERON:0001485'), ('MAN:004', 'part_of', 'UBERON:0001485'),
           ('MAN:005', 'part_of', 'UBERON:0001485'), ('MAN:006', 'part_of', 'UBERON:0001467'),
           ('MAN:007', 'part_of', 'UBERON:0001467'),
           ('MAN:008', 'part_of', 'UBERON:0001467'), ('MAN:009', 'part_of', 'UBERON:0001467'),
-          ('MAN:010', 'part_of', 'UBERON:0001467'), ('MAN:011', 'part_of', 'MAN:008'),
-          # 앵커 → 상부. 상부는 부위마다 하나만 (어깨는 상지에만, 몸통에 걸치지 않는다)
-          ('UBERON:0001465', 'part_of', 'REG:002'), ('UBERON:0001467', 'part_of', 'REG:001')]
+          ('MAN:010', 'part_of', 'UBERON:0001467'), ('MAN:011', 'part_of', 'MAN:008')]
 
 cols = ['id', 'name_en', 'name_ko', 'region', 'structure_type', 'sctid', 'fma', 'definition_en', 'source',
         'is_anchor', 'tier']

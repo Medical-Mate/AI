@@ -5,12 +5,16 @@
 ## 무엇인가
 
 `docs/ai-design.md` §3의 부위 partonomy를 **UBERON에서 실제로 뽑아본 것**.
-무릎·어깨 **40개 노드 / 39개 엣지** + 상부 4개 노드(2026-09-04). 총 44 / 41.
+무릎·어깨 구조 **38개** + 상부 5 · 앵커 12 · 표면 구역 35 (2026-09-04). 총 **90 노드 / 86 엣지**.
+현황 표는 `uv run python scripts/ontology_report.py`.
 
 | 파일 | 내용 |
 |---|---|
-| `nodes.csv` | 노드. `id, name_en, name_ko, region, structure_type, sctid, fma, definition_en, source, is_anchor, tier` |
-| `edges.csv` | `child, relation, parent` — `part_of` / `is_a` |
+| `nodes.csv` | 노드. `id, name_en, name_ko, region, structure_type, sctid, fma, definition_en, source, is_anchor, tier, kind, laterality` |
+| `edges.csv` | `child, relation, parent, source` — `part_of` / `is_a` (상위) / `located_in` (구조→구역, 출처 필수) |
+| `manual/nodes.csv`, `manual/edges.csv` | **손으로 관리하는 유일한 출처**: 상부·앵커·표면 구역·located_in. 여기를 고치고 빌드한다 |
+| `../../scripts/build_ontology.py` | UBERON·MAN 구조 행 + manual/ → nodes.csv/edges.csv 재조립. obo 불필요 |
+| `../../scripts/ontology_report.py` | 팀 전달용 매핑 현황 표 |
 | `../../scripts/extract_uberon.py` | 추출 스크립트. 저장소 루트에서 실행하되 `uberon-basic.obo`가 루트에 있어야 한다 |
 | `../../src/medimate/ontology/` | 로더. 조상 조회 · 앵커 올리기 · LCA · 사이클 검출. 로드 시 DAG·참조 무결성 검증 |
 
@@ -26,7 +30,29 @@ curl -L -o uberon-basic.obo http://purl.obolibrary.org/obo/uberon/basic.obo   # 
 |---|---|---|---|---|
 | 1 상부 | 다부위 정리 묶음. 부모 없음 | LCA | 인체도 큰 구획 | `REG:001~004` 상지·하지·몸통·머리·목 |
 | 2 앵커 | 환자가 말하는 단위. 별칭은 여기만. 상부 **하나**에만 닿는다 | 넓히기 | 디자이너 인체도 부위 | 무릎·어깨 (임시) |
-| 3 세부 | 차트 인식용. 앵커 **하나**에만 닿는다 | — | UBERON + 수동 | 38개 |
+| 3 세부 | 앵커 **하나**에만 닿는다. `kind`로 두 층 | — | 아래 | 73개 |
+
+### 3등급의 두 층 — 환자가 누르는 것과 차트에 적히는 것은 다르다
+
+| kind | 무엇 | 누가 쓰나 | 예 | 지금 |
+|---|---|---|---|---|
+| `surface` 표면 구역 | 환자가 인체도에서 누르는 위치. 앵커의 직접 자식 | 진료 전 카드 SITE 축 | 어깨 앞, 목 안(목구멍), 아랫배 | 35개, 앵커당 2~5 |
+| `structure` 구조 | 차트에 적히는 해부 구조. 깊이 자유 | 차트 용어 → 앵커 넓히기 | 돌림근띠, 앞십자인대 | 38개(무릎·어깨만) |
+
+- 환자는 돌림근띠를 고를 수 없다. "어깨 앞"을 누르고 좌/우를 고른다. 그래서 구역은 방향·일상어다
+- 구역 축은 앵커마다 다르다. 어깨는 앞/옆/뒤/위, 허리는 가운데/옆, 머리는 눈/귀/코/입. 전신 통일 안 한다
+- "목"은 둘이다: 목 안(삼킬 때·기침) / 목 뒤·옆(근육·뼈). 환자는 같은 말로 부르니 구역에서 가른다
+- 위치 없는 증상(발열·오한·피로)은 앵커 「전신」. 구역 없음. UI는 사이드 탭
+- `laterality`: 좌/우를 물을 노드인가. 노드를 좌우로 쪼개지 않는다(양쪽 표현 위해)
+
+### 두 층의 연결 — `located_in` (구조 → 구역)
+
+| 방향 | 예 | 성격 | 판정 |
+|---|---|---|---|
+| 구역 아래에 **무엇이 있나** | 어깨 앞 아래: 위팔두갈래근 긴갈래 힘줄, 관절주머니 | 해부학 사실 인용 | 한다. `structures_under()` 전체·이름순·순위 없음 |
+| 구역이 아프면 **무엇이 원인인가** | 어깨 앞 통증 → 힘줄염 | 감별 | 하지 않는다. API 없음 |
+
+- 엣지에 `source`가 비면 조회에서 빠진다. **지금은 0개.** 의료인 자문·출처 확보 후 채운다
 
 - 상부는 부위마다 하나만. 어깨는 상지에만 둔다(UBERON은 가슴 띠로도 걸치지만 인체도는 한 곳만 칠한다)
 - 좌/우는 등급이 아니라 속성으로 (미구현)
@@ -51,7 +77,8 @@ onto.snapshot_id                       # CSV 해시 12자. Provenance.ontology_s
 - `part_of`·`is_a` 둘 다 위로 탄다. ACL은 is_a로만 십자인대 계열을 지나므로 part_of만 타면 앵커에 못 닿는다
 - 자손 조회(내려가기)는 두지 않는다. 좁히기는 감별이다 (`docs/ai-design.md` §3)
 - 같은 거리에 앵커가 둘이면 `AmbiguousAnchorError`. 데이터가 정해야 할 일을 코드가 임의로 고르지 않는다
-- `lca(무릎쪽, 어깨쪽)`은 빈 집합(상부가 다르고 상부 위는 없다). `lca(무릎, 발목)`은 발목 앵커가 들어오면 「하지」
+- `lca(무릎쪽, 어깨쪽)`은 빈 집합(상부가 다르고 상부 위는 없다). `lca(무릎 앞, 발목)` = 「하지」
+- `zones(앵커)` 구역 목록(CSV 순서), `anchors_in_order()` 첫 화면 앵커 12개, `structures_under(구역)`
 
 ## 원본
 
