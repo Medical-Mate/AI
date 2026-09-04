@@ -138,6 +138,8 @@ def test_surface_zones_per_anchor(onto: Ontology):
     assert onto.zones(WHOLE_BODY) == []  # 전신: 구역 없음, 선택 건너뜀
     assert onto.zones("ANC:008") == []  # 엉덩이: 구역 하나뿐이라 앵커만 누른다
     assert onto.get("SUR:005").display_name == "입"  # 치아는 치과 영역, 제외
+    assert onto.get("SUR:001").display_name == "머리 전체·이마"  # 두피는 피부 탭
+    assert "치과" not in {d for n in onto.nodes.values() for d in n.departments}
     # 허리는 앞/뒤가 아니라 가운데/옆. 구역 축은 앵커마다 다르다
     assert [z.display_name for z in onto.zones("ANC:005")] == ["허리 가운데", "허리 옆"]
 
@@ -182,7 +184,7 @@ def test_departments_follow_decision_table(onto: Ontology):
     assert onto.get(WHOLE_BODY).departments == ("내과", "가정의학과")
     # 구역
     assert onto.get("SUR:002").departments == ("안과",)
-    assert onto.get("SUR:005").departments == ("이비인후과", "치과")
+    assert onto.get("SUR:005").departments == ("이비인후과",)  # 치과는 연결하지 않는다
     assert onto.get("SUR:011").departments == ("이비인후과", "내과")
     assert onto.get("SUR:032").departments == ("내과", "소화기내과", "산부인과", "비뇨의학과")
     assert onto.get("SUR:042").departments == ("내과", "비뇨의학과", "정형외과")
