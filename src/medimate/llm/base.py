@@ -14,12 +14,13 @@ from typing import Protocol
 from pydantic import BaseModel, ConfigDict, Field
 
 from medimate.schema.card import Axis, FieldStatus
+from medimate.schema.postvisit import PostAxis
 
 
 class AxisUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    axis: Axis
+    axis: Axis | PostAxis  # 어느 문진의 축인지는 값으로 구분된다(겹치지 않는다)
     status: FieldStatus  # FILLED / UNKNOWN / SKIPPED / AMBIGUOUS. NOT_ASKED는 쓰지 않는다
     value: str | None = None  # AMBIGUOUS일 때는 발화에 있는 후보들만
     evidence: str  # 환자 발화 원문 중 이 값의 근거가 된 구간. 비우면 안 된다
@@ -48,5 +49,5 @@ class Extractor(Protocol):
     prompt_version: str
 
     def extract(
-        self, utterance: str, asked_axis: Axis | None, history: Sequence[Turn] = ()
+        self, utterance: str, asked_axis: Axis | PostAxis | None, history: Sequence[Turn] = ()
     ) -> TurnExtraction: ...

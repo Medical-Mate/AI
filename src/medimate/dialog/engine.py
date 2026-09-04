@@ -1,8 +1,9 @@
-"""진료 전 카드 문진 — 상태 기계.
+"""문진 — 상태 기계. 진료 전·후 공통.
 
 매 턴: 환자 발화 → Extractor로 축 갱신 → 카드 반영 → 다음 질문 선택.
 종료를 강제하지 않는다. 언제 끝내도 그 시점 카드가 결과다.
 
+무엇을 묻는지(축·질문·카드 타입)는 `InterviewSpec`이 정한다. 기본은 진료 전(PREVISIT_SPEC).
 상태는 `SessionState`(직렬화 가능) 하나에 모두 들어 있다. 무상태 API는
 요청마다 `Session.from_state`로 복원하고 `to_state`로 돌려준다.
 """
@@ -10,23 +11,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import StrEnum
 
-from medimate.dialog.questions import (
-    ASK_ORDER,
-    CLARIFY,
-    CLOSING,
-    EMPTY_INPUT,
-    MESSAGE_QUESTION,
-    NO_MESSAGE,
-    OPENING,
-    OPENING_WITH_SITE,
-    QUESTIONS,
-    SITE_PRESELECTED,
-    TRUNCATED_NOTICE,
-)
+from medimate.dialog.spec import PREVISIT_SPEC, SPECS, InterviewSpec
 from medimate.dialog.state import HistoryTurn, SessionState
 from medimate.llm.base import Extractor, TurnExtraction
-from medimate.schema.card import Axis, FieldStatus, PreVisitCard, Provenance
+from medimate.schema.card import FieldStatus, InterviewCard, Provenance
 
 
 @dataclass
@@ -34,7 +24,7 @@ class TurnLog:
     """판정 로그 한 줄. 경계 준수의 감사 기록 (docs/ai-design.md §7)."""
 
     turn: int
-    asked_axis: Axis | None
+    asked_axis: StrEnum | None
     utterance: str
     extraction: TurnExtraction
 
@@ -44,7 +34,7 @@ class Limits:
     """세션 안전 상한. 정상 문진은 닿지 않는다 — 걸리면 버그·공격이다.
 
     - max_utterance_chars: 팀 합의 임시값 300 (앱 카운터·백엔드 계약과 같은 값). 이중 방어
-    - max_turns: 정상 최대 18(첫 발화 1 + 8축 + 확인 8 + 전할 말 1). 20은 안전 정지선
+    - max_turns: 진료 전 정상 최대 18(첫 발화 1 + 8축 + 확인 8 + 전할 말 1). 20은 안전 정지선
     - max_session_tokens: 이 세션의 LLM 입력+출력 누적 상한. Extractor가 usage를 주면 적용
     """
 
@@ -59,10 +49,11 @@ class Limits:
 @dataclass
 class Session:
     extractor: Extractor
-    card: PreVisitCard = field(default_factory=PreVisitCard)
+    spec: InterviewSpec = PREVISIT_SPEC
+    card: InterviewCard | None = None  # None이면 spec.card_type()으로 만든다
     logs: list[TurnLog] = field(default_factory=list)
-    asked_axis: Axis | None = None
-    clarified: set[Axis] = field(default_factory=set)  # 확인 질문은 축당 한 번
+    asked_axis: StrEnum | None = None
+    clarified: set[StrEnum] = field(default_factory=set)  # 확인 질문은 축당 한 번
     ended: bool = False
     limits: Limits = field(default_factory=Limits)
     end_reason: str | None = None  # None | "stop" | "complete" | "max_turns" | "budget"
@@ -73,6 +64,8 @@ class Session:
     carried_tokens: int = 0
 
     def __post_init__(self) -> None:
+        if self.card is None:
+            self.card = self.spec.card_type()
         if self.card.provenance is None:
             self.card.provenance = Provenance(
                 prompt_version=self.extractor.prompt_version,
@@ -82,14 +75,23 @@ class Session:
     # --- 직렬화 --------------------------------------------------------
     @classmethod
     def from_state(
-        cls, extractor: Extractor, state: SessionState, limits: Limits | None = None
+        cls,
+        extractor: Extractor,
+        state: SessionState,
+        limits: Limits | None = None,
+        spec: InterviewSpec | None = None,
     ) -> Session:
         """백엔드가 들고 있던 상태로 세션을 복원한다. 판정 로그는 복원하지 않는다."""
+        spec = spec or SPECS[state.spec]
+        # 상태의 카드는 공통 뼈대로 들어오므로(extra 보존) 명세의 카드 타입으로 다시 읽는다
+        card = spec.card_type.model_validate(state.card.model_dump())
+        ax = spec.axis
         return cls(
             extractor=extractor,
-            card=state.card,
-            asked_axis=state.asked_axis,
-            clarified=set(state.clarified),
+            spec=spec,
+            card=card,
+            asked_axis=ax(state.asked_axis) if state.asked_axis else None,
+            clarified={ax(a) for a in state.clarified},
             ended=state.ended,
             end_reason=state.end_reason,
             history=list(state.history),
@@ -100,10 +102,13 @@ class Session:
         )
 
     def to_state(self) -> SessionState:
+        # 카드는 공통 뼈대 타입으로 낸다(extra 보존). 하위 카드 인스턴스를 그대로 넣으면
+        # 응답 직렬화가 선언 타입(InterviewCard) 기준으로 잘라 site_selection 등이 사라진다
         return SessionState(
-            card=self.card,
-            asked_axis=self.asked_axis,
-            clarified=sorted(self.clarified),
+            spec=self.spec.name,
+            card=InterviewCard.model_validate(self.card.model_dump()),
+            asked_axis=self.asked_axis.value if self.asked_axis else None,
+            clarified=sorted(a.value for a in self.clarified),
             history=list(self.history),
             turn=self.turn,
             message_asked=self.message_asked,
@@ -116,37 +121,38 @@ class Session:
     def preselect_site(self, label: str) -> None:
         """인체도에서 짚은 부위로 SITE를 채운다. evidence는 발화가 아니라 UI 선택임을 표시.
 
-        온톨로지 노드 ID 연결은 #5에서. 지금은 라벨 문자열만 받는다.
+        부위 축이 없는 명세(진료 후)에서는 아무 일도 하지 않는다.
         """
         label = label.strip()
-        if not label:
+        if not label or self.spec.site_axis is None:
             return
-        entry = self.card.axes[Axis.SITE]
+        entry = self.card.axes[self.spec.site_axis]
         entry.status = FieldStatus.FILLED
         entry.value = label
-        entry.evidence.append(f"{SITE_PRESELECTED} {label}")
+        entry.evidence.append(f"{self.spec.site_preselected_tag} {label}")
 
     def opening(self) -> str:
-        site = self.card.axes[Axis.SITE]
-        if site.status == FieldStatus.FILLED and site.value:
-            return OPENING_WITH_SITE.format(site=site.value)
-        return OPENING
+        if self.spec.site_axis is not None and self.spec.opening_with_site:
+            site = self.card.axes[self.spec.site_axis]
+            if site.status == FieldStatus.FILLED and site.value:
+                return self.spec.opening_with_site.format(site=site.value)
+        return self.spec.opening
 
     def step(self, utterance: str) -> str:
         """환자 발화 하나를 처리하고 다음 발화(질문 또는 마무리)를 돌려준다."""
         if self.ended:
-            return CLOSING
+            return self.spec.closing
 
         # 빈 입력은 LLM을 부르지 않는다. 턴으로도 세지 않는다
         utterance = utterance.strip()
         if not utterance:
-            return EMPTY_INPUT + " " + self._current_question()
+            return self.spec.empty_input + " " + self._current_question()
 
         # 길이 상한 — 앱·백엔드가 먼저 막지만 이중 방어. 잘린 사실을 사용자에게 알린다
         notice = ""
         if len(utterance) > self.limits.max_utterance_chars:
             utterance = utterance[: self.limits.max_utterance_chars]
-            notice = TRUNCATED_NOTICE + " "
+            notice = self.spec.truncated_notice + " "
 
         # 턴 상한 — 정상 흐름은 닿지 않는다
         if self.turn >= self.limits.max_turns:
@@ -177,27 +183,27 @@ class Session:
 
         # 마지막 질문의 답: 원문을 카드에 남기고 끝낸다 (축 반영은 위 _apply에서 이미 됐다)
         if self.message_asked:
-            if utterance.rstrip(".!~ ") not in NO_MESSAGE:
+            if utterance.rstrip(".!~ ") not in self.spec.no_message:
                 self.card.patient_message = utterance
             return notice + self.end("complete")
 
         nxt = self._next_axis()
         if nxt is None:
-            # 8축이 닫혔다. 끝내기 전에 의사에게 전할 말을 한 번 묻는다
+            # 축이 모두 닫혔다. 끝내기 전에 전할 말을 한 번 묻는다
             self.asked_axis = None
             self.message_asked = True
-            return notice + MESSAGE_QUESTION
+            return notice + self.spec.message_question
         self.asked_axis = nxt
         if self.card.axes[nxt].status == FieldStatus.AMBIGUOUS:
             self.clarified.add(nxt)
-            return notice + CLARIFY[nxt]
-        return notice + QUESTIONS[nxt]
+            return notice + self.spec.clarify[nxt]
+        return notice + self.spec.questions[nxt]
 
     def end(self, reason: str = "stop") -> str:
         self.ended = True
         self.end_reason = reason
         self.asked_axis = None
-        return CLOSING
+        return self.spec.closing
 
     # ------------------------------------------------------------------
     def _remember(self, question: str, utterance: str) -> None:
@@ -211,10 +217,10 @@ class Session:
 
     def _current_question(self) -> str:
         if self.asked_axis is None:
-            return MESSAGE_QUESTION if self.message_asked else self.opening()
+            return self.spec.message_question if self.message_asked else self.opening()
         if self.asked_axis in self.clarified:
-            return CLARIFY[self.asked_axis]
-        return QUESTIONS[self.asked_axis]
+            return self.spec.clarify[self.asked_axis]
+        return self.spec.questions[self.asked_axis]
 
     def _session_tokens(self) -> int:
         usage = getattr(self.extractor, "usage", None)
@@ -231,40 +237,46 @@ class Session:
         for u in ext.updates:
             if not u.evidence.strip():
                 continue  # 근거 없는 값은 카드에 넣지 않는다
-            entry = self.card.axes[u.axis]
-            if u.axis == Axis.SITE and self._preselected_site() and u.status != FieldStatus.FILLED:
+            if u.axis not in self.card.axes:
+                continue  # 다른 문진의 축(진료 전 축이 진료 후 카드에)은 버린다. 스키마 경계
+            axis = self.spec.axis(u.axis)
+            entry = self.card.axes[axis]
+            is_site = axis == self.spec.site_axis
+            if is_site and self._preselected_site() and u.status != FieldStatus.FILLED:
                 # 부위는 인체도에서 이미 골랐다. 모델이 "아래쪽"만 보고 애매하다 해도
-                # 다시 묻지 않는다.
-                # 환자가 더 좁혀 말하면(FILLED) 받아서 라벨 뒤에 붙인다
+                # 다시 묻지 않는다. 환자가 더 좁혀 말하면(FILLED) 받아서 라벨 뒤에 붙인다
                 continue
             entry.status = u.status
             if u.status == FieldStatus.FILLED:
-                entry.value = self._merge_site_label(u.axis, entry, u.value)
+                entry.value = self._merge_site_label(axis, u.value)
             entry.evidence.append(u.evidence)
 
     def _preselected_site(self) -> str | None:
         """인체도에서 짚은 부위 라벨. evidence의 [부위 선택] 표시로 구분한다."""
-        for ev in self.card.axes[Axis.SITE].evidence:
-            if ev.startswith(SITE_PRESELECTED):
-                return ev[len(SITE_PRESELECTED) :].strip() or None
+        if self.spec.site_axis is None:
+            return None
+        tag = self.spec.site_preselected_tag
+        for ev in self.card.axes[self.spec.site_axis].evidence:
+            if ev.startswith(tag):
+                return ev[len(tag) :].strip() or None
         return None
 
-    def _merge_site_label(self, axis: Axis, entry, value: str | None) -> str | None:
+    def _merge_site_label(self, axis: StrEnum, value: str | None) -> str | None:
         """SITE에 부위가 미리 선택돼 있으면 환자의 세부 표현("아래쪽 중앙")이 라벨을 지우지 않게
         앞에 붙인다. 모델은 선택된 부위를 모르므로 엔진이 지킨다."""
-        if axis != Axis.SITE or not value:
+        if axis != self.spec.site_axis or not value:
             return value
         label = self._preselected_site()
         if label and label not in value:
             return f"{label} {value}"
         return value
 
-    def _next_axis(self) -> Axis | None:
+    def _next_axis(self) -> StrEnum | None:
         # 확인이 필요한 축이 먼저, 그 다음 아직 안 물은 축
-        for a in ASK_ORDER:
+        for a in self.spec.ask_order:
             if self.card.axes[a].status == FieldStatus.AMBIGUOUS and a not in self.clarified:
                 return a
-        for a in ASK_ORDER:
+        for a in self.spec.ask_order:
             if self.card.axes[a].status == FieldStatus.NOT_ASKED:
                 return a
         return None

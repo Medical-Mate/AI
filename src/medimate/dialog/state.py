@@ -12,16 +12,17 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from medimate.schema.card import Axis, PreVisitCard
+from medimate.schema.card import InterviewCard
 
 # (직전 질문, 환자 답). Extractor에 넘기는 최근 대화
 HistoryTurn = tuple[str, str]
 
 
 class SessionState(BaseModel):
-    card: PreVisitCard = Field(default_factory=PreVisitCard)
-    asked_axis: Axis | None = None  # 직전에 물은 축. None이면 첫 발화 대기
-    clarified: list[Axis] = Field(default_factory=list)  # 확인 질문을 이미 한 축(축당 한 번)
+    spec: str = "previsit"  # 어느 문진인가. dialog/spec.py SPECS 키 (previsit | postvisit)
+    card: InterviewCard = Field(default_factory=InterviewCard)
+    asked_axis: str | None = None  # 직전에 물은 축(값 문자열). None이면 첫 발화 대기
+    clarified: list[str] = Field(default_factory=list)  # 확인 질문을 이미 한 축(축당 한 번)
     history: list[HistoryTurn] = Field(default_factory=list)  # 최근 N턴만 유지
     turn: int = 0  # 처리한 발화 수(빈 입력은 세지 않는다)
     message_asked: bool = False  # 8축 뒤 "전하고 싶은 말" 질문을 냈는가. 답이 오면 종료
