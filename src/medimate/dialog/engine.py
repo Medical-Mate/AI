@@ -2,6 +2,9 @@
 
 매 턴: 환자 발화 → Extractor로 축 갱신 → 카드 반영 → 다음 질문 선택.
 종료를 강제하지 않는다. 언제 끝내도 그 시점 카드가 결과다.
+
+상태는 `SessionState`(직렬화 가능) 하나에 모두 들어 있다. 무상태 API는
+요청마다 `Session.from_state`로 복원하고 `to_state`로 돌려준다.
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ from medimate.dialog.questions import (
     QUESTIONS,
     TRUNCATED_NOTICE,
 )
+from medimate.dialog.state import HistoryTurn, SessionState
 from medimate.llm.base import Extractor, TurnExtraction
 from medimate.schema.card import Axis, FieldStatus, PreVisitCard, Provenance
 
@@ -58,13 +62,50 @@ class Session:
     ended: bool = False
     limits: Limits = field(default_factory=Limits)
     end_reason: str | None = None  # None | "stop" | "complete" | "max_turns" | "budget"
+    history: list[HistoryTurn] = field(default_factory=list)  # 최근 N턴의 (질문, 답)
+    turn: int = 0  # 처리한 발화 수. logs 길이와 같지만 복원 시 logs는 비어 있다
+    # 이전 요청들에서 쓴 토큰(상태로 넘어온 값). 현재 extractor.usage는 여기 더해서 본다
+    carried_tokens: int = 0
 
     def __post_init__(self) -> None:
-        self.card.provenance = Provenance(
-            prompt_version=self.extractor.prompt_version,
-            model_id=self.extractor.model_id,
+        if self.card.provenance is None:
+            self.card.provenance = Provenance(
+                prompt_version=self.extractor.prompt_version,
+                model_id=self.extractor.model_id,
+            )
+
+    # --- 직렬화 --------------------------------------------------------
+    @classmethod
+    def from_state(
+        cls, extractor: Extractor, state: SessionState, limits: Limits | None = None
+    ) -> Session:
+        """백엔드가 들고 있던 상태로 세션을 복원한다. 판정 로그는 복원하지 않는다."""
+        return cls(
+            extractor=extractor,
+            card=state.card,
+            asked_axis=state.asked_axis,
+            clarified=set(state.clarified),
+            ended=state.ended,
+            end_reason=state.end_reason,
+            history=list(state.history),
+            turn=state.turn,
+            carried_tokens=state.session_tokens,
+            limits=limits or Limits(),
         )
 
+    def to_state(self) -> SessionState:
+        return SessionState(
+            card=self.card,
+            asked_axis=self.asked_axis,
+            clarified=sorted(self.clarified),
+            history=list(self.history),
+            turn=self.turn,
+            session_tokens=self._session_tokens(),
+            ended=self.ended,
+            end_reason=self.end_reason,
+        )
+
+    # --- 대화 ----------------------------------------------------------
     def opening(self) -> str:
         return OPENING
 
@@ -85,15 +126,18 @@ class Session:
             notice = TRUNCATED_NOTICE + " "
 
         # 턴 상한 — 정상 흐름은 닿지 않는다
-        if len(self.logs) >= self.limits.max_turns:
+        if self.turn >= self.limits.max_turns:
             return self.end("max_turns")
 
         # 세션 토큰 예산 — 어댑터가 usage를 노출하면 적용
         if self._session_tokens() >= self.limits.max_session_tokens:
             return self.end("budget")
 
-        ext = self.extractor.extract(utterance, self.asked_axis, self._history())
-        self.logs.append(TurnLog(len(self.logs) + 1, self.asked_axis, utterance, ext))
+        asked_question = self._current_question()
+        ext = self.extractor.extract(utterance, self.asked_axis, self.history)
+        self.turn += 1
+        self.logs.append(TurnLog(self.turn, self.asked_axis, utterance, ext))
+        self._remember(asked_question, utterance)
         self._apply(ext)
 
         # 물었는데 닫히지 않은 축은 SKIPPED로 닫는다. 같은 질문을 반복하지 않는다.
@@ -123,21 +167,14 @@ class Session:
         return CLOSING
 
     # ------------------------------------------------------------------
-    def _history(self) -> list[tuple[str, str]]:
-        """최근 N턴의 (질문, 답). 각 로그의 asked_axis로 그때 낸 질문을 복원한다."""
+    def _remember(self, question: str, utterance: str) -> None:
+        """이번 턴의 (질문, 답)을 이력에 넣고 최근 N턴만 남긴다. 요약 생성 없음."""
         n = self.limits.history_turns
         if n <= 0:
-            return []
-        out = []
-        for log in self.logs[-n:]:
-            if log.asked_axis is None:
-                q = OPENING
-            elif log.asked_axis in self.clarified and log is self.logs[-1]:
-                q = CLARIFY[log.asked_axis]
-            else:
-                q = QUESTIONS[log.asked_axis]
-            out.append((q, log.utterance))
-        return out
+            self.history = []
+            return
+        self.history.append((question, utterance))
+        del self.history[:-n]
 
     def _current_question(self) -> str:
         if self.asked_axis is None:
@@ -149,8 +186,9 @@ class Session:
     def _session_tokens(self) -> int:
         usage = getattr(self.extractor, "usage", None)
         if usage is None:
-            return 0
-        return int(getattr(usage, "input_tokens", 0)) + int(getattr(usage, "output_tokens", 0))
+            return self.carried_tokens
+        now = int(getattr(usage, "input_tokens", 0)) + int(getattr(usage, "output_tokens", 0))
+        return self.carried_tokens + now
 
     # ------------------------------------------------------------------
     def _apply(self, ext: TurnExtraction) -> None:
