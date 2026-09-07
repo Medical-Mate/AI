@@ -1,3 +1,4 @@
+# ruff: noqa: E501  — 예시 JSON 한 줄은 의도적으로 길다(모델이 그대로 따라 쓰게)
 """소형(온디바이스) 모델용 프롬프트 — `extract-small-v1`.
 
 Terra용 `prompt.py`(extract-v3)는 스키마 전문과 규칙 11개를 담아 1.1K 토큰이다. 0.6~2B 모델은

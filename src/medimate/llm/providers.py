@@ -14,9 +14,9 @@ from dataclasses import dataclass, field
 from medimate.llm import prompt as prompt_v3
 from medimate.llm import prompt_small
 from medimate.llm.base import Turn, TurnExtraction
+from medimate.schema.card import Axis
 
 PROMPTS = {"v3": prompt_v3, "small": prompt_small}  # 프롬프트 계열. small은 온디바이스 소형 모델용
-from medimate.schema.card import Axis
 
 # $/1M tokens (input, output). 지출 가드용. 공급자 가격 페이지에서 확인 후 갱신.
 PRICES: dict[str, tuple[float, float]] = {
