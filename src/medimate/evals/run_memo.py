@@ -33,8 +33,13 @@ CASES = ROOT / "evals" / "postvisit_cases.jsonl"
 RESULTS = ROOT / "evals" / "results" / "memo"
 
 
-def load_cases() -> list[dict]:
-    return [json.loads(ln) for ln in CASES.read_text(encoding="utf-8").splitlines() if ln.strip()]
+def load_cases(path: Path = CASES) -> list[dict]:
+    cases = [json.loads(ln) for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    ids = [c["id"] for c in cases]
+    dups = sorted({i for i in ids if ids.count(i) > 1})
+    if dups:
+        raise SystemExit(f"케이스 ID 중복: {dups}")
+    return cases
 
 
 class DryRunClassifier:
@@ -195,14 +200,21 @@ def main() -> None:
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--report", type=Path)
     ap.add_argument("--yes", action="store_true")
+    ap.add_argument(
+        "--cases",
+        type=Path,
+        default=CASES,
+        help="케이스 파일(기본 postvisit_cases.jsonl). 새 세트는 결과 파일명에 stem이 붙는다",
+    )
     a = ap.parse_args()
-    cases = load_cases()
+    cases = load_cases(a.cases)
+    suffix = "" if a.cases == CASES else f"-{a.cases.stem}"
     if a.report:
         rows = [json.loads(ln) for ln in a.report.read_text(encoding="utf-8").splitlines() if ln]
         report(rows, cases)
         return
     if a.dry_run:
-        rows = run(DryRunClassifier(), cases, RESULTS / "dry-run.jsonl")
+        rows = run(DryRunClassifier(), cases, RESULTS / f"dry-run{suffix}.jsonl")
         report(rows, cases)
         return
     if not (a.provider and a.model):
@@ -213,7 +225,7 @@ def main() -> None:
     if not a.yes and input("진행? [y/N] ").strip().lower() != "y":
         return
     clf = LLMMemoClassifier(a.provider, a.model, budget_usd=a.budget)
-    rows = run(clf, cases, RESULTS / f"{a.model.replace('/', '-')}.jsonl")
+    rows = run(clf, cases, RESULTS / f"{a.model.replace('/', '-')}{suffix}.jsonl")
     report(rows, cases)
     print(f"\n실제 비용 ${clf.ex.usage.cost_usd(a.model):.3f}")
 
