@@ -124,7 +124,7 @@ def run(extractor, cases, out_path: Path) -> list[dict]:
     return rows
 
 
-def report(rows: list[dict], cases) -> None:
+def report(rows: list[dict], cases, guard=None) -> None:
     lexicon = load_lexicon()
     by_id = {c["id"]: c for c in cases}
     per_case: dict[str, list] = {}
@@ -137,6 +137,12 @@ def report(rows: list[dict], cases) -> None:
             parsed = _parse_json(row["text"])
         except Exception as e:  # noqa: BLE001
             err = f"{type(e).__name__}: {str(e)[:120]}"
+        if guard is not None and parsed is not None:
+            # 런타임 가드를 거친 결과로 채점한다 — 온디바이스 프로필에서 카드에 실제로 들어가는 것
+            from medimate.dialog.guard import guard_extraction
+
+            axis = Axis(c["asked_axis"]) if c["asked_axis"] else None
+            parsed = guard_extraction(parsed, c["utterance"], axis, guard).extraction
         sc = score(c, row["text"], parsed, err, lexicon)
         per_case.setdefault(c["id"], []).append(sc)
         for k, v in sc.checks.items():
@@ -194,13 +200,21 @@ def main() -> None:
     ap.add_argument("--report", type=Path, help="저장된 결과를 재채점만")
     ap.add_argument("--yes", action="store_true", help="예상 비용 확인 생략")
     ap.add_argument("--prompt", choices=["v3", "small"], default="v3", help="프롬프트 계열")
+    ap.add_argument(
+        "--guard", choices=["server", "ondevice"], help="재채점 시 런타임 가드 적용(호출 0)"
+    )
     a = ap.parse_args()
 
     cases = load_cases()
 
     if a.report:
         rows = [json.loads(ln) for ln in a.report.read_text(encoding="utf-8").splitlines() if ln]
-        report(rows, cases)
+        guard = None
+        if a.guard:
+            from medimate.dialog.guard import GuardConfig
+
+            guard = GuardConfig.ondevice() if a.guard == "ondevice" else GuardConfig()
+        report(rows, cases, guard)
         return
 
     if a.dry_run:
