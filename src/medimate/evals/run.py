@@ -100,7 +100,9 @@ def run(extractor, cases, out_path: Path) -> list[dict]:
                     continue
                 try:
                     hist = [tuple(t) for t in c.get("history", [])]
+                    t0 = time.perf_counter()
                     r = _call_with_retry(extractor, c["utterance"], axis, hist)
+                    latency = round(time.perf_counter() - t0, 3)
                 except BudgetExceeded as e:
                     print(f"\n!! {e} — 중단. 지금까지 결과는 저장됨", file=sys.stderr)
                     return rows
@@ -113,6 +115,7 @@ def run(extractor, cases, out_path: Path) -> list[dict]:
                     "parse_error": r.error,
                     "input_tokens": r.input_tokens,
                     "output_tokens": r.output_tokens,
+                    "latency_s": latency,  # 호출 왕복 시간. 온디바이스 후보 속도 비교용
                 }
                 f.write(json.dumps(row, ensure_ascii=False) + "\n")
                 rows.append(row)
@@ -150,6 +153,12 @@ def report(rows: list[dict], cases) -> None:
 
     print(f"\n== {model} ==")
     print(f"호출 {n_calls}  입력 {ti} tok  출력 {to} tok  비용 ${(ti * i + to * o) / 1e6:.3f}")
+    lat = sorted(r["latency_s"] for r in rows if r.get("latency_s") is not None)
+    if lat:
+        p50, p90 = lat[len(lat) // 2], lat[int(len(lat) * 0.9)]
+        per_call = to / max(n_calls, 1)
+        print(f"지연 p50 {p50:.2f}s  p90 {p90:.2f}s  최대 {lat[-1]:.2f}s", end="  ")
+        print(f"(출력 {per_call:.0f} tok/호출)")
     print(f"안전 위반(D4/D5/D6) 건수: {safety_viol}   ← 0이어야 한다")
     print(f"전체 통과: {quality_pass}/{n_calls}")
     print("검사별 실패:", dict(check_fail) or "없음")
