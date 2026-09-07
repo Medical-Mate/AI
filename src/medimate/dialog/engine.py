@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -70,6 +71,7 @@ class Session:
     # True면 첫 자유 발화 없이 첫 축 질문부터 시작한다
     # (온디바이스: 소형 모델은 다축 첫 발화를 못 뽑는다)
     skip_open_ended: bool = False
+    profile: str = "server"  # server | ondevice. 상태로 왕복된다
 
     def __post_init__(self) -> None:
         if self.card is None:
@@ -94,10 +96,14 @@ class Session:
         # 상태의 카드는 공통 뼈대로 들어오므로(extra 보존) 명세의 카드 타입으로 다시 읽는다
         card = spec.card_type.model_validate(state.card.model_dump())
         ax = spec.axis
+        ondevice = state.profile == "ondevice"
         return cls(
             extractor=extractor,
             spec=spec,
             card=card,
+            profile=state.profile,
+            guard=GuardConfig.ondevice() if ondevice else GuardConfig(),
+            skip_open_ended=ondevice,
             asked_axis=ax(state.asked_axis) if state.asked_axis else None,
             clarified={ax(a) for a in state.clarified},
             ended=state.ended,
@@ -114,6 +120,7 @@ class Session:
         # 응답 직렬화가 선언 타입(InterviewCard) 기준으로 잘라 site_selection 등이 사라진다
         return SessionState(
             spec=self.spec.name,
+            profile=self.profile,
             card=InterviewCard.model_validate(self.card.model_dump()),
             asked_axis=self.asked_axis.value if self.asked_axis else None,
             clarified=sorted(a.value for a in self.clarified),
@@ -126,18 +133,27 @@ class Session:
         )
 
     # --- 대화 ----------------------------------------------------------
-    def preselect_site(self, label: str) -> None:
-        """인체도에서 짚은 부위로 SITE를 채운다. evidence는 발화가 아니라 UI 선택임을 표시.
+    SELECTED_TAG = "[선택]"  # 폼·칩으로 고른 값의 evidence 표시. 발화가 아님을 드러낸다
 
-        부위 축이 없는 명세(진료 후)에서는 아무 일도 하지 않는다.
+    def prefill(self, axis: StrEnum, value: str, tag: str | None = None) -> None:
+        """폼·칩(선택지)으로 받은 값을 축에 넣는다. LLM을 부르지 않는다.
+
+        evidence는 발화가 아니라 UI 선택임을 태그로 표시한다. 이미 값이 있으면 덮어쓴다
+        (앱의 "이전 답 고치기"가 이 경로를 쓴다).
         """
-        label = label.strip()
-        if not label or self.spec.site_axis is None:
+        value = value.strip()
+        if not value or axis not in self.card.axes:
             return
-        entry = self.card.axes[self.spec.site_axis]
+        entry = self.card.axes[axis]
         entry.status = FieldStatus.FILLED
-        entry.value = label
-        entry.evidence.append(f"{self.spec.site_preselected_tag} {label}")
+        entry.value = value
+        entry.evidence.append(f"{tag or self.SELECTED_TAG} {value}")
+
+    def preselect_site(self, label: str) -> None:
+        """인체도에서 짚은 부위로 SITE를 채운다. 부위 축이 없는 명세(진료 후)에서는 무시."""
+        if self.spec.site_axis is None:
+            return
+        self.prefill(self.spec.site_axis, label, self.spec.site_preselected_tag)
 
     def _ensure_started(self) -> None:
         """skip_open_ended면 첫 자유 발화 없이 첫 축을 정한다.
@@ -157,15 +173,31 @@ class Session:
                 return self.spec.opening_with_site.format(site=site.value)
         return self.spec.opening
 
-    def step(self, utterance: str) -> str:
-        """환자 발화 하나를 처리하고 다음 발화(질문 또는 마무리)를 돌려준다."""
+    def step(
+        self,
+        utterance: str,
+        extraction: TurnExtraction | None = None,
+        selections: Sequence[tuple[StrEnum, str]] = (),
+    ) -> str:
+        """한 턴을 처리하고 다음 발화(질문 또는 마무리)를 돌려준다.
+
+        - utterance만: 서버 Extractor로 추출 (기본)
+        - extraction 주어짐: 폰이 이미 추출한 JSON. Extractor를 부르지 않고 가드만.
+          근거 검증을 위해 utterance(원문)도 함께 와야 한다
+        - selections: 칩·폼으로 고른 (축, 값). LLM 없이 카드에 바로. utterance 없이 selections만
+          와도
+          한 턴으로 처리해 다음 질문을 정한다
+        """
         if self.ended:
             return self.spec.closing
         self._ensure_started()
 
-        # 빈 입력은 LLM을 부르지 않는다. 턴으로도 세지 않는다
+        for axis, value in selections:
+            self.prefill(axis, value)
+
+        # 빈 입력은 LLM을 부르지 않는다. 턴으로도 세지 않는다 (선택지만 온 턴은 예외 — 아래)
         utterance = utterance.strip()
-        if not utterance:
+        if not utterance and not selections:
             return self.spec.empty_input + " " + self._current_question()
 
         # 길이 상한 — 앱·백엔드가 먼저 막지만 이중 방어. 잘린 사실을 사용자에게 알린다
@@ -183,12 +215,18 @@ class Session:
             return self.end("budget")
 
         asked_question = self._current_question()
-        raw = self.extractor.extract(utterance, self.asked_axis, self.history)
+        if extraction is not None:
+            raw = extraction  # 폰이 뽑은 것. 서버는 부르지 않는다
+        elif utterance:
+            raw = self.extractor.extract(utterance, self.asked_axis, self.history)
+        else:
+            raw = TurnExtraction()  # 선택지만 온 턴
         g = guard_extraction(raw, utterance, self.asked_axis, self.guard)
         ext = g.extraction
         self.turn += 1
         self.logs.append(TurnLog(self.turn, self.asked_axis, utterance, ext, raw, g.dropped))
-        self._remember(asked_question, utterance)
+        if utterance:
+            self._remember(asked_question, utterance)
         self._apply(ext)
 
         # 물었는데 닫히지 않은 축은 SKIPPED로 닫는다. 같은 질문을 반복하지 않는다.
