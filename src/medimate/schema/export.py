@@ -42,6 +42,12 @@ def to_backend_payload(card: InterviewCard) -> dict[str, Any]:
         out["widening"] = [w.model_dump() for w in card.widening]
         out["site_comparison"] = card.site_comparison  # same / different / null. 판정 아님
         out["document_codes"] = card.document_codes  # 백로그 #22. 지금은 항상 []
+        # 메모 원문·분류되지 않은 문장·재방문 날짜(결정론)·진료 메타. 앱 1q 화면이 그대로 그린다
+        out["memo"] = card.memo
+        out["unsorted"] = card.unsorted
+        out["follow_up_date"] = card.follow_up_date.model_dump() if card.follow_up_date else None
+        out["visit_date"] = card.visit_date
+        out["clinic"] = card.clinic
     return out
 
 

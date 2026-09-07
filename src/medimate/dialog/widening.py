@@ -58,11 +58,11 @@ def find_terms(onto: Ontology, text: str) -> list[tuple[str, Node]]:
 
 
 def widen_card(card: PostVisitCard, onto: Ontology) -> list[WideningNote]:
-    """heard_diagnosis의 값·근거에서 구조 용어를 찾아 부위를 병기한다.
+    """findings(소견)의 값·근거에서 구조 용어를 찾아 부위를 병기한다.
 
     카드를 갱신하고 결과를 돌려준다.
     """
-    entry = card.axes[PostAxis.HEARD_DIAGNOSIS]
+    entry = card.axes[PostAxis.FINDINGS]
     if entry.status != FieldStatus.FILLED:
         card.widening = []
         return []

@@ -50,10 +50,15 @@ class Usage:
         return (self.input_tokens * i + self.output_tokens * o) / 1_000_000
 
 
-def _parse_json(text: str) -> TurnExtraction:
+def _parse_json_text(text: str) -> dict:
+    """모델 원문 → dict. 코드펜스를 벗긴다. 스키마 검증은 호출자가 한다."""
     t = text.strip()
     t = re.sub(r"^```(?:json)?\s*|\s*```$", "", t)
-    return TurnExtraction.model_validate(json.loads(t))
+    return json.loads(t)
+
+
+def _parse_json(text: str) -> TurnExtraction:
+    return TurnExtraction.model_validate(_parse_json_text(text))
 
 
 @dataclass
@@ -77,6 +82,8 @@ class LLMExtractor:
     budget_usd: float = 0.50  # 모델당 상한. 넘으면 호출 전에 예외
     prompt_family: str = "v3"  # PROMPTS 키. Terra는 v3, 온디바이스 후보는 small
     prompt_version: str = ""  # 비우면 계열의 PROMPT_VERSION
+    # local 공급자용 요청별 JSON 스키마. None이면 MEDIMATE_LOCAL_JSON_SCHEMA 파일을 쓴다
+    response_schema: dict | None = None
     usage: Usage = field(default_factory=Usage)
     _client: object = field(default=None, repr=False)
 
@@ -167,17 +174,21 @@ class LLMExtractor:
         # 스키마 강제는 요청별 response_format으로 넘긴다. 서버 전역 --json-schema-file은
         # 채팅 템플릿 토큰(<|im_start|>)까지 문법으로 검사해 400이 난다
         kwargs: dict = {}
-        schema_path = os.getenv(
-            "MEDIMATE_LOCAL_JSON_SCHEMA", "evals/ondevice/turn_extraction.schema.json"
-        )
-        if schema_path and os.path.exists(schema_path):
-            import json as _json
+        schema = self.response_schema
+        if schema is None:
+            schema_path = os.getenv(
+                "MEDIMATE_LOCAL_JSON_SCHEMA", "evals/ondevice/turn_extraction.schema.json"
+            )
+            if schema_path and os.path.exists(schema_path):
+                import json as _json
 
-            with open(schema_path, encoding="utf-8") as f:
-                kwargs["response_format"] = {
-                    "type": "json_schema",
-                    "json_schema": {"name": "turn_extraction", "schema": _json.load(f)},
-                }
+                with open(schema_path, encoding="utf-8") as f:
+                    schema = _json.load(f)
+        if schema is not None:
+            kwargs["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {"name": "response", "schema": schema},
+            }
         r = self._client.chat.completions.create(
             model=self.model_id.removeprefix(LOCAL_PREFIX),
             messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],

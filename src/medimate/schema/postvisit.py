@@ -1,13 +1,15 @@
-"""진료 후 요약 카드 — 환자가 읽는다 (챗봇②, 이슈 #9).
+"""진료 후 기록 카드 — 환자가 읽는다 (챗봇②, 이슈 #9).
 
-핵심은 "의사가 한 말 메모". 진료실에서 나온 직후 환자가 들은 말을 문답으로 받아
-**환자 표현 그대로** 정리해 둔다. 요약이 아니라 기록이다.
+와이어프레임 1p·1q(2026-09-07 확인): 문답이 아니라 **자유 메모 하나**를 받아
+AI가 **4묶음으로 나눈다**.
+"진료실에서 들은 말을 그대로 남겨두세요" → "AI가 메모를 4가지로 나눴어요".
+그래서 축은 4개이고, 값은 환자가 쓴 **문장 원문 그대로**다. 요약·정리를 하지 않는다.
 
 지키는 선 (구조로):
-- 병명은 `heard_diagnosis` 한 축에만 들어가고, 그 축의 정의가 "환자가 옮긴 말"이다.
-  AI가 추론한 병명이 들어올 자리가 없다.
-- 약 용법을 일반 지식으로 채우지 않는다. 채점 D5(발화에 없는 숫자 금지)가 잡는다.
-- 설명·해석 자리는 없다. 설명문 인용(B3)은 라이선스 회신 후 별도 필드로.
+- 병명은 `findings`(들은 소견)에만, 그것도 환자가 적은 문장 그대로. AI가 덧붙이지 않는다
+- 약 용법·검사 결과를 일반 지식으로 채우지 않는다. 문장 분류만 한다
+- 재방문 날짜는 LLM이 아니라 진료일 기준 결정론 계산(dialog/followup.py)
+- 어느 묶음에도 안 들어가는 문장은 `unsorted`에 남긴다. 버리지 않는다
 """
 
 from __future__ import annotations
@@ -20,12 +22,12 @@ from medimate.schema.card import AxisEntry, InterviewCard
 
 
 class PostAxis(StrEnum):
-    HEARD_DIAGNOSIS = "heard_diagnosis"  # 들은 병명·소견. 환자가 옮긴 말 그대로
-    MEDICATION = "medication"  # 약 — 이름·횟수·기간, 환자가 말한 것만
-    TESTS_PROCEDURES = "tests_procedures"  # 받았거나 하기로 한 검사·시술
-    FOLLOW_UP = "follow_up"  # 다음 방문
-    INSTRUCTIONS = "instructions"  # 주의사항·생활 지시
-    OPEN_QUESTIONS = "open_questions"  # 못 물어본 것·헷갈리는 것. 다음 진료 때 쓸 메모
+    """1q의 4묶음. 이름은 화면 라벨을 따른다."""
+
+    FINDINGS = "findings"  # 소견 — 의사가 말한 병명·상태. 환자가 옮긴 문장 그대로
+    TESTS = "tests"  # 검사 — 받았거나 하기로 한 검사, 결과 안내 시점
+    MEDICATION_INSTRUCTIONS = "medication_instructions"  # 약·지시 — 처방, 복용법, 생활 지시
+    FOLLOW_UP = "follow_up"  # 재방문 — 다음 방문 시점·조건
 
 
 class WideningNote(BaseModel):
@@ -42,18 +44,34 @@ class WideningNote(BaseModel):
     ontology_snapshot: str
 
 
+class FollowUpDate(BaseModel):
+    """재방문 문장에서 결정론으로 계산한 날짜. LLM 무관. 앱 달력(1r)으로 넘어간다."""
+
+    text: str  # "2주 뒤"
+    date: str  # ISO. 진료일 + 상대 기간
+    approximate: bool = True  # "전후"로 표시
+    basis: str  # 계산 근거: "visit_date 2026-09-12 + 14d"
+
+
 class PostVisitCard(InterviewCard):
+    """진료 후 기록. axes 값은 해당 묶음의 문장들을 ' · '로 이은 원문, evidence는 문장 목록."""
+
     axes: dict[PostAxis, AxisEntry] = Field(
         default_factory=lambda: {a: AxisEntry() for a in PostAxis}
     )
-    widening: list[WideningNote] = Field(default_factory=list)  # heard_diagnosis 용어의 부위 병기
+    visit_date: str | None = None  # ISO. 재방문 날짜 계산의 기준. 앱이 준다
+    clinic: str | None = None  # "서울OO병원 내과". 앱이 준다(1s·1r), AI가 만들지 않는다
+    memo: str | None = None  # 환자가 적은 메모 원문 전체. 항상 보존
+    unsorted: list[str] = Field(default_factory=list)  # 어느 묶음에도 못 넣은 문장. 버리지 않는다
+    follow_up_date: FollowUpDate | None = None
+    widening: list[WideningNote] = Field(default_factory=list)  # findings 용어의 부위 병기
     # 진료 전 카드의 부위와 대조한 결과. "same" / "different" / None(비교 불가). 판정이 아니라 표시
     site_comparison: str | None = None
     # 문서 코드(진단서·처방전 KCD) → 부위. 백로그 #22. 자리만 둔다
     document_codes: list[dict] = Field(default_factory=list)
 
     def is_minimally_complete(self) -> bool:
-        # 들은 말이 하나라도 기록되면 카드다. 병명이 없어도 성립한다(약만 들었을 수도)
+        # 한 묶음이라도 채워지면 기록이다. 병명이 없어도 성립한다(약만 들었을 수도)
         return any(e.status.value == "filled" for e in self.axes.values())
 
     def unfilled_axes(self) -> list[PostAxis]:  # type: ignore[override]

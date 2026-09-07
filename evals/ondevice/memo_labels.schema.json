@@ -1,0 +1,22 @@
+{
+  "additionalProperties": false,
+  "description": "LLM 출력 스키마. **문장 순서대로** 라벨 하나씩.\n\n번호를 모델에게 맡기지 않는다(v1·v2에서 번호가 서로 바뀌는 오류가 있었다).\n길이는 요청별 스키마(minItems=maxItems=N)로 강제한다.",
+  "properties": {
+    "labels": {
+      "items": {
+        "enum": [
+          "findings",
+          "tests",
+          "medication_instructions",
+          "follow_up",
+          "none"
+        ],
+        "type": "string"
+      },
+      "title": "Labels",
+      "type": "array"
+    }
+  },
+  "title": "MemoLabels",
+  "type": "object"
+}
