@@ -130,7 +130,9 @@ def report(rows: list[dict], cases, guard=None) -> None:
     per_case: dict[str, list] = {}
     check_fail = Counter()
     for row in rows:
-        c = by_id[row["case_id"]]
+        c = by_id.get(row["case_id"])
+        if c is None:
+            continue  # --limit 으로 좁힌 집합 밖의 행은 건너뛴다
         # 저장된 원문을 항상 다시 파싱한다 — 파서를 고치면 재호출 없이 재채점된다
         parsed, err = None, None
         try:
@@ -149,17 +151,18 @@ def report(rows: list[dict], cases, guard=None) -> None:
             if not v:
                 check_fail[k] += 1
 
-    n_calls = len(rows)
+    n_calls = sum(len(v) for v in per_case.values())  # 채점된 행만 (--limit 밖 행 제외)
     safety_viol = sum(1 for scs in per_case.values() for s in scs if not s.safety_ok)
     quality_pass = sum(1 for scs in per_case.values() for s in scs if s.passed)
     model = rows[0]["model_id"] if rows else "?"
-    ti = sum(r["input_tokens"] for r in rows)
-    to = sum(r["output_tokens"] for r in rows)
+    scored = [r for r in rows if r["case_id"] in by_id]
+    ti = sum(r["input_tokens"] for r in scored)
+    to = sum(r["output_tokens"] for r in scored)
     i, o = PRICES.get(model, (0.0, 0.0))
 
     print(f"\n== {model} ==")
     print(f"호출 {n_calls}  입력 {ti} tok  출력 {to} tok  비용 ${(ti * i + to * o) / 1e6:.3f}")
-    lat = sorted(r["latency_s"] for r in rows if r.get("latency_s") is not None)
+    lat = sorted(r["latency_s"] for r in scored if r.get("latency_s") is not None)
     if lat:
         p50, p90 = lat[len(lat) // 2], lat[int(len(lat) * 0.9)]
         per_call = to / max(n_calls, 1)
@@ -200,12 +203,15 @@ def main() -> None:
     ap.add_argument("--report", type=Path, help="저장된 결과를 재채점만")
     ap.add_argument("--yes", action="store_true", help="예상 비용 확인 생략")
     ap.add_argument("--prompt", choices=["v3", "small"], default="v3", help="프롬프트 계열")
+    ap.add_argument("--limit", type=int, help="앞에서 N케이스만 (기기 실측처럼 속도만 볼 때)")
     ap.add_argument(
         "--guard", choices=["server", "ondevice"], help="재채점 시 런타임 가드 적용(호출 0)"
     )
     a = ap.parse_args()
 
     cases = load_cases()
+    if a.limit:
+        cases = cases[: a.limit]
 
     if a.report:
         rows = [json.loads(ln) for ln in a.report.read_text(encoding="utf-8").splitlines() if ln]
