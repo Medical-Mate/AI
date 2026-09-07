@@ -27,6 +27,9 @@ PRICES: dict[str, tuple[float, float]] = {
     "gemini-3.6-flash": (1.50, 7.50),
     "gemini-3.1-pro": (2.00, 12.00),
 }
+# 로컬(온디바이스 후보) 모델은 가격표에 없다 → cost 0.
+# model_id는 "local/" + llama-server가 알려주는 이름
+LOCAL_PREFIX = "local/"
 
 
 class BudgetExceeded(RuntimeError):
@@ -40,7 +43,7 @@ class Usage:
     output_tokens: int = 0
 
     def cost_usd(self, model_id: str) -> float:
-        i, o = PRICES.get(model_id, (0.0, 0.0))
+        i, o = PRICES.get(model_id, (0.0, 0.0))  # local/… 은 항상 0
         return (self.input_tokens * i + self.output_tokens * o) / 1_000_000
 
 
@@ -65,7 +68,8 @@ class RawResult:
 class LLMExtractor:
     """Extractor 프로토콜 구현 + 원본 텍스트 접근. eval은 extract_raw를 쓴다."""
 
-    provider: str  # anthropic | openai | google
+    # anthropic | openai | google | local(llama-server 등 OpenAI 호환. GGUF 온디바이스 후보)
+    provider: str
     model_id: str
     budget_usd: float = 0.50  # 모델당 상한. 넘으면 호출 전에 예외
     prompt_version: str = PROMPT_VERSION
@@ -102,6 +106,8 @@ class LLMExtractor:
             return self._openai(system, user)
         if self.provider == "google":
             return self._google(system, user)
+        if self.provider == "local":
+            return self._local(system, user)
         raise ValueError(self.provider)
 
     def _anthropic(self, system: str, user: str) -> tuple[str, int, int]:
@@ -132,6 +138,36 @@ class LLMExtractor:
         )
         u = r.usage
         return r.choices[0].message.content or "", u.prompt_tokens, u.completion_tokens
+
+    def _local(self, system: str, user: str) -> tuple[str, int, int]:
+        """llama-server(`llama-server -m x.gguf --port 8080`) 등 OpenAI 호환 로컬 서버.
+
+        온디바이스 후보 스크리닝용. 기기(llama.cpp)와 같은 엔진·같은 GGUF라 온도 0·시드 고정이면
+        PC 결과가 기기 결과다. 사고(thinking) 모델은 서버 쪽 옵션으로 끈다.
+        MEDIMATE_LOCAL_BASE_URL (기본 http://127.0.0.1:8080/v1). model_id는 "local/<이름>".
+        """
+        import os
+
+        from openai import OpenAI
+
+        if self._client is None:
+            self._client = OpenAI(
+                base_url=os.getenv("MEDIMATE_LOCAL_BASE_URL", "http://127.0.0.1:8080/v1"),
+                api_key="local",
+            )
+        r = self._client.chat.completions.create(
+            model=self.model_id.removeprefix(LOCAL_PREFIX),
+            messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+            max_tokens=1024,
+            temperature=0,
+            seed=42,
+        )
+        u = r.usage
+        return (
+            r.choices[0].message.content or "",
+            (u.prompt_tokens if u else 0) or 0,
+            (u.completion_tokens if u else 0) or 0,
+        )
 
     def _google(self, system: str, user: str) -> tuple[str, int, int]:
         from google import genai
