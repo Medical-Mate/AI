@@ -150,21 +150,31 @@ AI 서버는 무상태다. 인증·세션 식별·저장은 백엔드가 한다(
 - 부위 여러 개(호소 목록) 구조 — 대화 방식 결정 대기
 - "추천 진료과" — 설계와 충돌, 결정 대기. 자리 없음
 
-## 온디바이스 프로필 — 예정 (2026-09-07 설계, 구현 전. 이슈 #24 #7)
+## 온디바이스 프로필 (2026-09-07 구현. 이슈 #24 #7)
 
 추출 모델을 폰 안에서 돌린다. **무상태 구조·응답 형태·카드 형식은 그대로**이고, 아래는 전부 선택 필드라 기존 호출을 깨지 않는다.
 
 | 어디 | 필드 | 뜻 |
 |---|---|---|
 | 세션 시작 | `profile`: `"server"`(기본) \| `"ondevice"` | ondevice면 첫 자유 발화 없이 첫 축 질문부터, 가드를 "물은 축만"으로 |
-| 턴 요청 | `extraction` | 폰이 만든 추출 JSON. `utterance`와 **둘 중 하나**. 있으면 서버는 LLM을 부르지 않는다 |
-| 턴 요청 | `selections` | 선택지(칩)로 고른 값. LLM 없이 카드에 바로. 근거는 `[선택] …`으로 표시 |
+| 턴 요청 | `extraction` (+ `extraction_meta`: model_id·prompt_version) | 폰이 만든 추출 JSON. 있으면 서버는 LLM을 부르지 않고 가드만 통과시킨다. **근거 검증을 위해 `utterance`(원문)도 함께 보낸다** — 발화는 외부 LLM 업체에 가지 않는 것이고, 우리 서버·백엔드에는 온다(카드에 근거 인용이 들어가므로 새 노출은 아님) |
+| 턴 요청 | `selections`: `[{axis, value}]` | 선택지(칩)·폼으로 고른 값. LLM 없이 카드에 바로, 근거는 `[선택] 값`. `utterance` 없이 selections만 와도 한 턴으로 처리해 다음 질문을 준다. 같은 턴에 `utterance`를 섞어도 된다 |
 | 요청 공통 | `request_id` | 응답·audit에 그대로 되돌린다. 중복 응답 캐시는 백엔드가 원하면 백엔드에서 |
-| 응답 `audit` | `dropped[]` | 가드가 버린 갱신과 이유(물은 축 아님 / 근거가 발화에 없음 / 발화에 없는 숫자) |
-| 응답 `card.provenance` | `extractor` | 어디서 무엇으로 뽑았나: 폰/서버, 모델, 프롬프트 버전 |
-| 새 엔드포인트 | `GET /v1/ontology/body-map` | 부위 마스터: 앵커·구역·좌우·앞뒤·진료과 안내·스냅샷 ID. 앱·백엔드 공용 |
+| 응답 `audit` | `dropped[]`, `raw_extraction`, `source` | 가드가 버린 갱신과 이유(not_asked_axis / evidence_not_in_utterance / number_not_in_utterance / note_not_in_utterance), 모델 원본, 출처(server / device / none) |
+| 응답 `card.provenance` | `model_id`, `prompt_version` | `extraction_meta`가 오면 그 값으로 갱신된다(폰 모델·프롬프트 버전) |
+| 새 엔드포인트 | `GET /v1/ontology/body-map` | 부위 마스터: `anchors[]{id,label,laterality,view,region,departments,zones[]}` + `ontology_snapshot`. 앱·백엔드 공용, 읽기 전용. 진료과 안내는 팀 콘텐츠(인용 아님) |
 
-백엔드가 할 일: 위 필드를 그대로 통과시키기, (선택) request_id 캐시, HMAC 서명. 폰이 뽑았든 서버가 뽑았든 백엔드에게는 같은 `state`·`card`다.
+백엔드가 할 일: 위 필드를 그대로 통과시키기, (선택) request_id 캐시, HMAC 서명.
+
+### 인증 — HMAC (구현됨, 키 없으면 검증 생략)
+- 헤더: `X-Signature`, `X-Timestamp`(epoch 초), `X-Request-Id`. 이름은 환경변수로 바꿀 수 있다
+- 서명: `hex(HMAC_SHA256(secret, f"{timestamp}.{request_id}." + body_bytes))`
+- 허용 시각 폭 ±300초(환경변수). `GET`·`/health`·문서 경로는 예외
+- 실패 시 401 `{"detail": "hmac: <이유>"}`
+- 서버 설정: `MEDIMATE_HMAC_SECRET`, `MEDIMATE_HMAC_HEADER_*`, `MEDIMATE_HMAC_MAX_SKEW_S`
+
+### 배포 — Dockerfile (저장소 루트)
+`docker build -t medimate-ai . && docker run -p 8000:8000 --env-file .env medimate-ai`. 모델 없음, 1 vCPU·1GB. 폰이 뽑았든 서버가 뽑았든 백엔드에게는 같은 `state`·`card`다.
 발화 원문은 폰에서 추출 JSON으로 바뀌어 오므로 백엔드를 거치지 않는다.
 
 가드 규칙과 근거: `evals/RESULTS.md` "엔진 가드", 코드 `src/medimate/dialog/guard.py`.

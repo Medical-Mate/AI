@@ -20,6 +20,9 @@ HistoryTurn = tuple[str, str]
 
 class SessionState(BaseModel):
     spec: str = "previsit"  # 어느 문진인가. dialog/spec.py SPECS 키 (previsit | postvisit)
+    # server: 서버가 추출(Terra), 첫 자유 발화 있음, 가드는 근거·숫자만
+    # ondevice: 폰이 추출해 JSON을 보냄, 첫 축 질문부터, 가드에 "물은 축만" 추가
+    profile: str = "server"
     card: InterviewCard = Field(default_factory=InterviewCard)
     asked_axis: str | None = None  # 직전에 물은 축(값 문자열). None이면 첫 발화 대기
     clarified: list[str] = Field(default_factory=list)  # 확인 질문을 이미 한 축(축당 한 번)
