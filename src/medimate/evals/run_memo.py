@@ -25,7 +25,8 @@ from pathlib import Path
 
 from medimate.dialog.memo import MemoLabels, classify_memo, split_sentences
 from medimate.llm import prompt_memo_small
-from medimate.llm.providers import PRICES, LLMExtractor
+from medimate.llm.memo_classifier import LLMMemoClassifier
+from medimate.llm.providers import PRICES
 
 ROOT = Path(__file__).resolve().parents[3]
 CASES = ROOT / "evals" / "postvisit_cases.jsonl"
@@ -34,31 +35,6 @@ RESULTS = ROOT / "evals" / "results" / "memo"
 
 def load_cases() -> list[dict]:
     return [json.loads(ln) for ln in CASES.read_text(encoding="utf-8").splitlines() if ln.strip()]
-
-
-class LLMMemoClassifier:
-    """LLMExtractor의 공급자 어댑터를 빌려 쓴다(같은 서버·같은 설정). 프롬프트만 다르다."""
-
-    def __init__(self, provider: str, model_id: str, budget_usd: float = 0.5):
-        self.ex = LLMExtractor(provider, model_id, budget_usd=budget_usd)
-        self.model_id = model_id
-        self.prompt_version = prompt_memo_small.PROMPT_VERSION
-        self.last_text = ""
-        self.last_tokens = (0, 0)
-
-    def classify(self, sentences) -> MemoLabels:
-        # 문장 수만큼 라벨을 구조로 강제한다 — 모델이 문장을 빼먹을 수 없다
-        self.ex.response_schema = MemoLabels.keyed_schema_for(len(sentences))
-        text, i, o = self.ex._call(
-            prompt_memo_small.system_prompt(), prompt_memo_small.user_message(sentences)
-        )
-        self.ex.usage.calls += 1
-        self.ex.usage.input_tokens += i
-        self.ex.usage.output_tokens += o
-        self.last_text, self.last_tokens = text, (i, o)
-        from medimate.llm.providers import _parse_json_text
-
-        return MemoLabels.from_keyed(_parse_json_text(text), len(sentences))
 
 
 class DryRunClassifier:

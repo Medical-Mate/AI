@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
+from datetime import date
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -24,13 +25,16 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from medimate.dialog.engine import Limits, Session
 from medimate.dialog.guard import GuardConfig
+from medimate.dialog.memo import classify_memo
 from medimate.dialog.site import resolve_site
 from medimate.dialog.spec import PREVISIT_SPEC
 from medimate.dialog.state import SessionState
+from medimate.dialog.widening import compare_sites, widen_card
 from medimate.llm.base import Extractor, TurnExtraction
+from medimate.llm.memo_classifier import FixedLabels, LLMMemoClassifier
 from medimate.llm.providers import BudgetExceeded, LLMExtractor
 from medimate.ontology import load_ontology
-from medimate.schema.card import Axis, SiteSelectionRecord
+from medimate.schema.card import Axis, Provenance, SiteSelectionRecord
 from medimate.schema.export import to_backend_payload
 
 DEFAULT_PROVIDER = "openai"
@@ -120,6 +124,34 @@ class TurnAudit(BaseModel):
     usage: TurnUsage
 
 
+class MemoRequest(BaseModel):
+    """진료 후 메모 하나 → 4묶음 카드 (와이어프레임 1p → 1q).
+
+    - labels 없음: 서버가 문장 분류 LLM을 부른다
+    - labels 있음: 폰이 이미 분류한 결과({"0": 라벨, …}). 서버는 LLM 없이 카드만 조립한다
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    memo: str = Field(min_length=1, max_length=2000)
+    visit_date: date | None = None  # 재방문 날짜 계산 기준. 앱이 준다
+    clinic: str | None = Field(default=None, max_length=80)  # "서울OO병원 내과". 앱이 준다
+    labels: dict[str, str] | None = None  # 폰 분류 결과 또는 1q-2에서 고친 라벨
+    labels_meta: ExtractionMeta | None = None  # labels가 폰 모델에서 왔으면 무엇으로
+    previsit_anchor_id: str | None = Field(default=None, max_length=40)  # 진료 전 부위(대조용)
+    request_id: str | None = Field(default=None, max_length=128)
+
+
+class MemoResponse(BaseModel):
+    card: dict[str, Any]  # 백엔드 형식 카드(card_type=postvisit)
+    sentences: list[str]  # 우리가 나눈 문장. 1q-2 수정 화면이 이 번호로 라벨을 바꾼다
+    labels: dict[str, str]  # 번호 → 라벨(none 포함)
+    dropped: list[dict[str, Any]]  # 가드가 무시한 라벨
+    source: str  # server | client
+    usage: TurnUsage
+    request_id: str | None = None
+
+
 class TurnResponse(BaseModel):
     reply: str  # 다음 질문 또는 마무리 문장
     ended: bool
@@ -180,7 +212,9 @@ def get_extractor(request: Request) -> Extractor:
 Ex = Annotated[Extractor, Depends(get_extractor)]
 
 
-def create_app(extractor_factory: ExtractorFactory | None = None) -> FastAPI:
+def create_app(
+    extractor_factory: ExtractorFactory | None = None, memo_factory: Callable | None = None
+) -> FastAPI:
     app = FastAPI(
         title="진료 메이트 AI — 진료 전 카드",
         version="0.1.0",
@@ -192,6 +226,9 @@ def create_app(extractor_factory: ExtractorFactory | None = None) -> FastAPI:
     auth.install(app)  # MEDIMATE_HMAC_SECRET 없으면 검증 생략
     app.state.limits = Limits()
     app.state.ontology = None  # 첫 요청에 로드. data/ontology CSV, 로드 시 검증
+    app.state.memo_factory = (
+        memo_factory  # 진료 후 메모 분류기. 테스트는 create_app(memo_factory=...)
+    )
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -276,6 +313,67 @@ def create_app(extractor_factory: ExtractorFactory | None = None) -> FastAPI:
             state=s.to_state(),
             card=to_backend_payload(s.card),
             audit=audit,
+            request_id=body.request_id,
+        )
+
+    def _memo_classifier(request: Request):
+        factory = request.app.state.memo_factory
+        if factory is None:
+            provider = os.getenv("MEDIMATE_PROVIDER", DEFAULT_PROVIDER)
+            model = os.getenv("MEDIMATE_MODEL", DEFAULT_MODEL)
+            shared: dict[str, object] = {}
+
+            def make():
+                c = LLMMemoClassifier(provider, model, client=shared.get("client"))
+                return c
+
+            factory = request.app.state.memo_factory = make
+        return factory()
+
+    @app.post("/v1/postvisit/memo", response_model=MemoResponse)
+    def postvisit_memo(body: MemoRequest, request: Request) -> MemoResponse:
+        """메모 → 4묶음 카드. labels가 오면 LLM 없이 조립(폰 분류·1q-2 수정 모두 이 경로)."""
+        if body.labels is not None:
+            clf = FixedLabels(body.labels)
+            source = "client"
+        else:
+            clf = _memo_classifier(request)
+            source = "server"
+        try:
+            res = classify_memo(body.memo, clf, visit_date=body.visit_date, clinic=body.clinic)
+        except BudgetExceeded as e:
+            raise HTTPException(status_code=503, detail=str(e)) from e
+        except ValueError as e:
+            raise HTTPException(status_code=502, detail=f"classifier: {e}") from e
+
+        card = res.card
+        card.provenance = Provenance(
+            prompt_version=(
+                body.labels_meta.prompt_version if body.labels_meta else clf.prompt_version
+            ),
+            model_id=body.labels_meta.model_id if body.labels_meta else clf.model_id,
+        )
+        # 소견 용어에 부위 병기 + 진료 전 부위와 대조(판정 아님)
+        if app.state.ontology is None:
+            app.state.ontology = load_ontology()
+        notes = widen_card(card, app.state.ontology)
+        card.site_comparison = compare_sites(app.state.ontology, body.previsit_anchor_id, notes)
+
+        usage = getattr(clf, "usage", None)
+        tu = TurnUsage()
+        if usage is not None and source == "server":
+            tu = TurnUsage(
+                input_tokens=int(usage.input_tokens),
+                output_tokens=int(usage.output_tokens),
+                cost_usd=round(float(usage.cost_usd(clf.model_id)), 6),
+            )
+        return MemoResponse(
+            card=to_backend_payload(card),
+            sentences=res.sentences,
+            labels={str(i): res.labels.get(i, "none") for i in range(len(res.sentences))},
+            dropped=res.dropped,
+            source=source,
+            usage=tu,
             request_id=body.request_id,
         )
 

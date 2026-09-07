@@ -147,10 +147,18 @@ class LLMExtractor:
 
         if self._client is None:
             self._client = OpenAI()
+        kwargs: dict = {}
+        if self.response_schema is not None:
+            # 메모 분류처럼 출력 형태가 정해진 호출은 서버 모델에도 같은 스키마를 강제한다
+            kwargs["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {"name": "response", "schema": self.response_schema, "strict": True},
+            }
         r = self._client.chat.completions.create(
             model=self.model_id,
             messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
             max_completion_tokens=1024,
+            **kwargs,
         )
         u = r.usage
         return r.choices[0].message.content or "", u.prompt_tokens, u.completion_tokens
