@@ -53,7 +53,8 @@ class MemoLabels(BaseModel):
     def keyed_schema_for(n: int) -> dict:
         """LLM에게 주는 출력 스키마: {"0": 라벨, "1": 라벨, …} — 번호 키가 전부 필수.
 
-        v3의 위치 배열은 문장 앵커가 없어 흔들렸고(64%), v2의 [{i,label}]은 번호가 뒤바뀌었다(83%).
+        v3의 위치 배열은 문장 앵커가 없어 흔들렸고(64%),
+        v2의 [{i,label}]은 번호가 뒤바뀌었다(83%).
         번호 키 객체는 둘의 장점만 남긴다: 문장마다 앵커가 있고, 누락·중복·뒤바뀜이 문법에서 불가능하다.
         """
         labels = list(Label.__args__)  # type: ignore[attr-defined]
