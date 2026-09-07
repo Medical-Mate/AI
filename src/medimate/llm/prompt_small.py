@@ -1,5 +1,5 @@
 # ruff: noqa: E501  — 예시 JSON 한 줄은 의도적으로 길다(모델이 그대로 따라 쓰게)
-"""소형(온디바이스) 모델용 프롬프트 — `extract-small-v3`.
+"""소형(온디바이스) 모델용 프롬프트 — `extract-small-v4`.
 
 Terra용 `prompt.py`(extract-v3)는 스키마 전문과 규칙 11개를 담아 1.1K 토큰이다. 0.6~2B 모델은
 그걸 소화하지 못하고 축을 섞거나 8축을 전부 채운다(2026-09-07 1차 스크리닝). 그래서 따로 둔다.
@@ -19,6 +19,9 @@ v2 (2026-09-07, Qwen3-1.7B 기준 45/88에서 출발): v1이 놓친 것에 예�
 
 v3 (같은 날, 1.7B 53/88에서 출발): 첫 발화에서 상황("계단 내려갈 때")을 느낌(character)에 넣는 축 분류 오류,
 "~인가요?" 질문형·이모지·"넘어가요" 처리에 예시를 더했다. 항목 정의에 예시 표현을 붙였다.
+
+v4 (같은 날, 59/88에서 출발): 변경 하나만 — time_course 정의에 "나아졌어요"·"그대로예요".
+규칙 셋을 동시에 바꾼 시도는 54/88로 후퇴해 버렸다(소형 모델은 한 번에 하나만).
 """
 
 from __future__ import annotations
@@ -28,7 +31,7 @@ from collections.abc import Sequence
 from medimate.llm.base import Turn
 from medimate.schema.card import Axis
 
-PROMPT_VERSION = "extract-small-v3"
+PROMPT_VERSION = "extract-small-v4"
 
 AXIS_KO = {
     Axis.SITE: "아픈 부위",
@@ -49,7 +52,7 @@ _SYSTEM = """너는 환자의 말을 받아 적는 기록원이다. 진단하지
 - character 어떤 느낌: "욱신", "찌릿", "지끈", "시큰"
 - radiation 퍼지는 곳: "종아리까지 내려가요"
 - associated 함께 나타나는 증상: "붓고 열감", "속도 안 좋아요", "열이 나요", "어지러워요"
-- time_course 처음과 비교한 변화: "심해졌어요", "비슷해요"
+- time_course 처음과 비교한 변화: "심해졌어요", "비슷해요", "나아졌어요", "그대로예요"
 - exacerbating_relieving 심해지거나 나아지는 상황: "계단 내려갈 때", "앉아 있으면 더 심하고 누우면 괜찮아요", "밤에", "약 먹으면 나아요"
 - severity 심한 정도: "5점", "못 참을 정도"
 "아파요"는 항목이 아니다. "언제·어디·어떤 느낌·어떤 때"가 항목이다.
