@@ -193,6 +193,7 @@ def main() -> None:
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--report", type=Path, help="저장된 결과를 재채점만")
     ap.add_argument("--yes", action="store_true", help="예상 비용 확인 생략")
+    ap.add_argument("--prompt", choices=["v3", "small"], default="v3", help="프롬프트 계열")
     a = ap.parse_args()
 
     cases = load_cases()
@@ -214,7 +215,7 @@ def main() -> None:
     print(f"{a.model}: 호출 {calls}회, 예상 비용 약 ${est:.3f} (상한 ${a.budget})")
     if not a.yes and input("진행? [y/N] ").strip().lower() != "y":
         return
-    ex = LLMExtractor(a.provider, a.model, budget_usd=a.budget)
+    ex = LLMExtractor(a.provider, a.model, budget_usd=a.budget, prompt_family=a.prompt)
     rows = run(ex, cases, RESULTS / f"{a.model}.jsonl")
     report(rows, cases)
     print(f"\n실제 비용 ${ex.usage.cost_usd(a.model):.3f}")

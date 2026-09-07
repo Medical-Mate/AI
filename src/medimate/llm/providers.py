@@ -11,8 +11,11 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
+from medimate.llm import prompt as prompt_v3
+from medimate.llm import prompt_small
 from medimate.llm.base import Turn, TurnExtraction
-from medimate.llm.prompt import PROMPT_VERSION, system_prompt, user_message
+
+PROMPTS = {"v3": prompt_v3, "small": prompt_small}  # 프롬프트 계열. small은 온디바이스 소형 모델용
 from medimate.schema.card import Axis
 
 # $/1M tokens (input, output). 지출 가드용. 공급자 가격 페이지에서 확인 후 갱신.
@@ -72,9 +75,14 @@ class LLMExtractor:
     provider: str
     model_id: str
     budget_usd: float = 0.50  # 모델당 상한. 넘으면 호출 전에 예외
-    prompt_version: str = PROMPT_VERSION
+    prompt_family: str = "v3"  # PROMPTS 키. Terra는 v3, 온디바이스 후보는 small
+    prompt_version: str = ""  # 비우면 계열의 PROMPT_VERSION
     usage: Usage = field(default_factory=Usage)
     _client: object = field(default=None, repr=False)
+
+    def __post_init__(self) -> None:
+        if not self.prompt_version:
+            self.prompt_version = PROMPTS[self.prompt_family].PROMPT_VERSION
 
     def extract(
         self, utterance: str, asked_axis: Axis | None, history: Sequence[Turn] = ()
@@ -89,7 +97,8 @@ class LLMExtractor:
     ) -> RawResult:
         if self.usage.cost_usd(self.model_id) >= self.budget_usd:
             raise BudgetExceeded(f"{self.model_id}: ${self.budget_usd} 상한 도달")
-        text, i, o = self._call(system_prompt(), user_message(utterance, asked_axis, history))
+        pm = PROMPTS[self.prompt_family]
+        text, i, o = self._call(pm.system_prompt(), pm.user_message(utterance, asked_axis, history))
         self.usage.calls += 1
         self.usage.input_tokens += i
         self.usage.output_tokens += o

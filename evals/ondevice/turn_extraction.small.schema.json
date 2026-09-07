@@ -1,0 +1,118 @@
+{
+  "$defs": {
+    "Axis": {
+      "description": "진료 전 — SOCRATES 8축 + 부위는 환자 표현 그대로 둔다(온톨로지 매핑은 부위 확정 후).",
+      "enum": [
+        "site",
+        "onset",
+        "character",
+        "radiation",
+        "associated",
+        "time_course",
+        "exacerbating_relieving",
+        "severity"
+      ],
+      "title": "Axis",
+      "type": "string"
+    },
+    "AxisUpdate": {
+      "additionalProperties": false,
+      "properties": {
+        "axis": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Axis"
+            },
+            {
+              "$ref": "#/$defs/PostAxis"
+            }
+          ],
+          "title": "Axis"
+        },
+        "status": {
+          "$ref": "#/$defs/FieldStatus"
+        },
+        "value": {
+          "type": "string",
+          "title": "Value",
+          "description": "filled면 정리한 값, 아니면 빈 문자열"
+        },
+        "evidence": {
+          "title": "Evidence",
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "axis",
+        "status",
+        "value",
+        "evidence"
+      ],
+      "title": "AxisUpdate",
+      "type": "object"
+    },
+    "FieldStatus": {
+      "enum": [
+        "not_asked",
+        "filled",
+        "unknown",
+        "skipped",
+        "ambiguous"
+      ],
+      "title": "FieldStatus",
+      "type": "string"
+    },
+    "PostAxis": {
+      "enum": [
+        "heard_diagnosis",
+        "medication",
+        "tests_procedures",
+        "follow_up",
+        "instructions",
+        "open_questions"
+      ],
+      "title": "PostAxis",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "한 턴의 환자 발화에서 뽑은 것.\n\nextra=\"forbid\": 모델이 diagnosis 같은 필드를 덧붙이면 스키마 위반으로 잡는다.",
+  "properties": {
+    "chief_complaint": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Chief Complaint"
+    },
+    "updates": {
+      "items": {
+        "$ref": "#/$defs/AxisUpdate"
+      },
+      "title": "Updates",
+      "type": "array",
+      "maxItems": 4
+    },
+    "notes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Notes",
+      "type": "array",
+      "maxItems": 3
+    },
+    "wants_to_stop": {
+      "default": false,
+      "title": "Wants To Stop",
+      "type": "boolean"
+    }
+  },
+  "title": "TurnExtraction",
+  "type": "object"
+}
