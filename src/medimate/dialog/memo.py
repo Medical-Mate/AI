@@ -55,7 +55,8 @@ class MemoLabels(BaseModel):
 
         v3의 위치 배열은 문장 앵커가 없어 흔들렸고(64%),
         v2의 [{i,label}]은 번호가 뒤바뀌었다(83%).
-        번호 키 객체는 둘의 장점만 남긴다: 문장마다 앵커가 있고, 누락·중복·뒤바뀜이 문법에서 불가능하다.
+        번호 키 객체는 둘의 장점만 남긴다: 문장마다 앵커가 있고, 누락·중복·뒤바뀜이 문법에서
+        불가능하다.
         """
         labels = list(Label.__args__)  # type: ignore[attr-defined]
         return {
