@@ -225,7 +225,7 @@ def test_patient_message_round_trips_through_state():
         [TurnExtraction(chief_complaint="c", updates=updates), TurnExtraction()]
     )
     state = client.post("/v1/previsit/sessions").json()["state"]
-    b1 = client.post("/v1/previsit/turns", json={"state": state, "utterance": "전부"}).json()
+    b1 = client.post("/v1/previsit/turns", json={"state": state, "utterance": "x 전부"}).json()
     assert b1["reply"] == MESSAGE_QUESTION and b1["state"]["message_asked"] is True
     b2 = client.post(
         "/v1/previsit/turns", json={"state": b1["state"], "utterance": "약은 최소로 부탁드려요"}

@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from medimate.dialog.guard import GuardConfig, guard_extraction
 from medimate.dialog.spec import PREVISIT_SPEC, SPECS, InterviewSpec
 from medimate.dialog.state import HistoryTurn, SessionState
 from medimate.llm.base import Extractor, TurnExtraction
@@ -26,7 +27,9 @@ class TurnLog:
     turn: int
     asked_axis: StrEnum | None
     utterance: str
-    extraction: TurnExtraction
+    extraction: TurnExtraction  # 가드를 통과해 카드에 반영된 것
+    raw_extraction: TurnExtraction | None = None  # 모델이 낸 원본(가드가 버린 것 포함). 감사용
+    dropped: list[dict] = field(default_factory=list)  # 가드가 버린 갱신과 이유
 
 
 @dataclass(frozen=True)
@@ -62,6 +65,11 @@ class Session:
     message_asked: bool = False  # 마지막 "전하고 싶은 말" 질문을 냈는가
     # 이전 요청들에서 쓴 토큰(상태로 넘어온 값). 현재 extractor.usage는 여기 더해서 본다
     carried_tokens: int = 0
+    # 런타임 가드. 서버 기본값은 근거·숫자만, 온디바이스 프로필은 GuardConfig.ondevice()
+    guard: GuardConfig = field(default_factory=GuardConfig)
+    # True면 첫 자유 발화 없이 첫 축 질문부터 시작한다
+    # (온디바이스: 소형 모델은 다축 첫 발화를 못 뽑는다)
+    skip_open_ended: bool = False
 
     def __post_init__(self) -> None:
         if self.card is None:
@@ -131,7 +139,18 @@ class Session:
         entry.value = label
         entry.evidence.append(f"{self.spec.site_preselected_tag} {label}")
 
+    def _ensure_started(self) -> None:
+        """skip_open_ended면 첫 자유 발화 없이 첫 축을 정한다.
+
+        부위 사전 채움 뒤에 호출되도록 지연한다.
+        """
+        if self.skip_open_ended and self.asked_axis is None and self.turn == 0 and not self.ended:
+            self.asked_axis = self._next_axis()
+
     def opening(self) -> str:
+        self._ensure_started()
+        if self.skip_open_ended and self.asked_axis is not None:
+            return self.spec.questions[self.asked_axis]
         if self.spec.site_axis is not None and self.spec.opening_with_site:
             site = self.card.axes[self.spec.site_axis]
             if site.status == FieldStatus.FILLED and site.value:
@@ -142,6 +161,7 @@ class Session:
         """환자 발화 하나를 처리하고 다음 발화(질문 또는 마무리)를 돌려준다."""
         if self.ended:
             return self.spec.closing
+        self._ensure_started()
 
         # 빈 입력은 LLM을 부르지 않는다. 턴으로도 세지 않는다
         utterance = utterance.strip()
@@ -163,9 +183,11 @@ class Session:
             return self.end("budget")
 
         asked_question = self._current_question()
-        ext = self.extractor.extract(utterance, self.asked_axis, self.history)
+        raw = self.extractor.extract(utterance, self.asked_axis, self.history)
+        g = guard_extraction(raw, utterance, self.asked_axis, self.guard)
+        ext = g.extraction
         self.turn += 1
-        self.logs.append(TurnLog(self.turn, self.asked_axis, utterance, ext))
+        self.logs.append(TurnLog(self.turn, self.asked_axis, utterance, ext, raw, g.dropped))
         self._remember(asked_question, utterance)
         self._apply(ext)
 

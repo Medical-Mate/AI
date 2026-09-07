@@ -70,7 +70,7 @@ def test_all_axes_answered_asks_for_message_then_ends():
     updates = [filled(a, "x", "x") for a in Axis]
     ex = ScriptedExtractor([TurnExtraction(chief_complaint="c", updates=updates), TurnExtraction()])
     s = Session(ex)
-    assert s.step("전부 말함") == MESSAGE_QUESTION  # 8축이 닫혀도 바로 끝내지 않는다
+    assert s.step("x 전부 말함") == MESSAGE_QUESTION  # 8축이 닫혀도 바로 끝내지 않는다
     assert s.card.completeness() == 1.0 and not s.ended
     assert s.step("수술은 피하고 싶어요") == CLOSING
     assert s.ended and s.end_reason == "complete"
@@ -81,7 +81,7 @@ def test_no_message_answer_leaves_field_empty():
     updates = [filled(a, "x", "x") for a in Axis]
     ex = ScriptedExtractor([TurnExtraction(updates=updates), TurnExtraction()])
     s = Session(ex)
-    s.step("전부")
+    s.step("x 전부")
     assert s.step("없어요.") == CLOSING
     assert s.card.patient_message is None
 
@@ -97,7 +97,7 @@ def test_message_turn_still_extracts_symptoms_into_axes():
         ]
     )
     s = Session(ex)
-    s.step("거의 다 말함")  # RADIATION만 남음 → 그 질문
+    s.step("x 거의 다 말함")  # RADIATION만 남음 → 그 질문
     s.step("...")  # skipped → 8축 닫힘 → 마지막 질문
     s.step("아 그리고 종아리까지 저려요")
     assert s.ended
@@ -109,7 +109,7 @@ def test_stop_skips_message_question():
     updates = [filled(a, "x", "x") for a in Axis]
     ex = ScriptedExtractor([TurnExtraction(updates=updates, wants_to_stop=True)])
     s = Session(ex)
-    assert s.step("다 말했고 이만 할래요") == CLOSING
+    assert s.step("x 다 말했고 이만 할래요") == CLOSING
     assert s.card.patient_message is None
 
 
