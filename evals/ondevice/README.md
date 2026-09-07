@@ -14,8 +14,26 @@ PC와 기기가 같은 엔진(llama.cpp)·같은 GGUF·온도 0·시드 고정�
 | 3 | LFM2.5-1.2B-Instruct (참고: 2026-01, 6개월 초과) | 0.70GB | 2026-01 | 공식 목록 포함 | LFM1.0 | `LiquidAI/LFM2.5-1.2B-Instruct-GGUF` |
 | 4 | Qwen3.5-2B | 1.28GB | 2026-03 | 201개 언어 | Apache-2.0 | `unsloth/Qwen3.5-2B-GGUF` |
 | 5 | LFM2.5-2.6B | 1.52GB (IQ4_XS) | 2026-08 | 공식 목록 포함 | LFM1.0 | `LiquidAI/LFM2.5-2.6B-GGUF` |
+| N1 | Qwen3-0.6B **Q4_0** (NPU 트랙) | ~0.4GB | 2025-04 | 119개 언어 | Apache-2.0 | `unsloth/Qwen3-0.6B-GGUF` |
+| N2 | Qwen3-1.7B **Q4_0** (NPU 트랙) | ~1.0GB | 2025-04 | 119개 언어 | Apache-2.0 | `unsloth/Qwen3-1.7B-GGUF` |
 
 보류: Kanana-2-1.3B(한국어 특화·상업 허용이지만 공식 GGUF 없음, SWA 구조의 llama.cpp 재현 미확인), Gemma 4 E2B(Q4 3.1GB, 상한 2배), EXAONE-4.0-1.2B(NC 라이선스), MiniCPM5-1B(한국어 미확인).
+
+## NPU 트랙 (2026-09-07 추가) — llama.cpp Hexagon 백엔드
+
+llama.cpp 공식 저장소에 Snapdragon 백엔드(CPU · Adreno GPU · **Hexagon NPU**)가 들어 있다
+(`docs/backend/snapdragon/README.md`). 빌드 산출물에 `libggml-htp-v73/v75/v79/v81.so`가 포함되고
+**8 Gen 3(S24 울트라)은 v75**이므로 지원 범위 안이다. JSON 스키마 강제는 샘플링 단계라 백엔드와 무관하게 그대로 동작한다.
+→ 모델·프롬프트·문법·테스트 벡터는 CPU 트랙과 같고, **안드로이드 빌드 옵션 하나(Hexagon 포함)만 달라진다.**
+
+- 퀄컴 AI Hub(Genie) 경로는 8 Gen 3 미지원(8 Elite 이상). S24 울트라에서는 닫혀 있다. 검토 종료
+- NPU에는 **표준 트랜스포머(Qwen3)**가 유리하다. Qwen3.5의 DeltaNet 혼합 어텐션은 NPU 커널이 초기 단계라
+  연산이 CPU로 떨어질 수 있다. 그래서 NPU 트랙 후보는 **Qwen3-0.6B / Qwen3-1.7B** (2025-04, 6개월 조건 밖이지만 NPU 때문에 예외)
+- 백엔드 예시가 전부 **Q4_0**이다. K-quant(Q4_K_M)는 오프로드가 안 될 수 있으니 NPU 트랙은 Q4_0 파일로 돈다
+- 미확인: 8 Gen 3에서 실제 오프로드 비율·속도, Qwen3의 모든 연산이 NPU에 올라가는지. 기기에서만 확인 가능(`GGML_HEXAGON_VERBOSE=1`, `GGML_HEXAGON_PROFILE=1`)
+- 안드로이드 빌드: `scripts/snapdragon/build.py` (퀄컴 도커 툴체인, adb 푸시까지)
+
+CPU 트랙과 NPU 트랙은 **같은 88케이스**로 채점한다. NPU 트랙은 Q4_0라 CPU 트랙(Q4_K_M)과 결과가 다를 수 있으므로 각각 기록한다.
 
 ## 실행
 

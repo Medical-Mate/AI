@@ -48,3 +48,7 @@ build/
 Thumbs.db
 *.log
 evals/results/
+
+# 온디바이스 후보 GGUF (내려받아 쓴다)
+evals/ondevice/models/
+*.gguf
