@@ -1,8 +1,15 @@
-"""진료 후 문진(챗봇②) — 같은 엔진이 다른 명세로 돈다. LLM 호출 없음."""
+"""진료 후(챗봇②) — 메모 → 4묶음 분류가 주 경로. 보조 문답은 같은 엔진. LLM 호출 없음."""
+
+from datetime import date
 
 from medimate.dialog import POSTVISIT_SPEC, Session
-from medimate.dialog.postvisit_questions import CLOSING, MESSAGE_QUESTION, OPENING, QUESTIONS
-from medimate.dialog.state import SessionState
+from medimate.dialog.memo import (
+    MemoLabels,
+    classify_memo,
+    followup_date,
+    split_sentences,
+)
+from medimate.dialog.postvisit_questions import MESSAGE_QUESTION, OPENING, QUESTIONS
 from medimate.dialog.widening import compare_sites, widen_card
 from medimate.llm import AxisUpdate, TurnExtraction
 from medimate.ontology import load_ontology
@@ -12,116 +19,133 @@ from medimate.schema.postvisit import PostAxis, PostVisitCard
 from tests.fakes import ScriptedExtractor
 
 
-def filled(axis, value, evidence):
-    return AxisUpdate(axis=axis, status=FieldStatus.FILLED, value=value, evidence=evidence)
+class FakeClassifier:
+    model_id = "fake"
+    prompt_version = "test"
+
+    def __init__(self, labels):
+        self._labels = labels
+
+    def classify(self, sentences):
+        return MemoLabels.model_validate({"labels": list(self._labels)})
 
 
-def test_postvisit_flow_asks_six_axes_then_message_then_closes():
-    ex = ScriptedExtractor(
-        [
-            TurnExtraction(
-                updates=[
-                    filled(
-                        PostAxis.HEARD_DIAGNOSIS,
-                        "반월판이 조금 찢어졌다고",
-                        "반월판이 조금 찢어졌대요",
-                    ),
-                    filled(
-                        PostAxis.MEDICATION, "소염제 하루 두 번 일주일", "소염제 하루 두 번 일주일"
-                    ),
-                ]
-            ),
-            TurnExtraction(updates=[filled(PostAxis.TESTS_PROCEDURES, "MRI 예약", "MRI 찍기로")]),
-            TurnExtraction(updates=[filled(PostAxis.FOLLOW_UP, "2주 뒤", "2주 뒤에 오라고")]),
-            TurnExtraction(
-                updates=[filled(PostAxis.INSTRUCTIONS, "계단 피하기", "계단은 피하래요")]
-            ),
-            TurnExtraction(
-                updates=[
-                    AxisUpdate(
-                        axis=PostAxis.OPEN_QUESTIONS,
-                        status=FieldStatus.UNKNOWN,
-                        evidence="딱히 없어요",
-                    )
-                ]
-            ),
-            TurnExtraction(),
-        ]
+def test_split_sentences_on_period_newline_and_dot_separator():
+    memo = "위염 초기라고 하셨어요. 혈액검사 했어요\n약은 2주분 · 커피 줄이래요"
+    assert split_sentences(memo) == [
+        "위염 초기라고 하셨어요.",
+        "혈액검사 했어요",
+        "약은 2주분",
+        "커피 줄이래요",
+    ]
+
+
+def test_classify_memo_buckets_sentences_verbatim_and_keeps_unsorted():
+    memo = (
+        "위염 초기라고 하셨어요. 혈액검사 했고 결과는 다음에. 약은 2주분. 2주 뒤에 오라고. "
+        "병원이 붐볐다."
     )
-    s = Session(ex, spec=POSTVISIT_SPEC)
-    assert isinstance(s.card, PostVisitCard)
-    assert s.opening() == OPENING
-    assert (
-        s.step("반월판이 조금 찢어졌대요. 소염제 하루 두 번 일주일")
-        == QUESTIONS[PostAxis.TESTS_PROCEDURES]
+    res = classify_memo(
+        memo,
+        FakeClassifier(["findings", "tests", "medication_instructions", "follow_up", "none"]),
+        visit_date=date(2026, 9, 12),
+        clinic="서울OO병원 내과",
     )
-    s.step("MRI 찍기로 했어요")
-    s.step("2주 뒤에 오라고")
-    s.step("계단은 피하래요")
-    assert s.step("딱히 없어요") == MESSAGE_QUESTION
-    assert s.step("수술은 되도록 안 하고 싶다고 적어 주세요") == CLOSING
-    assert s.ended and s.end_reason == "complete"
-    assert s.card.axes[PostAxis.HEARD_DIAGNOSIS].value == "반월판이 조금 찢어졌다고"
-    assert s.card.patient_message == "수술은 되도록 안 하고 싶다고 적어 주세요"
-    assert s.card.completeness() == 1.0
-    # 진료 전 축이 섞여 오면 버린다 — 스키마 경계
-    assert Axis.SITE not in s.card.axes
+    c = res.card
+    assert c.memo == memo and c.clinic == "서울OO병원 내과"
+    assert c.axes[PostAxis.FINDINGS].value == "위염 초기라고 하셨어요."
+    assert c.axes[PostAxis.FINDINGS].evidence == ["위염 초기라고 하셨어요."]  # 원문 그대로
+    assert c.axes[PostAxis.TESTS].status == FieldStatus.FILLED
+    assert c.unsorted == ["병원이 붐볐다."]  # 버리지 않는다
+    assert c.follow_up_date is not None
+    assert c.follow_up_date.date == "2026-09-26" and c.follow_up_date.approximate
+    assert c.is_minimally_complete()
 
 
-def test_previsit_axis_update_is_dropped_on_postvisit_card():
-    ex = ScriptedExtractor([TurnExtraction(updates=[filled(Axis.SEVERITY, "7", "7점")])])
-    s = Session(ex, spec=POSTVISIT_SPEC)
-    s.step("7점이요")
-    assert all(e.status != FieldStatus.FILLED for e in s.card.axes.values())
+def test_classify_memo_guards_bad_indices_and_marks_missing_buckets_unknown():
+    class Bad:
+        model_id = "fake"
+        prompt_version = "test"
+
+        def classify(self, sentences):
+            # 문장은 2개인데 라벨 3개(초과) — 위치 기반이라 셋째는 버린다
+            return MemoLabels.model_validate({"labels": ["findings", "none", "tests"]})
+
+    res = classify_memo("감기래요. 해열제 먹으래요.", Bad())
+    assert res.card.axes[PostAxis.FINDINGS].value == "감기래요."
+    assert res.card.axes[PostAxis.TESTS].status == FieldStatus.UNKNOWN  # 메모에 없었다
+    assert [d["reason"] for d in res.dropped] == ["extra_label"]
+    assert res.card.unsorted == ["해열제 먹으래요."]  # none 라벨 문장은 unsorted
+    short = classify_memo("감기래요. 해열제 먹으래요.", FakeClassifier(["findings"]))
+    assert short.dropped[0]["reason"] == "missing_label"
+    assert short.card.unsorted == ["해열제 먹으래요."]
 
 
-def test_postvisit_state_round_trip_restores_card_type_and_axes():
-    ex = ScriptedExtractor(
-        [TurnExtraction(updates=[filled(PostAxis.MEDICATION, "약", "약 먹으래요")])]
+def test_followup_date_relative_and_absolute():
+    v = date(2026, 9, 12)
+    assert followup_date("2주 뒤에 오라고", v).date == "2026-09-26"
+    assert followup_date("한 달 뒤 보자고", v).date == "2026-10-12"
+    assert followup_date("다음 주에 다시", v).date == "2026-09-19"
+    fu = followup_date("9월 30일에 오라고", v)
+    assert fu.date == "2026-09-30" and not fu.approximate
+    assert followup_date("1월 5일", v).date == "2027-01-05"  # 지난 날짜는 다음 해
+    assert followup_date("안 좋아지면 바로 오래요", v) is None
+
+
+def test_export_marks_card_type_and_includes_memo_fields():
+    res = classify_memo(
+        "위염 초기라고 하셨어요. 2주 뒤에 오라고.",
+        FakeClassifier(["findings", "follow_up"]),
+        visit_date=date(2026, 9, 12),
     )
-    s = Session(ex, spec=POSTVISIT_SPEC)
-    s.step("약 먹으래요")
-    state = SessionState.model_validate_json(s.to_state().model_dump_json())  # 백엔드 왕복
-    assert state.spec == "postvisit"
-    s2 = Session.from_state(ScriptedExtractor([]), state)
-    assert isinstance(s2.card, PostVisitCard)
-    assert s2.card.axes[PostAxis.MEDICATION].value == "약"
-    assert s2.asked_axis == PostAxis.HEARD_DIAGNOSIS  # 첫 발화에서 안 채워진 첫 축을 물었다
+    p = to_backend_payload(res.card)
+    assert p["card_type"] == "postvisit"
+    assert set(p["axes"]) == {a.value for a in PostAxis}
+    assert p["widening"] == [] and p["site_comparison"] is None
+    assert p["follow_up_date"]["date"] == "2026-09-26"
+    assert p["memo"].startswith("위염") and p["unsorted"] == []
+    assert "department_guidance" not in p
 
 
-def test_widening_annotates_heard_terms_with_body_part_and_compares_site():
+def test_widening_annotates_findings_terms_and_compares_site():
     onto = load_ontology()
-    card = PostVisitCard()
-    e = card.axes[PostAxis.HEARD_DIAGNOSIS]
-    e.status = FieldStatus.FILLED
-    e.value = "앞십자인대가 좀 늘어났다고"
-    e.evidence = ["앞십자인대가 좀 늘어났다고 하셨어요"]
-    notes = widen_card(card, onto)
-    assert len(notes) == 1
-    n = notes[0]
-    assert n.term == "앞십자인대"
-    assert n.anchor_label == "다리"  # 구조 → 앵커로 넓힌다. 좁히지 않는다
-    assert card.provenance is None or card.provenance.ontology_snapshot == onto.snapshot_id
-    # 진료 전에 다리(무릎)를 짚었으면 같은 부위, 팔이면 다른 부위 — 판정이 아니라 표시
-    assert compare_sites(onto, n.anchor_id, notes) == "same"
+    res = classify_memo(
+        "앞십자인대가 좀 늘어났다고 하셨어요.",
+        FakeClassifier(["findings"]),
+    )
+    notes = widen_card(res.card, onto)
+    assert len(notes) == 1 and notes[0].term == "앞십자인대" and notes[0].anchor_label == "다리"
+    assert compare_sites(onto, notes[0].anchor_id, notes) == "same"
     assert compare_sites(onto, "ANC:013", notes) == "different"
-    assert compare_sites(onto, None, notes) is None
 
 
 def test_widening_does_not_invent_when_nothing_matches():
     onto = load_ontology()
-    card = PostVisitCard()
-    e = card.axes[PostAxis.HEARD_DIAGNOSIS]
-    e.status = FieldStatus.FILLED
-    e.value = "감기라고 하셨어요"
-    e.evidence = ["감기라고 하셨어요"]
-    assert widen_card(card, onto) == []
+    res = classify_memo("감기라고 하셨어요.", FakeClassifier(["findings"]))
+    assert widen_card(res.card, onto) == []
 
 
-def test_export_marks_card_type_and_includes_widening():
-    card = PostVisitCard()
-    p = to_backend_payload(card)
-    assert p["card_type"] == "postvisit"
-    assert set(p["axes"]) == {a.value for a in PostAxis}
-    assert p["widening"] == [] and p["site_comparison"] is None and p["document_codes"] == []
-    assert "department_guidance" not in p  # 진료 후 카드에는 진료과 안내가 없다
+def test_fallback_dialog_asks_four_axes_then_message():
+    """메모가 비었을 때의 보조 문답. 같은 엔진, 진료 후 명세."""
+
+    def filled(axis, value, evidence):
+        return AxisUpdate(axis=axis, status=FieldStatus.FILLED, value=value, evidence=evidence)
+
+    ex = ScriptedExtractor(
+        [
+            TurnExtraction(updates=[filled(PostAxis.FINDINGS, "위염 초기", "위염 초기래요")]),
+            TurnExtraction(updates=[filled(PostAxis.TESTS, "피검사", "피검사 했어요")]),
+            TurnExtraction(updates=[filled(PostAxis.MEDICATION_INSTRUCTIONS, "2주분", "2주분 약")]),
+            TurnExtraction(updates=[filled(PostAxis.FOLLOW_UP, "2주 뒤", "2주 뒤에 오라고")]),
+            TurnExtraction(),
+        ]
+    )
+    s = Session(ex, spec=POSTVISIT_SPEC)
+    assert isinstance(s.card, PostVisitCard) and s.opening() == OPENING
+    assert s.step("위염 초기래요") == QUESTIONS[PostAxis.TESTS]
+    s.step("피검사 했어요")
+    s.step("2주분 약")
+    assert s.step("2주 뒤에 오라고") == MESSAGE_QUESTION
+    s.step("없어요")
+    assert s.ended and s.card.completeness() == 1.0
+    assert Axis.SITE not in s.card.axes  # 진료 전 축은 섞이지 않는다
