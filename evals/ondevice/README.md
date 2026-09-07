@@ -35,6 +35,37 @@ llama.cpp 공식 저장소에 Snapdragon 백엔드(CPU · Adreno GPU · **Hexago
 
 CPU 트랙과 NPU 트랙은 **같은 88케이스**로 채점한다. NPU 트랙은 Q4_0라 CPU 트랙(Q4_K_M)과 결과가 다를 수 있으므로 각각 기록한다.
 
+## 기기 NPU 실험 — PC에서, 앱 없이 (2026-09-07 준비)
+
+에뮬레이터로는 불가(Hexagon은 실물 DSP). 대신 **S24 울트라를 USB로 이 PC에 꽂고 명령줄 바이너리로 돈다.**
+안드로이드 팀 손을 빌리지 않는다. 앱 통합은 결과가 좋을 때만.
+
+준비물: Docker Desktop(있음), adb(`Google.PlatformTools`, 설치됨), llama.cpp 소스(`C:/Users/user/orca/tools/llama.cpp`),
+폰에서 개발자 옵션 → USB 디버깅 켜기.
+
+```
+# 0) 폰 연결 확인
+adb devices
+
+# 1) 안드로이드용 빌드 (퀄컴 도커 툴체인 ghcr.io/snapdragon-toolchain/arm64-android:v0.7 — 첫 실행에 이미지 수 GB 다운로드)
+cd C:/Users/user/orca/tools/llama.cpp
+python scripts/snapdragon/build.py --target android --push        # 빌드 후 /data/local/tmp/llama.cpp 로 adb 푸시
+
+# 2) 모델 푸시 (NPU 트랙은 Q4_0)
+adb push evals/ondevice/models/Qwen3-1.7B-Q4_0.gguf /data/local/tmp/llama.cpp/
+
+# 3) 기기에서 서버 실행 — NPU(HTP0) 지정, 프로파일 켜기
+python scripts/snapdragon/run.py --target android --devices HTP0 --hex-profile 1 --   llama-server -m /data/local/tmp/llama.cpp/Qwen3-1.7B-Q4_0.gguf --port 8080 -c 4096 --temp 0 --seed 42   --json-schema-file /data/local/tmp/llama.cpp/turn_extraction.schema.json --reasoning-budget 0
+
+# 4) PC 포트 연결 후 우리 러너가 기기 NPU를 부른다
+adb forward tcp:8080 tcp:8080
+uv run python -m medimate.evals.run --provider local --model local/npu-qwen3-1.7b-q4_0 --yes
+```
+
+- `--devices HTP0`이 NPU, 빼면 CPU. 같은 기기에서 둘을 다 돌려 **속도 차이와 채점 차이**를 나란히 기록한다
+- `--hex-profile 1`로 연산별 NPU/CPU 배분이 로그에 남는다. 오프로드 비율이 낮으면 이득이 없다
+- 미확인: v75(8 Gen 3) 실측. 문서에 지원 라이브러리는 있으나 이 기기 실측은 우리가 처음이다
+
 ## 실행
 
 ```
