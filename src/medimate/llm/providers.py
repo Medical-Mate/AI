@@ -155,12 +155,27 @@ class LLMExtractor:
                 base_url=os.getenv("MEDIMATE_LOCAL_BASE_URL", "http://127.0.0.1:8080/v1"),
                 api_key="local",
             )
+        # 스키마 강제는 요청별 response_format으로 넘긴다. 서버 전역 --json-schema-file은
+        # 채팅 템플릿 토큰(<|im_start|>)까지 문법으로 검사해 400이 난다
+        kwargs: dict = {}
+        schema_path = os.getenv(
+            "MEDIMATE_LOCAL_JSON_SCHEMA", "evals/ondevice/turn_extraction.schema.json"
+        )
+        if schema_path and os.path.exists(schema_path):
+            import json as _json
+
+            with open(schema_path, encoding="utf-8") as f:
+                kwargs["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {"name": "turn_extraction", "schema": _json.load(f)},
+                }
         r = self._client.chat.completions.create(
             model=self.model_id.removeprefix(LOCAL_PREFIX),
             messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
             max_tokens=1024,
             temperature=0,
             seed=42,
+            **kwargs,
         )
         u = r.usage
         return (
