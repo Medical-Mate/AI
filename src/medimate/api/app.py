@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Callable
 from datetime import date
 from typing import Annotated, Any
@@ -395,10 +396,16 @@ def create_app(
             app.state.ontology = load_ontology()
         onto = app.state.ontology
 
+        def image_key(n) -> str:
+            # 앱 이미지 자산 파일명 키. 영문 이름 슬러그라 ID가 바뀌어도 유지된다
+            # 예: head, lower-back-and-hip
+            return re.sub(r"[^a-z0-9]+", "-", n.name_en.lower()).strip("-")
+
         def node(n) -> dict[str, Any]:
             return {
                 "id": n.id,
                 "label": n.display_name,
+                "image_key": image_key(n),  # 앱이 id→파일을 하드코딩하지 않게
                 "laterality": n.laterality,  # none | left_right
                 "view": n.view,  # front | back | none(사이드 탭)
                 "departments": list(n.departments),
@@ -415,6 +422,11 @@ def create_app(
             "ontology_snapshot": onto.snapshot_id,
             "axes": [ax.value for ax in PREVISIT_SPEC.axis_type],
             "anchors": anchors,
+            "image_key_note": (
+                "image_key는 앵커·구역 이미지 자산의 파일명 키(예: head, lower-back-and-hip). "
+                "이미지는 앱 자산이고 서버는 키만 낸다. "
+                "부위가 늘면 새 키 + 앱에 그 이미지가 필요하다"
+            ),
             "note": "진료과 안내는 팀 콘텐츠(의료인 자문 확인 전). 증상과 무관하게 부위에만 붙는다",
         }
 
