@@ -87,7 +87,7 @@ GUESS_PATTERNS = [
     r"때문일까",
 ]
 
-LIMITS = {"questions": (3, 5), "todos": (1, 5)}
+LIMITS = {"questions": (2, 5), "todos": (0, 4)}
 # 형식: 질문 후보는 물음표 또는 "~어요/~았어요"(전할 말). 할 일은 명령형 어미
 FORM_OK = {
     # 질문(물음표) 또는 환자 말투 서술문(빈 축 "전할 말"). 베끼기는 아래 copy 검사가 따로 잡는다
@@ -161,10 +161,21 @@ def input_text(task: str, c: dict) -> str:
     return c["memo"]
 
 
-def messages(task: str, c: dict) -> tuple[str, str, dict]:
+def messages(task: str, c: dict, version: str) -> tuple[str, str, dict]:
     if task == "questions":
-        return ap.questions_system(), ap.questions_user(c), ap.QUESTIONS_SCHEMA
-    return ap.todos_system(), ap.todos_user(c["sentences"], c["expect"]), ap.TODOS_SCHEMA
+        return ap.questions_system(version), ap.questions_user(c), ap.QUESTIONS_SCHEMA
+    return ap.todos_system(version), ap.todos_user(c["sentences"], c["expect"]), ap.TODOS_SCHEMA
+
+
+WHY_PATTERN = re.compile(r"왜\s*그런가요|왜\s*그럴까요|왜\s*있는가요")
+PREP_PATTERN = re.compile(r"말할\s*준비\s*$")
+
+
+def repetition(task: str, items: list[dict]) -> int:
+    """어투 반복: 같은 세트에서 '왜 그런가요'(질문) / '말할 준비'(할 일)가 2개 이상이면 초과분."""
+    pat = WHY_PATTERN if task == "questions" else PREP_PATTERN
+    n = sum(1 for it in items if pat.search(it["text"]))
+    return max(0, n - 1)
 
 
 def _content_tokens(s: str) -> list[str]:
@@ -218,11 +229,13 @@ def score(
         "G": 0,
         "D": 0,
         "F": 0,
+        "R": 0,
         "n": 0,
         "specific": 0,
     }
     if not items:
         return out
+    out["R"] = repetition(task, items)
     inp = _norm(input_text(task, c))
     sents = input_sentences(task, c)
     out["n"] = len(items)
@@ -235,8 +248,8 @@ def score(
             out["D"] += 1
             bad = True
         seen.add(nt)
-        if not form_ok(task, txt, inp, sents):
-            out["F"] += 1
+        if it["source"] != "patient_message" and not form_ok(task, txt, inp, sents):
+            out["F"] += 1  # 환자가 덧붙인 말을 그대로 살린 것(patient_message)은 베끼기가 아니다
             bad = True
         for term in lexicon:
             if _norm(term) in nt and _norm(term) not in inp:
@@ -284,7 +297,7 @@ def run(task: str, llm, cases: list[dict], version: str, out_path: Path) -> list
         for c in cases:
             if c["id"] in done:
                 continue
-            system, user, schema = messages(task, c)
+            system, user, schema = messages(task, c, version)
             t0 = time.perf_counter()
             err = None
             items = None
@@ -317,7 +330,7 @@ def run(task: str, llm, cases: list[dict], version: str, out_path: Path) -> list
 def report(task: str, rows: list[dict], cases: list[dict], show: bool) -> None:
     by_id = {c["id"]: c for c in cases}
     lexicon = load_lexicon()
-    tot = {"P": 0, "V": 0, "T": 0, "G": 0, "D": 0, "F": 0, "n": 0, "specific": 0}
+    tot = {"P": 0, "V": 0, "T": 0, "G": 0, "D": 0, "F": 0, "R": 0, "n": 0, "specific": 0}
     lat = []
     for r in rows:
         c = by_id.get(r["case_id"])
@@ -340,6 +353,7 @@ def report(task: str, rows: list[dict], cases: list[dict], show: bool) -> None:
     print(
         f"D 중복 {tot['D']}   F 형식 실패(비질문·영문·베끼기) {tot['F']}   → 유효 항목 {valid}/{tot['n']}"
     )
+    print(f"R 어투 반복(세트당 '왜 그런가요'/'말할 준비' 2개 이상, 초과분 합) {tot['R']}")
     print(
         f"S 입력 고유 비율(유효 항목만) {tot['specific']}/{tot['n']} = {tot['specific'] / max(tot['n'], 1):.0%}   (문턱 30%)"
     )
@@ -362,7 +376,9 @@ def report(task: str, rows: list[dict], cases: list[dict], show: bool) -> None:
             seen: set[str] = set()
             for it in r["items"]:
                 nt = _norm(it["text"])
-                bad = nt in seen or not form_ok(task, it["text"], inp, sents)
+                bad = nt in seen or (
+                    it["source"] != "patient_message" and not form_ok(task, it["text"], inp, sents)
+                )
                 seen.add(nt)
                 sp = (
                     not bad
@@ -392,9 +408,13 @@ def main() -> None:
     a.add_argument("--report", type=Path)
     a.add_argument("--show", action="store_true", help="항목 전부 출력(사람 판정용)")
     a.add_argument("--yes", action="store_true")
+    a.add_argument("--prompt-version", help="questions-v1~v5, todos-v1|v2. 기본은 최신")
     args = a.parse_args()
     cases = load_inputs(args.task)
-    version = ap.QUESTIONS_VERSION if args.task == "questions" else ap.TODOS_VERSION
+    version = args.prompt_version or (
+        ap.QUESTIONS_VERSION if args.task == "questions" else ap.TODOS_VERSION
+    )
+    vsuf = "" if version.endswith("-v1") else "-" + version.split("-")[-1]
     if args.report:
         rows = [json.loads(ln) for ln in args.report.read_text(encoding="utf-8").splitlines() if ln]
         report(args.task, rows, cases, args.show)
@@ -419,7 +439,7 @@ def main() -> None:
         llm,
         cases,
         version,
-        RESULTS / f"{args.task}-{args.model.replace('/', '-')}.jsonl",
+        RESULTS / f"{args.task}-{args.model.replace('/', '-')}{vsuf}.jsonl",
     )
     report(args.task, rows, cases, args.show)
     print(f"\n실제 비용 ${llm.usage.cost_usd(args.model):.3f}")
