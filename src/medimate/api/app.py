@@ -129,6 +129,7 @@ class MemoRequest(BaseModel):
 
     - labels 없음: 서버가 문장 분류 LLM을 부른다
     - labels 있음: 폰이 이미 분류한 결과({"0": 라벨, …}). 서버는 LLM 없이 카드만 조립한다
+    - classify=false (labels 없음): **문장만 나눠 돌려준다.** LLM 없음. 폰이 분류할 때 1단계
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -137,6 +138,9 @@ class MemoRequest(BaseModel):
     visit_date: date | None = None  # 재방문 날짜 계산 기준. 앱이 준다
     clinic: str | None = Field(default=None, max_length=80)  # "서울OO병원 내과". 앱이 준다
     labels: dict[str, str] | None = None  # 폰 분류 결과 또는 1q-2에서 고친 라벨
+    classify: bool = (
+        True  # false면 서버 LLM을 부르지 않고 sentences만(폰 분류 1단계). labels가 있으면 무시
+    )
     labels_meta: ExtractionMeta | None = None  # labels가 폰 모델에서 왔으면 무엇으로
     previsit_anchor_id: str | None = Field(default=None, max_length=40)  # 진료 전 부위(대조용)
     request_id: str | None = Field(default=None, max_length=128)
@@ -147,7 +151,7 @@ class MemoResponse(BaseModel):
     sentences: list[str]  # 우리가 나눈 문장. 1q-2 수정 화면이 이 번호로 라벨을 바꾼다
     labels: dict[str, str]  # 번호 → 라벨(none 포함)
     dropped: list[dict[str, Any]]  # 가드가 무시한 라벨
-    source: str  # server | client
+    source: str  # server | client | none(문장 분리만)
     usage: TurnUsage
     request_id: str | None = None
 
@@ -336,6 +340,10 @@ def create_app(
         if body.labels is not None:
             clf = FixedLabels(body.labels)
             source = "client"
+        elif not body.classify:
+            # 폰 분류 1단계: 문장 번호만 필요. 전부 unsorted인 카드가 나오지만 앱은 sentences만 쓴다
+            clf = FixedLabels({})
+            source = "none"
         else:
             clf = _memo_classifier(request)
             source = "server"
