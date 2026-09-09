@@ -1,22 +1,53 @@
 {
-  "additionalProperties": false,
-  "description": "LLM 출력 스키마. **문장 순서대로** 라벨 하나씩.\n\n번호를 모델에게 맡기지 않는다(v1·v2에서 번호가 서로 바뀌는 오류가 있었다).\n길이는 요청별 스키마(minItems=maxItems=N)로 강제한다.",
+  "$comment": "예시(N=4). 실제 요청에서는 문장 수 N에 맞춰 키 \"0\"..\"N-1\"을 전부 required로 생성한다 (src/medimate/dialog/memo.py MemoLabels.keyed_schema_for). 번호 키 객체는 문장 앵커가 있어 누락·중복·뒤바뀜이 문법에서 불가능하다. v3의 위치 배열 스키마는 64%로 후퇴해 폐기.",
+  "type": "object",
   "properties": {
-    "labels": {
-      "items": {
-        "enum": [
-          "findings",
-          "tests",
-          "medication_instructions",
-          "follow_up",
-          "none"
-        ],
-        "type": "string"
-      },
-      "title": "Labels",
-      "type": "array"
+    "0": {
+      "type": "string",
+      "enum": [
+        "findings",
+        "tests",
+        "medication_instructions",
+        "follow_up",
+        "none"
+      ]
+    },
+    "1": {
+      "type": "string",
+      "enum": [
+        "findings",
+        "tests",
+        "medication_instructions",
+        "follow_up",
+        "none"
+      ]
+    },
+    "2": {
+      "type": "string",
+      "enum": [
+        "findings",
+        "tests",
+        "medication_instructions",
+        "follow_up",
+        "none"
+      ]
+    },
+    "3": {
+      "type": "string",
+      "enum": [
+        "findings",
+        "tests",
+        "medication_instructions",
+        "follow_up",
+        "none"
+      ]
     }
   },
-  "title": "MemoLabels",
-  "type": "object"
+  "required": [
+    "0",
+    "1",
+    "2",
+    "3"
+  ],
+  "additionalProperties": false
 }
