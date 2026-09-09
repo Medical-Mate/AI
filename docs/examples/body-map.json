@@ -1,0 +1,407 @@
+{
+  "ontology_snapshot": "3cc57491f020",
+  "axes": [
+    "site",
+    "onset",
+    "character",
+    "radiation",
+    "associated",
+    "time_course",
+    "exacerbating_relieving",
+    "severity"
+  ],
+  "anchors": [
+    {
+      "id": "ANC:001",
+      "label": "머리",
+      "image_key": "head",
+      "laterality": "none",
+      "view": "front",
+      "departments": [
+        "신경과",
+        "가정의학과"
+      ],
+      "departments_source": "팀 결정 2026-09-04, 의료인 자문 확인 전",
+      "region": "REG:004",
+      "zones": [
+        {
+          "id": "SUR:001",
+          "label": "머리 전체·이마",
+          "image_key": "head-and-forehead",
+          "laterality": "none",
+          "view": "front",
+          "departments": [
+            "신경과",
+            "가정의학과"
+          ],
+          "departments_source": "팀 결정 2026-09-04, 의료인 자문 확인 전"
+        },
+        {
+          "id": "SUR:002",
+          "label": "눈",
+          "image_key": "eye",
+          "laterality": "left_right",
+          "view": "front",
+          "departments": [
+            "안과"
+          ],
+          "departments_source": "팀 결정 2026-09-04, 의료인 자문 확인 전"
+        },
+        {
+          "id": "SUR:003",
+          "label": "귀",
+          "image_key": "ear",
+          "laterality": "left_right",
+          "view": "front",
+          "departments": [
+            "이비인후과"
+          ],
+          "departments_source": "팀 결정 2026-09-04, 의료인 자문 확인 전"
+        },
+        {
+          "id": "SUR:004",
+          "label": "코",
+          "image_key": "nose",
+          "laterality": "none",
+          "view": "front",
+          "departments": [
+            "이비인후과"
+          ],
+          "departments_source": "팀 결정 2026-09-04, 의료인 자문 확인 전"
+        },
+        {
+          "id": "SUR:005",
+          "label": "입",
+          "image_key": "mouth",
+          "laterality": "none",
+          "view": "front",
+          "departments": [
+            "이비인후과"
+          ],
+          "departments_source": "팀 결정 2026-09-04, 의료인 자문 확인 전"
+        }
+      ]
+    },
+    {
+      "id": "ANC:002",
+      "label": "목",
+      "image_key": "neck",
+      "laterality": "none",
+      "view": "front",
+      "departments": [],
+      "departments_source": "",
+      "region": "REG:004",
+      "zones": [
+        {
+          "id": "SUR:011",
+          "label": "목 안(목구멍)",
+          "image_key": "throat",
+          "laterality": "none",
+          "view": "front",
+          "departments": [
+            "이비인후과",
+            "내과"
+          ],
+          "departments_source": "팀 결정 2026-09-04, 의료인 자문 확인 전"
+        },
+        {
+          "id": "SUR:012",
+          "label": "목 뒤·옆",
+          "image_key": "back-and-side-of-neck",
+          "laterality": "left_right",
+          "view": "front",
+          "departments": [
+            "정형외과",
+            "신경외과"
+          ],
+          "departments_source": "팀 결정 2026-09-04, 의료인 자문 확인 전"
+        }
+      ]
+    },
+    {
+      "id": "ANC:003",
+      "label": "가슴",
+      "image_key": "chest",
+      "laterality": "none",
+      "view": "front",
+      "departments": [
+        "내과",
+        "심장내과",
+        "호흡기내과"
+      ],
+      "departments_source": "팀 결정 2026-09-04, 의료인 자문 확인 전",
+      "region": "REG:003",
+      "zones": [
+        {
+          "id": "SUR:021",
+          "label": "가슴 가운데",
+          "image_key": "center-of-chest",
+          "laterality": "none",
+          "view": "front",
+          "departments": [
+            "내과",
+            "심장내과",
+            "호흡기내과"
+          ],
+          "departments_source": "팀 결정 2026-09-04, 의료인 자문 확인 전"
+        },
+        {
+          "id": "SUR:022",
+          "label": "가슴 옆(갈비)",
+          "image_key": "side-of-chest",
+          "laterality": "left_right",
+          "view": "front",
+          "departments": [
+            "내과",
+            "정형외과"
+          ],
+          "departments_source": "팀 결정 2026-09-04, 의료인 자문 확인 전"
+        }
+      ]
+    },
+    {
+      "id": "ANC:004",
+      "label": "배",
+      "image_key": "abdomen",
+      "laterality": "none",
+      "view": "front",
+      "departments": [
+        "내과",
+        "소화기내과"
+      ],
+      "departments_source": "팀 결정 2026-09-04, 의료인 자문 확인 전",
+      "region": "REG:003",
+      "zones": [
+        {
+          "id": "SUR:031",
+          "label": "윗배(명치)",
+          "image_key": "upper-abdomen",
+          "laterality": "left_right",
+          "view": "front",
+          "departments": [
+            "내과",
+            "소화기내과"
+          ],
+          "departments_source": "팀 결정 2026-09-04, 의료인 자문 확인 전"
+        },
+        {
+          "id": "SUR:032",
+          "label": "아랫배",
+          "image_key": "lower-abdomen",
+          "laterality": "left_right",
+          "view": "front",
+          "departments": [
+            "내과",
+            "소화기내과",
+            "산부인과",
+            "비뇨의학과"
+          ],
+          "departments_source": "팀 결정 2026-09-04, 의료인 자문 확인 전"
+        }
+      ]
+    },
+    {
+      "id": "ANC:013",
+      "label": "팔",
+      "image_key": "arm",
+      "laterality": "left_right",
+      "view": "front",
+      "departments": [
+        "정형외과"
+      ],
+      "departments_source": "팀 결정 2026-09-04, 의료인 자문 확인 전",
+      "region": "REG:001",
+      "zones": [
+        {
+          "id": "SUR:051",
+          "label": "어깨",
+          "image_key": "shoulder",
+          "laterality": "left_right",
+          "view": "front",
+          "departments": [],
+          "departments_source": ""
+        },
+        {
+          "id": "SUR:055",
+          "label": "위팔",
+          "image_key": "upper-arm",
+          "laterality": "left_right",
+          "view": "front",
+          "departments": [],
+          "departments_source": ""
+        },
+        {
+          "id": "SUR:061",
+          "label": "팔꿈치",
+          "image_key": "elbow",
+          "laterality": "left_right",
+          "view": "front",
+          "departments": [],
+          "departments_source": ""
+        },
+        {
+          "id": "SUR:065",
+          "label": "아래팔",
+          "image_key": "forearm",
+          "laterality": "left_right",
+          "view": "front",
+          "departments": [],
+          "departments_source": ""
+        },
+        {
+          "id": "SUR:071",
+          "label": "손목",
+          "image_key": "wrist",
+          "laterality": "left_right",
+          "view": "front",
+          "departments": [],
+          "departments_source": ""
+        },
+        {
+          "id": "SUR:072",
+          "label": "손",
+          "image_key": "hand",
+          "laterality": "left_right",
+          "view": "front",
+          "departments": [],
+          "departments_source": ""
+        }
+      ]
+    },
+    {
+      "id": "ANC:014",
+      "label": "다리",
+      "image_key": "leg",
+      "laterality": "left_right",
+      "view": "front",
+      "departments": [
+        "정형외과"
+      ],
+      "departments_source": "팀 결정 2026-09-04, 의료인 자문 확인 전",
+      "region": "REG:002",
+      "zones": [
+        {
+          "id": "SUR:090",
+          "label": "허벅지",
+          "image_key": "thigh",
+          "laterality": "left_right",
+          "view": "front",
+          "departments": [],
+          "departments_source": ""
+        },
+        {
+          "id": "SUR:091",
+          "label": "무릎",
+          "image_key": "knee",
+          "laterality": "left_right",
+          "view": "front",
+          "departments": [],
+          "departments_source": ""
+        },
+        {
+          "id": "SUR:097",
+          "label": "종아리",
+          "image_key": "calf",
+          "laterality": "left_right",
+          "view": "front",
+          "departments": [],
+          "departments_source": ""
+        },
+        {
+          "id": "SUR:101",
+          "label": "발목",
+          "image_key": "ankle",
+          "laterality": "left_right",
+          "view": "front",
+          "departments": [],
+          "departments_source": ""
+        },
+        {
+          "id": "SUR:102",
+          "label": "발",
+          "image_key": "foot",
+          "laterality": "left_right",
+          "view": "front",
+          "departments": [],
+          "departments_source": ""
+        }
+      ]
+    },
+    {
+      "id": "ANC:012",
+      "label": "허리·엉덩이",
+      "image_key": "lower-back-and-hip",
+      "laterality": "none",
+      "view": "back",
+      "departments": [
+        "정형외과",
+        "신경외과"
+      ],
+      "departments_source": "팀 결정 2026-09-04, 의료인 자문 확인 전",
+      "region": "REG:003",
+      "zones": [
+        {
+          "id": "SUR:041",
+          "label": "허리 가운데",
+          "image_key": "center-of-lower-back",
+          "laterality": "none",
+          "view": "back",
+          "departments": [],
+          "departments_source": ""
+        },
+        {
+          "id": "SUR:042",
+          "label": "허리 옆",
+          "image_key": "side-of-lower-back",
+          "laterality": "left_right",
+          "view": "back",
+          "departments": [
+            "내과",
+            "비뇨의학과",
+            "정형외과"
+          ],
+          "departments_source": "팀 결정 2026-09-04, 의료인 자문 확인 전"
+        },
+        {
+          "id": "SUR:081",
+          "label": "엉덩이",
+          "image_key": "buttock",
+          "laterality": "left_right",
+          "view": "back",
+          "departments": [],
+          "departments_source": ""
+        }
+      ]
+    },
+    {
+      "id": "ANC:010",
+      "label": "전신",
+      "image_key": "whole-body",
+      "laterality": "none",
+      "view": "none",
+      "departments": [
+        "내과",
+        "가정의학과"
+      ],
+      "departments_source": "팀 결정 2026-09-04, 의료인 자문 확인 전",
+      "region": "REG:005",
+      "zones": []
+    },
+    {
+      "id": "ANC:011",
+      "label": "피부",
+      "image_key": "skin",
+      "laterality": "none",
+      "view": "none",
+      "departments": [
+        "피부과",
+        "내과"
+      ],
+      "departments_source": "팀 결정 2026-09-04, 의료인 자문 확인 전",
+      "region": "REG:005",
+      "zones": []
+    }
+  ],
+  "image_key_note": "image_key는 앵커·구역 이미지 자산의 파일명 키(예: head, lower-back-and-hip). 이미지는 앱 자산이고 서버는 키만 낸다. 부위가 늘면 새 키 + 앱에 그 이미지가 필요하다",
+  "note": "진료과 안내는 팀 콘텐츠(의료인 자문 확인 전). 증상과 무관하게 부위에만 붙는다"
+}

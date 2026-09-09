@@ -1,6 +1,7 @@
 """온디바이스 프로필·선택지·HMAC·부위 마스터 — API 계약의 선택 필드들. LLM 호출 없음."""
 
 import json
+import re
 import time
 
 from fastapi.testclient import TestClient
@@ -118,6 +119,19 @@ def test_selections_fill_axes_without_llm_and_advance():
     ).json()
     assert t2["card"]["axes"]["severity"]["value"] == "5"
     assert t2["card"]["axes"]["character"]["value"] == "욱신"
+
+
+def test_body_map_image_keys_are_stable_slugs_and_unique():
+    client = TestClient(create_app())
+    b = client.get("/v1/ontology/body-map").json()
+    keys = [a["image_key"] for a in b["anchors"]] + [
+        z["image_key"] for a in b["anchors"] for z in a["zones"]
+    ]
+    assert all(re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", k) for k in keys), keys
+    assert len(keys) == len(set(keys)), "image_key 중복"
+    head = next(a for a in b["anchors"] if a["id"] == "ANC:001")
+    assert head["image_key"] == "head"
+    assert b["image_key_note"]
 
 
 def test_body_map_lists_anchors_zones_and_departments():
