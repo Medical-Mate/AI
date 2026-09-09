@@ -114,6 +114,21 @@ class LLMExtractor:
         except Exception as e:  # noqa: BLE001 — 파싱 실패 자체가 채점 대상
             return RawResult(text, None, f"{type(e).__name__}: {e}", i, o)
 
+    def complete_json(self, system: str, user: str, schema: dict) -> tuple[str, int, int]:
+        """추출 프롬프트가 아닌 일반 JSON 호출(질문 후보·할 일 등). 상한·사용량 집계는 같다."""
+        if self.usage.cost_usd(self.model_id) >= self.budget_usd:
+            raise BudgetExceeded(f"{self.model_id}: ${self.budget_usd} 상한 도달")
+        prev = self.response_schema
+        self.response_schema = schema
+        try:
+            text, i, o = self._call(system, user)
+        finally:
+            self.response_schema = prev
+        self.usage.calls += 1
+        self.usage.input_tokens += i
+        self.usage.output_tokens += o
+        return text, i, o
+
     # ------------------------------------------------------------------
     def _call(self, system: str, user: str) -> tuple[str, int, int]:
         if self.provider == "anthropic":
