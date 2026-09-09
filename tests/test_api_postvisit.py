@@ -85,6 +85,26 @@ def test_memo_client_labels_skip_llm_and_relabel_flow():
     assert b2["card"]["unsorted"] == []
 
 
+def test_memo_split_only_skips_llm_and_returns_sentences():
+    client = make(["findings"] * 5)  # 서버 분류기가 불리면 findings가 찍힌다 — 불리지 않아야 한다
+    b = client.post(
+        "/v1/postvisit/memo",
+        json={"memo": MEMO, "visit_date": "2026-09-12", "classify": False},
+    ).json()
+    assert b["source"] == "none" and b["usage"]["input_tokens"] == 0
+    assert len(b["sentences"]) == 5 and all(v == "none" for v in b["labels"].values())
+    assert b["card"]["unsorted"] == b["sentences"]  # 분류 안 했으니 전부 미분류로 보존
+    assert b["card"]["follow_up_date"] is None
+    # labels가 오면 classify=false는 무시되고 조립한다
+    labels = {str(i): "none" for i in range(5)}
+    labels["3"] = "follow_up"
+    b2 = client.post(
+        "/v1/postvisit/memo",
+        json={"memo": MEMO, "visit_date": "2026-09-12", "classify": False, "labels": labels},
+    ).json()
+    assert b2["source"] == "client" and b2["card"]["follow_up_date"]["date"] == "2026-09-26"
+
+
 def test_memo_widening_and_site_comparison():
     client = make(["findings"])
     b = client.post(

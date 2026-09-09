@@ -21,6 +21,7 @@ AI 서버는 무상태다. 메모 하나를 받아 **4묶음 카드**로 돌려�
 | `visit_date` | 진료일(ISO). 재방문 날짜 계산의 기준. 없으면 날짜 계산 생략 |
 | `clinic` | 병원·과. 앱(1s·1r)이 준다. AI가 만들지 않는다 |
 | `labels` (선택) | `{"0":"findings","1":"tests",…}`. **있으면 서버는 LLM을 부르지 않고** 카드만 조립한다. 폰이 분류했거나 1q-2에서 사용자가 고친 라벨 |
+| `classify` (선택, 기본 true) | **false면 서버 LLM을 부르지 않고 `sentences`만 돌려준다**(카드는 전부 `unsorted`, `source: "none"`). 폰이 분류할 때 1단계. `labels`가 있으면 무시 |
 | `labels_meta` (선택) | labels가 폰 모델에서 왔으면 `{model_id, prompt_version}` → provenance에 기록 |
 | `previsit_anchor_id` (선택) | 진료 전 카드의 부위 앵커. 소견 용어의 부위와 **대조만** 한다(same/different) |
 | `request_id` | 응답에 그대로 |
@@ -57,7 +58,7 @@ AI 서버는 무상태다. 메모 하나를 받아 **4묶음 카드**로 돌려�
 1r 일정     ◀─ card.follow_up_date ─┘
 ```
 
-온디바이스: 폰이 문장 분류를 끝냈으면 `labels` + `labels_meta`로 보낸다. 서버 LLM 호출 0. 문장 분리 규칙은 폰과 서버가 같아야 하므로, 폰은 `sentences`를 먼저 받거나 같은 규칙(`dialog/memo.py split_sentences`)을 쓴다.
+온디바이스(2026-09-09 결정, #35): ① `classify: false`로 불러 `sentences`를 받는다(LLM 0) → ② 폰 모델이 문장에 라벨 → ③ `labels` + `labels_meta`로 다시 불러 카드 조립(LLM 0). 폰이 실패하면 `classify` 없이 불러 서버 Terra 폴백. 문장 분리는 항상 서버가 한다(폰·서버가 같은 번호를 가리키게).
 
 ## 오류
 
