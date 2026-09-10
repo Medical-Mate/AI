@@ -13,6 +13,10 @@ from medimate.ontology import (
     UnknownNodeError,
     load_ontology,
 )
+from medimate.ontology.korean_keys import (
+    english_keys_to_hangul,
+    looks_like_korean_typed_in_english,
+)
 
 KNEE = "UBERON:0001465"
 SHOULDER = "UBERON:0001467"
@@ -492,3 +496,57 @@ def test_search_prefers_specific_zone_in_sentence_and_returns_empty_for_unknown(
     assert onto.search("") == []
     # 구조 노드(앞십자인대 등)는 검색 대상이 아니다 — 넓히기가 따로 맡는다
     assert all(n.kind in ("anchor", "surface") for n, _, _ in onto.search("인대"))
+
+
+# ── 한/영 오타 복원 ────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("keys", "hangul"),
+    [
+        ("qo", "배"),
+        ("qhrqn", "복부"),
+        ("audcl", "명치"),
+        ("duvrnfl", "옆구리"),
+        ("anfmv", "무릎"),
+        ("djRo", "어깨"),
+        ("dkfotqo", "아랫배"),
+        ("gjfl duv", "허리 옆"),  # 공백은 그대로
+        ("djqtdj", "없어"),  # 복종성 ㅄ
+        ("rkqtwl", "값지"),  # 복종성 뒤 자음 → 다음 초성
+        ("ansdj", "문어"),  # 종성 ㄴ 뒤 ㅇ+모음 → 종성 이월
+        ("gksrmf", "한글"),
+    ],
+)
+def test_english_keys_to_hangul_composes_syllables(keys, hangul):
+    assert english_keys_to_hangul(keys) == hangul
+
+
+def test_looks_like_korean_typed_in_english_needs_letters_on_the_layout():
+    assert looks_like_korean_typed_in_english("qo")
+    assert not looks_like_korean_typed_in_english("")
+    assert not looks_like_korean_typed_in_english("배")
+    assert not looks_like_korean_typed_in_english("MRI")  # 자판 밖 대문자
+    assert not looks_like_korean_typed_in_english("ct")  # 모음 자리 키가 없다
+
+
+def test_search_restores_korean_typed_on_english_layout():
+    onto = load_ontology()
+    top = lambda q: onto.search(q, limit=1)[0][0].id  # noqa: E731
+    assert top("qo") == "ANC:004"  # 배
+    assert top("qhrqn") == "ANC:004"  # 복부 → 배
+    assert top("audcl") == "SUR:031"  # 명치 → 윗배
+    assert top("duvrnfl") == "SUR:042"  # 옆구리 → 허리 옆
+    assert top("anfmv") == "SUR:091"  # 무릎
+    assert onto.search("zzzz") == []  # 복원해도 안 걸리면 그대로 0건
+
+
+def test_search_restoration_runs_only_when_there_is_no_hit():
+    """복원은 0건일 때만 돈다 — 지금 결과가 나오는 질의는 그대로다(안드로이드 회귀 방지)."""
+    onto = load_ontology()
+    ids = lambda q: [n.id for n, _, _ in onto.search(q)]  # noqa: E731
+    assert ids("배") == ["ANC:004", "SUR:032", "SUR:031"]
+    assert ids("복부") == ["ANC:004", "SUR:031", "SUR:032"]
+    assert ids("무릎") == ["SUR:091"]
+    assert ids("허리 옆") == ["SUR:042", "SUR:041"]
+    assert onto.search("무릅") == []  # 한글 오타는 여전히 안 잡는다

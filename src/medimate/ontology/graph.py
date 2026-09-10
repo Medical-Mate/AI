@@ -45,6 +45,11 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+from medimate.ontology.korean_keys import (
+    english_keys_to_hangul,
+    looks_like_korean_typed_in_english,
+)
+
 RELATIONS = frozenset({"part_of", "is_a"})  # 상위로 타는 관계
 ASSOC_RELATIONS = frozenset({"located_in"})  # 층 사이 연결. 조상 계산에 쓰지 않는다
 KINDS = frozenset({"region", "anchor", "structure", "surface"})
@@ -252,6 +257,10 @@ class Ontology:
         한쪽이 다른 쪽을 포함하면 1. 앵커·구역만 대상(구조 노드는 넓히기가 따로 맡는다).
         반환: (노드, 걸린 표현, 점수). 점수 내림차순.
         같으면 걸린 표현이 긴 것(구체적) 먼저, 그다음 앵커.
+
+        결과가 0건이고 입력이 한/영 오타로 보이면 한글로 복원해 한 번 더 찾는다("qo" → "배").
+        0건일 때만 도므로 지금 결과가 나오는 질의는 결과가 바뀌지 않는다.
+        조합 중간 입력("옆굴", "아랫ㅂ")은 다루지 않는다 — 앱이 처리할 몫.
         """
         q = _norm_text(query)
         if len(q) < 1:
@@ -279,6 +288,10 @@ class Ontology:
                 hits.append((n, best[0], best[1]))
         # 점수 같으면 더 구체적인(긴) 표현이 먼저: "왼쪽 아랫배가 아파요" → 아랫배 > 배
         hits.sort(key=lambda h: (-h[2], -len(h[1]), 0 if h[0].kind == "anchor" else 1, h[0].id))
+        if not hits and looks_like_korean_typed_in_english(q):
+            restored = english_keys_to_hangul(q)
+            if restored != q:  # 복원 결과에는 한글이 있어 오타 판정이 다시 참이 되지 않는다
+                return self.search(restored, limit=limit)
         return hits[:limit]
 
     def anchors_in_order(self) -> list[Node]:
