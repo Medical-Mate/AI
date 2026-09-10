@@ -50,6 +50,7 @@
 | `POST /v1/previsit/sessions` | 진료 전 세션 시작(부위 선택, 서버·온디바이스 프로필) | [`docs/api-previsit.md`](./docs/api-previsit.md) |
 | `POST /v1/previsit/turns` | 턴 처리(발화 또는 폰 추출 결과, 칩 선택) | 〃 |
 | `GET /v1/ontology/body-map` | 인체도 부위 마스터 | 〃 |
+| `GET /v1/ontology/search` | 폼 입력으로 부위 찾기(유의어·한영 오타 복원, LLM 없음) | 〃 |
 | `POST /v1/postvisit/memo` | 진료 후 메모 → 4묶음 카드. `labels`를 주면 LLM 없이 재조립 | [`docs/api-postvisit.md`](./docs/api-postvisit.md) |
 
 ---

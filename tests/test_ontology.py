@@ -642,3 +642,36 @@ def test_zone_expansion_does_not_reorder_or_drop_direct_matches():
     assert ids("배")[:3] == ["ANC:004", "SUR:032", "SUR:031"]  # 구역이 이미 직접 걸린 경우 그대로
     assert ids("무릎") == ["SUR:091"]  # 앵커가 없으면 붙는 것도 없다
     assert ids("왼쪽 아랫배가 아파요")[0] == "SUR:032"
+
+
+def test_weak_anchor_match_does_not_expand_zones():
+    """점수 1(부분 포함)은 구역을 펼치지 않는다 — "전체"가 앵커 넷을 펼쳐 23건이 되던 회귀."""
+    onto = load_ontology()
+    hits = onto.search("전체", limit=100)
+    assert [n.display_name for n, _, _ in hits] == [
+        "전신",
+        "머리 전체·이마",
+        "머리",
+        "다리",
+        "배",
+        "팔",
+    ]
+    assert all(s > 0 for _, _, s in hits)  # 딸려 온 구역이 없다
+
+    # 점수 2 이상이면 펼친다 — 앵커 이름 그대로(3)든 접두(2)든
+    assert "엉덩이" in [n.display_name for n, _, _ in onto.search("허리", limit=100)]
+    assert "무릎" in [n.display_name for n, _, _ in onto.search("다리", limit=100)]
+
+
+def test_search_results_fit_in_the_default_limit():
+    """기본 limit(8)에서 잘리는 질의가 없어야 한다 — 잘리면 구역이 조용히 사라진다."""
+    onto = load_ontology()
+    terms = set()
+    for node in onto.nodes.values():
+        if node.kind in ("anchor", "surface"):
+            terms.add(node.name_ko)
+            terms.update(node.aliases)
+    over = [
+        (t, len(onto.search(t, limit=100))) for t in terms if len(onto.search(t, limit=100)) > 8
+    ]
+    assert over == []

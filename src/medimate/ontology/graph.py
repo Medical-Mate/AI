@@ -262,8 +262,11 @@ class Ontology:
         0건일 때만 도므로 지금 결과가 나오는 질의는 결과가 바뀌지 않는다.
         조합 중간 입력("옆굴", "아랫ㅂ")은 다루지 않는다 — 앱이 처리할 몫.
 
-        앵커가 걸리면 그 아래 구역을 CSV 순서로 뒤에 붙인다(점수 0). "다리"만 아는 사람이
-        무릎·종아리를 보게 하려는 것이다. 고르지 않고 전부 준다 — 추리면 감별이 된다.
+        앵커가 **점수 2 이상으로** 걸리면 그 아래 구역을 CSV 순서로 뒤에 붙인다(점수 0).
+        "다리"만 아는 사람이 무릎·종아리를 보게 하려는 것이다.
+        고르지 않고 전부 준다 — 추리면 감별이 된다.
+        점수 1(부분 포함)은 확장하지 않는다: "전체"가 "머리 전체"·"팔 전체"에 스쳐서
+        앵커 넷을 펼치면 결과가 23건이 되고, limit에 잘려 눈·귀만 남고 코·입은 사라진다.
         """
         q = _norm_text(query)
         if len(q) < 1:
@@ -298,8 +301,8 @@ class Ontology:
                 return self.search(restored, limit=limit)
         # 앵커가 걸렸으면 그 아래 구역을 딸려 보낸다. 점수 0 = 직접 매칭이 아니라 앵커에 딸려 온 것
         seen = {n.id for n, _, _ in hits}
-        for node, matched, _ in list(hits):
-            if node.kind != "anchor":
+        for node, matched, score in list(hits):
+            if node.kind != "anchor" or score < 2:  # 점수 1(부분 포함)은 확장하지 않는다
                 continue
             for zone in self.zones(node.id):
                 if zone.id not in seen:
