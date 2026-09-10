@@ -45,6 +45,11 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+from medimate.ontology.korean_keys import (
+    english_keys_to_hangul,
+    looks_like_korean_typed_in_english,
+)
+
 RELATIONS = frozenset({"part_of", "is_a"})  # 상위로 타는 관계
 ASSOC_RELATIONS = frozenset({"located_in"})  # 층 사이 연결. 조상 계산에 쓰지 않는다
 KINDS = frozenset({"region", "anchor", "structure", "surface"})
@@ -252,6 +257,13 @@ class Ontology:
         한쪽이 다른 쪽을 포함하면 1. 앵커·구역만 대상(구조 노드는 넓히기가 따로 맡는다).
         반환: (노드, 걸린 표현, 점수). 점수 내림차순.
         같으면 걸린 표현이 긴 것(구체적) 먼저, 그다음 앵커.
+
+        결과가 0건이고 입력이 한/영 오타로 보이면 한글로 복원해 한 번 더 찾는다("qo" → "배").
+        0건일 때만 도므로 지금 결과가 나오는 질의는 결과가 바뀌지 않는다.
+        조합 중간 입력("옆굴", "아랫ㅂ")은 다루지 않는다 — 앱이 처리할 몫.
+
+        앵커가 걸리면 그 아래 구역을 CSV 순서로 뒤에 붙인다(점수 0). "다리"만 아는 사람이
+        무릎·종아리를 보게 하려는 것이다. 고르지 않고 전부 준다 — 추리면 감별이 된다.
         """
         q = _norm_text(query)
         if len(q) < 1:
@@ -279,6 +291,20 @@ class Ontology:
                 hits.append((n, best[0], best[1]))
         # 점수 같으면 더 구체적인(긴) 표현이 먼저: "왼쪽 아랫배가 아파요" → 아랫배 > 배
         hits.sort(key=lambda h: (-h[2], -len(h[1]), 0 if h[0].kind == "anchor" else 1, h[0].id))
+        # 복원은 정규화 전 원문으로 한다 — 소문자로 바꾸면 shift 자리(ㄲ ㅒ 등)가 죽는다
+        if not hits and looks_like_korean_typed_in_english(query):
+            restored = english_keys_to_hangul(query)
+            if restored != query:  # 복원 결과에는 한글이 있어 오타 판정이 다시 참이 되지 않는다
+                return self.search(restored, limit=limit)
+        # 앵커가 걸렸으면 그 아래 구역을 딸려 보낸다. 점수 0 = 직접 매칭이 아니라 앵커에 딸려 온 것
+        seen = {n.id for n, _, _ in hits}
+        for node, matched, _ in list(hits):
+            if node.kind != "anchor":
+                continue
+            for zone in self.zones(node.id):
+                if zone.id not in seen:
+                    seen.add(zone.id)
+                    hits.append((zone, matched, 0))
         return hits[:limit]
 
     def anchors_in_order(self) -> list[Node]:
