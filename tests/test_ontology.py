@@ -619,3 +619,26 @@ def test_search_restoration_runs_only_when_there_is_no_hit():
     assert ids("무릎") == ["SUR:091"]
     assert ids("허리 옆") == ["SUR:042", "SUR:041"]
     assert onto.search("무릅") == []  # 한글 오타는 여전히 안 잡는다
+
+
+def test_search_on_an_anchor_name_lists_its_zones():
+    """앵커 이름만 아는 사람도 구역을 본다 — "다리" → 무릎·종아리·발목·발."""
+    onto = load_ontology()
+    for anchor in [n for n in onto.nodes.values() if n.kind == "anchor"]:
+        found = {n.id for n, _, _ in onto.search(anchor.name_ko, limit=20)}
+        missing = [z.display_name for z in onto.zones(anchor.id) if z.id not in found]
+        assert missing == [], f"{anchor.name_ko}: {missing}"
+
+    ids = lambda q: [n.id for n, _, _ in onto.search(q, limit=20)]  # noqa: E731
+    assert ids("머리") == ["ANC:001", "SUR:001", "SUR:002", "SUR:003", "SUR:004", "SUR:005"]
+    # 딸려 온 구역은 점수 0 — 직접 매칭과 구분된다. 앵커·직접 매칭이 항상 앞
+    scores = {n.display_name: s for n, _, s in onto.search("다리", limit=20)}
+    assert scores["다리"] == 3 and scores["무릎"] == 0
+
+
+def test_zone_expansion_does_not_reorder_or_drop_direct_matches():
+    onto = load_ontology()
+    ids = lambda q: [n.id for n, _, _ in onto.search(q)]  # noqa: E731
+    assert ids("배")[:3] == ["ANC:004", "SUR:032", "SUR:031"]  # 구역이 이미 직접 걸린 경우 그대로
+    assert ids("무릎") == ["SUR:091"]  # 앵커가 없으면 붙는 것도 없다
+    assert ids("왼쪽 아랫배가 아파요")[0] == "SUR:032"

@@ -261,6 +261,9 @@ class Ontology:
         결과가 0건이고 입력이 한/영 오타로 보이면 한글로 복원해 한 번 더 찾는다("qo" → "배").
         0건일 때만 도므로 지금 결과가 나오는 질의는 결과가 바뀌지 않는다.
         조합 중간 입력("옆굴", "아랫ㅂ")은 다루지 않는다 — 앱이 처리할 몫.
+
+        앵커가 걸리면 그 아래 구역을 CSV 순서로 뒤에 붙인다(점수 0). "다리"만 아는 사람이
+        무릎·종아리를 보게 하려는 것이다. 고르지 않고 전부 준다 — 추리면 감별이 된다.
         """
         q = _norm_text(query)
         if len(q) < 1:
@@ -293,6 +296,15 @@ class Ontology:
             restored = english_keys_to_hangul(query)
             if restored != query:  # 복원 결과에는 한글이 있어 오타 판정이 다시 참이 되지 않는다
                 return self.search(restored, limit=limit)
+        # 앵커가 걸렸으면 그 아래 구역을 딸려 보낸다. 점수 0 = 직접 매칭이 아니라 앵커에 딸려 온 것
+        seen = {n.id for n, _, _ in hits}
+        for node, matched, _ in list(hits):
+            if node.kind != "anchor":
+                continue
+            for zone in self.zones(node.id):
+                if zone.id not in seen:
+                    seen.add(zone.id)
+                    hits.append((zone, matched, 0))
         return hits[:limit]
 
     def anchors_in_order(self) -> list[Node]:
