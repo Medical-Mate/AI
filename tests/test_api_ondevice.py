@@ -121,6 +121,20 @@ def test_selections_fill_axes_without_llm_and_advance():
     assert t2["card"]["axes"]["character"]["value"] == "욱신"
 
 
+def test_ontology_search_endpoint_maps_alias_to_zone():
+    client = TestClient(create_app())
+    b = client.get("/v1/ontology/search", params={"q": "복부"}).json()
+    assert b["results"][0]["id"] == "ANC:004" and b["results"][0]["matched"] == "복부"
+    b = client.get("/v1/ontology/search", params={"q": "옆구리"}).json()
+    r = b["results"][0]
+    assert r["id"] == "SUR:042" and r["kind"] == "surface" and r["anchor_id"] == "ANC:012"
+    assert client.get("/v1/ontology/search", params={"q": "무릅"}).json()["results"] == []
+    # body-map에도 aliases가 실려 앱이 로컬 매칭할 수 있다
+    bm = client.get("/v1/ontology/body-map").json()
+    abdomen = next(a for a in bm["anchors"] if a["id"] == "ANC:004")
+    assert "복부" in abdomen["aliases"]
+
+
 def test_body_map_image_keys_are_stable_slugs_and_unique():
     client = TestClient(create_app())
     b = client.get("/v1/ontology/body-map").json()

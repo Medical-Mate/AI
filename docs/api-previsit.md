@@ -163,7 +163,8 @@ AI 서버는 무상태다. 인증·세션 식별·저장은 백엔드가 한다(
 | 요청 공통 | `request_id` | 응답·audit에 그대로 되돌린다. 중복 응답 캐시는 백엔드가 원하면 백엔드에서 |
 | 응답 `audit` | `dropped[]`, `raw_extraction`, `source` | 가드가 버린 갱신과 이유(not_asked_axis / evidence_not_in_utterance / number_not_in_utterance / note_not_in_utterance), 모델 원본, 출처(server / device / none) |
 | 응답 `card.provenance` | `model_id`, `prompt_version` | `extraction_meta`가 오면 그 값으로 갱신된다(폰 모델·프롬프트 버전) |
-| 새 엔드포인트 | `GET /v1/ontology/body-map` | 부위 마스터: `anchors[]{id,label,image_key,laterality,view,region,departments,zones[]}` + `ontology_snapshot`. 앱·백엔드 공용, 읽기 전용. 진료과 안내는 팀 콘텐츠(인용 아님). **`image_key`**(2026-09-09 추가)는 앱 이미지 자산 파일명 키(영문 이름 슬러그, 예 `head`, `lower-back-and-hip`) — 앱이 id→파일을 하드코딩하지 않게. 이미지는 앱 자산이고 서버는 키만 낸다. 응답 예시 전체: `docs/examples/body-map.json` |
+| 새 엔드포인트 | `GET /v1/ontology/body-map` | 부위 마스터: `anchors[]{id,label,image_key,laterality,view,region,departments,zones[]}` + `ontology_snapshot`. 앱·백엔드 공용, 읽기 전용. 진료과 안내는 팀 콘텐츠(인용 아님). **`image_key`**(2026-09-09 추가)는 앱 이미지 자산 파일명 키(영문 이름 슬러그, 예 `head`, `lower-back-and-hip`) — 앱이 id→파일을 하드코딩하지 않게. 이미지는 앱 자산이고 서버는 키만 낸다. 응답 예시 전체: `docs/examples/body-map.json`. **`aliases`**(2026-09-10 추가)는 폼 검색용 유의어(복부→배, 옆구리→허리 옆, 뒷목→목 뒤·옆). 앱이 로컬에서 이름+aliases 포함 매칭하면 된다 |
+| 새 엔드포인트 | `GET /v1/ontology/search?q=복부&limit=8` | 위 유의어 표로 서버가 매칭한 결과 `results[]{id,label,kind,anchor_id,matched,score}`. 점수 3 정확 / 2 접두 / 1 포함. 앵커·구역만, 증상·병명은 매칭하지 않는다. 오타·임베딩 없음(유의어 표 범위). 표: `data/ontology/aliases.csv` |
 
 백엔드가 할 일: 위 필드를 그대로 통과시키기, (선택) request_id 캐시, HMAC 서명.
 

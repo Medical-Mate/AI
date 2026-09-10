@@ -1,5 +1,5 @@
 {
-  "ontology_snapshot": "3cc57491f020",
+  "ontology_snapshot": "f848848baea4",
   "axes": [
     "site",
     "onset",
@@ -15,6 +15,11 @@
       "id": "ANC:001",
       "label": "머리",
       "image_key": "head",
+      "aliases": [
+        "두부",
+        "머리통",
+        "머리 전체"
+      ],
       "laterality": "none",
       "view": "front",
       "departments": [
@@ -28,6 +33,14 @@
           "id": "SUR:001",
           "label": "머리 전체·이마",
           "image_key": "head-and-forehead",
+          "aliases": [
+            "이마",
+            "앞머리",
+            "뒤통수",
+            "정수리",
+            "옆머리",
+            "관자놀이"
+          ],
           "laterality": "none",
           "view": "front",
           "departments": [
@@ -40,6 +53,12 @@
           "id": "SUR:002",
           "label": "눈",
           "image_key": "eye",
+          "aliases": [
+            "안구",
+            "눈알",
+            "눈꺼풀",
+            "눈두덩"
+          ],
           "laterality": "left_right",
           "view": "front",
           "departments": [
@@ -51,6 +70,12 @@
           "id": "SUR:003",
           "label": "귀",
           "image_key": "ear",
+          "aliases": [
+            "귓속",
+            "귓바퀴",
+            "귀 안",
+            "귀 뒤"
+          ],
           "laterality": "left_right",
           "view": "front",
           "departments": [
@@ -62,6 +87,11 @@
           "id": "SUR:004",
           "label": "코",
           "image_key": "nose",
+          "aliases": [
+            "콧속",
+            "콧등",
+            "비강"
+          ],
           "laterality": "none",
           "view": "front",
           "departments": [
@@ -73,6 +103,15 @@
           "id": "SUR:005",
           "label": "입",
           "image_key": "mouth",
+          "aliases": [
+            "입안",
+            "구강",
+            "입술",
+            "혀",
+            "잇몸",
+            "치아",
+            "이빨"
+          ],
           "laterality": "none",
           "view": "front",
           "departments": [
@@ -86,6 +125,7 @@
       "id": "ANC:002",
       "label": "목",
       "image_key": "neck",
+      "aliases": [],
       "laterality": "none",
       "view": "front",
       "departments": [],
@@ -96,6 +136,13 @@
           "id": "SUR:011",
           "label": "목 안(목구멍)",
           "image_key": "throat",
+          "aliases": [
+            "목구멍",
+            "인후",
+            "편도",
+            "목 안쪽",
+            "목 속"
+          ],
           "laterality": "none",
           "view": "front",
           "departments": [
@@ -108,6 +155,14 @@
           "id": "SUR:012",
           "label": "목 뒤·옆",
           "image_key": "back-and-side-of-neck",
+          "aliases": [
+            "뒷목",
+            "목덜미",
+            "옆목",
+            "목 옆",
+            "경추",
+            "목뼈"
+          ],
           "laterality": "left_right",
           "view": "front",
           "departments": [
@@ -122,6 +177,11 @@
       "id": "ANC:003",
       "label": "가슴",
       "image_key": "chest",
+      "aliases": [
+        "흉부",
+        "가슴팍",
+        "앞가슴"
+      ],
       "laterality": "none",
       "view": "front",
       "departments": [
@@ -136,6 +196,12 @@
           "id": "SUR:021",
           "label": "가슴 가운데",
           "image_key": "center-of-chest",
+          "aliases": [
+            "가슴뼈",
+            "흉골",
+            "가슴 중앙",
+            "심장 쪽"
+          ],
           "laterality": "none",
           "view": "front",
           "departments": [
@@ -149,6 +215,12 @@
           "id": "SUR:022",
           "label": "가슴 옆(갈비)",
           "image_key": "side-of-chest",
+          "aliases": [
+            "갈비뼈",
+            "늑골",
+            "옆가슴",
+            "갈비"
+          ],
           "laterality": "left_right",
           "view": "front",
           "departments": [
@@ -163,6 +235,12 @@
       "id": "ANC:004",
       "label": "배",
       "image_key": "abdomen",
+      "aliases": [
+        "복부",
+        "뱃속",
+        "배 전체",
+        "배꼽"
+      ],
       "laterality": "none",
       "view": "front",
       "departments": [
@@ -176,6 +254,13 @@
           "id": "SUR:031",
           "label": "윗배(명치)",
           "image_key": "upper-abdomen",
+          "aliases": [
+            "명치",
+            "상복부",
+            "윗배",
+            "명치끝",
+            "배 위쪽"
+          ],
           "laterality": "left_right",
           "view": "front",
           "departments": [
@@ -188,6 +273,12 @@
           "id": "SUR:032",
           "label": "아랫배",
           "image_key": "lower-abdomen",
+          "aliases": [
+            "하복부",
+            "배 아래쪽",
+            "골반",
+            "배꼽 아래"
+          ],
           "laterality": "left_right",
           "view": "front",
           "departments": [
@@ -204,6 +295,10 @@
       "id": "ANC:013",
       "label": "팔",
       "image_key": "arm",
+      "aliases": [
+        "상지",
+        "팔 전체"
+      ],
       "laterality": "left_right",
       "view": "front",
       "departments": [
@@ -216,6 +311,12 @@
           "id": "SUR:051",
           "label": "어깨",
           "image_key": "shoulder",
+          "aliases": [
+            "어깻죽지",
+            "견관절",
+            "어깨 앞",
+            "어깨 뒤"
+          ],
           "laterality": "left_right",
           "view": "front",
           "departments": [],
@@ -225,6 +326,11 @@
           "id": "SUR:055",
           "label": "위팔",
           "image_key": "upper-arm",
+          "aliases": [
+            "윗팔",
+            "상완",
+            "팔 위쪽"
+          ],
           "laterality": "left_right",
           "view": "front",
           "departments": [],
@@ -234,6 +340,10 @@
           "id": "SUR:061",
           "label": "팔꿈치",
           "image_key": "elbow",
+          "aliases": [
+            "팔굽",
+            "주관절"
+          ],
           "laterality": "left_right",
           "view": "front",
           "departments": [],
@@ -243,6 +353,11 @@
           "id": "SUR:065",
           "label": "아래팔",
           "image_key": "forearm",
+          "aliases": [
+            "아랫팔",
+            "전완",
+            "팔 아래쪽"
+          ],
           "laterality": "left_right",
           "view": "front",
           "departments": [],
@@ -252,6 +367,9 @@
           "id": "SUR:071",
           "label": "손목",
           "image_key": "wrist",
+          "aliases": [
+            "손목 관절"
+          ],
           "laterality": "left_right",
           "view": "front",
           "departments": [],
@@ -261,6 +379,13 @@
           "id": "SUR:072",
           "label": "손",
           "image_key": "hand",
+          "aliases": [
+            "손가락",
+            "손바닥",
+            "손등",
+            "엄지",
+            "검지"
+          ],
           "laterality": "left_right",
           "view": "front",
           "departments": [],
@@ -272,6 +397,10 @@
       "id": "ANC:014",
       "label": "다리",
       "image_key": "leg",
+      "aliases": [
+        "하지",
+        "다리 전체"
+      ],
       "laterality": "left_right",
       "view": "front",
       "departments": [
@@ -284,6 +413,11 @@
           "id": "SUR:090",
           "label": "허벅지",
           "image_key": "thigh",
+          "aliases": [
+            "대퇴",
+            "넓적다리",
+            "허벅다리"
+          ],
           "laterality": "left_right",
           "view": "front",
           "departments": [],
@@ -293,6 +427,12 @@
           "id": "SUR:091",
           "label": "무릎",
           "image_key": "knee",
+          "aliases": [
+            "슬관절",
+            "무릎 앞",
+            "무릎 뒤",
+            "오금"
+          ],
           "laterality": "left_right",
           "view": "front",
           "departments": [],
@@ -302,6 +442,11 @@
           "id": "SUR:097",
           "label": "종아리",
           "image_key": "calf",
+          "aliases": [
+            "장딴지",
+            "정강이",
+            "정강이뼈"
+          ],
           "laterality": "left_right",
           "view": "front",
           "departments": [],
@@ -311,6 +456,10 @@
           "id": "SUR:101",
           "label": "발목",
           "image_key": "ankle",
+          "aliases": [
+            "발목 관절",
+            "아킬레스"
+          ],
           "laterality": "left_right",
           "view": "front",
           "departments": [],
@@ -320,6 +469,13 @@
           "id": "SUR:102",
           "label": "발",
           "image_key": "foot",
+          "aliases": [
+            "발가락",
+            "발바닥",
+            "발등",
+            "발뒤꿈치",
+            "뒤꿈치"
+          ],
           "laterality": "left_right",
           "view": "front",
           "departments": [],
@@ -331,6 +487,10 @@
       "id": "ANC:012",
       "label": "허리·엉덩이",
       "image_key": "lower-back-and-hip",
+      "aliases": [
+        "요추",
+        "등허리"
+      ],
       "laterality": "none",
       "view": "back",
       "departments": [
@@ -344,6 +504,13 @@
           "id": "SUR:041",
           "label": "허리 가운데",
           "image_key": "center-of-lower-back",
+          "aliases": [
+            "허리",
+            "허리 중앙",
+            "꼬리뼈",
+            "척추 아래",
+            "등 아래"
+          ],
           "laterality": "none",
           "view": "back",
           "departments": [],
@@ -353,6 +520,11 @@
           "id": "SUR:042",
           "label": "허리 옆",
           "image_key": "side-of-lower-back",
+          "aliases": [
+            "옆구리",
+            "옆허리",
+            "갈비뼈 아래 옆"
+          ],
           "laterality": "left_right",
           "view": "back",
           "departments": [
@@ -366,6 +538,12 @@
           "id": "SUR:081",
           "label": "엉덩이",
           "image_key": "buttock",
+          "aliases": [
+            "둔부",
+            "고관절",
+            "엉치",
+            "꽁무니"
+          ],
           "laterality": "left_right",
           "view": "back",
           "departments": [],
@@ -377,6 +555,12 @@
       "id": "ANC:010",
       "label": "전신",
       "image_key": "whole-body",
+      "aliases": [
+        "온몸",
+        "몸 전체",
+        "전체",
+        "특정 부위 없음"
+      ],
       "laterality": "none",
       "view": "none",
       "departments": [
@@ -391,6 +575,11 @@
       "id": "ANC:011",
       "label": "피부",
       "image_key": "skin",
+      "aliases": [
+        "살",
+        "피부 표면",
+        "겉"
+      ],
       "laterality": "none",
       "view": "none",
       "departments": [

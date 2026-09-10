@@ -39,9 +39,10 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import re
 from collections import deque
 from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 RELATIONS = frozenset({"part_of", "is_a"})  # 상위로 타는 관계
@@ -82,6 +83,9 @@ class Node:
     view: str = "none"  # front / back / none — 인체도 어느 면에 그려지는가. 앵커·구역만 의미 있다
     departments: tuple[str, ...] = ()  # 진료과 안내. CSV 순서 그대로, 의미 있는 순서 아님
     departments_source: str = ""  # "팀 결정 …, 자문 확인 전". 인용 아님을 값마다 명시
+    aliases: tuple[
+        str, ...
+    ] = ()  # 환자 표현·한자어·구어 유의어(aliases.csv). 폼 검색용. 증상·병명은 넣지 않는다
 
     @property
     def display_name(self) -> str:
@@ -241,6 +245,42 @@ class Ontology:
 
     # ── 표면 층: 인체도 입력 ──────────────────────────────────
 
+    def search(self, query: str, limit: int = 8) -> list[tuple[Node, str, int]]:
+        """폼 입력으로 부위 찾기 — 유의어 표 매칭. LLM·임베딩 없음.
+
+        점수: 이름·별칭과 정확히 같으면 3, 질의가 이름·별칭으로 시작하거나 그 반대면 2,
+        한쪽이 다른 쪽을 포함하면 1. 앵커·구역만 대상(구조 노드는 넓히기가 따로 맡는다).
+        반환: (노드, 걸린 표현, 점수). 점수 내림차순.
+        같으면 걸린 표현이 긴 것(구체적) 먼저, 그다음 앵커.
+        """
+        q = _norm_text(query)
+        if len(q) < 1:
+            return []
+        hits: list[tuple[Node, str, int]] = []
+        for n in self.nodes.values():
+            if n.kind not in ("anchor", "surface"):
+                continue
+            best: tuple[str, int] | None = None
+            for cand in (n.name_ko, *n.aliases):
+                c = _norm_text(cand)
+                if not c:
+                    continue
+                if c == q:
+                    score = 3
+                elif c.startswith(q) or q.startswith(c):
+                    score = 2
+                elif q in c or c in q:
+                    score = 1
+                else:
+                    continue
+                if best is None or score > best[1]:
+                    best = (cand, score)
+            if best:
+                hits.append((n, best[0], best[1]))
+        # 점수 같으면 더 구체적인(긴) 표현이 먼저: "왼쪽 아랫배가 아파요" → 아랫배 > 배
+        hits.sort(key=lambda h: (-h[2], -len(h[1]), 0 if h[0].kind == "anchor" else 1, h[0].id))
+        return hits[:limit]
+
     def anchors_in_order(self) -> list[Node]:
         """인체도 첫 화면의 앵커 목록. CSV 순서 그대로(디자이너 배치 순서를 데이터가 가진다)."""
         return [n for n in self.nodes.values() if n.kind == "anchor"]
@@ -398,6 +438,11 @@ def _default_kind(row: dict[str, str]) -> str:
     return {"1": "region", "2": "anchor"}.get(tier, "structure")
 
 
+def _norm_text(s: str) -> str:
+    """검색 비교용: 공백·중간점·괄호 제거, 소문자."""
+    return re.sub(r"[\s·()（）,.]", "", s or "").lower()
+
+
 def load_ontology(directory: Path | str = DEFAULT_DIR, *, strict: bool = True) -> Ontology:
     """nodes.csv + edges.csv → Ontology. strict면 검증 실패 시 OntologyError."""
     directory = Path(directory)
@@ -405,7 +450,11 @@ def load_ontology(directory: Path | str = DEFAULT_DIR, *, strict: bool = True) -
     edges_path = directory / "edges.csv"
     nodes_bytes = nodes_path.read_bytes()
     edges_bytes = edges_path.read_bytes()
-    snapshot = hashlib.sha256(nodes_bytes + b"\n" + edges_bytes).hexdigest()[:12]
+    aliases_path = directory / "aliases.csv"
+    aliases_bytes = aliases_path.read_bytes() if aliases_path.exists() else b""
+    snapshot = hashlib.sha256(
+        nodes_bytes + b"\n" + edges_bytes + b"\n" + aliases_bytes
+    ).hexdigest()[:12]
 
     problems: list[str] = []
     nodes: dict[str, Node] = {}
@@ -435,6 +484,24 @@ def load_ontology(directory: Path | str = DEFAULT_DIR, *, strict: bool = True) -
             departments=_split_departments(row.get("departments") or ""),
             departments_source=(row.get("departments_source") or "").strip(),
         )
+
+    # 유의어(aliases.csv): node_id,alias,note. 없는 노드를 가리키면 데이터 오류
+    if aliases_bytes:
+        by_node: dict[str, list[str]] = {}
+        for row in csv.DictReader(aliases_bytes.decode("utf-8-sig").splitlines()):
+            nid = (row.get("node_id") or "").strip()
+            alias = (row.get("alias") or "").strip()
+            if not nid or not alias:
+                continue
+            if nid not in nodes:
+                problems.append(f"aliases: 없는 노드 {nid} ({alias})")
+                continue
+            if alias in by_node.setdefault(nid, []):
+                problems.append(f"aliases: 중복 {nid} {alias}")
+                continue
+            by_node[nid].append(alias)
+        for nid, al in by_node.items():
+            nodes[nid] = replace(nodes[nid], aliases=tuple(al))
 
     parents: dict[str, list[tuple[str, str]]] = {nid: [] for nid in nodes}
     located_in: list[tuple[str, str, str]] = []

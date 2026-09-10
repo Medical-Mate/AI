@@ -406,6 +406,9 @@ def create_app(
                 "id": n.id,
                 "label": n.display_name,
                 "image_key": image_key(n),  # 앱이 id→파일을 하드코딩하지 않게
+                "aliases": list(
+                    n.aliases
+                ),  # 폼 검색용 유의어(복부→배, 옆구리→허리 옆). 앱이 로컬에서 매칭
                 "laterality": n.laterality,  # none | left_right
                 "view": n.view,  # front | back | none(사이드 탭)
                 "departments": list(n.departments),
@@ -429,6 +432,31 @@ def create_app(
             ),
             "note": "진료과 안내는 팀 콘텐츠(의료인 자문 확인 전). 증상과 무관하게 부위에만 붙는다",
         }
+
+    @app.get("/v1/ontology/search")
+    def ontology_search(q: str, limit: int = 8) -> dict[str, Any]:
+        """폼 입력으로 부위 찾기 — 유의어 표 매칭(복부→배, 옆구리→허리 옆). LLM 없음.
+
+        앱은 body-map의 aliases로 같은 매칭을 로컬에서 해도 된다. 이 엔드포인트는 서버 쪽 소비자와
+        규칙을 한 곳에 두기 위한 것이다. 증상·병명은 매칭하지 않는다(부위 이름·유의어만).
+        """
+        if app.state.ontology is None:
+            app.state.ontology = load_ontology()
+        onto = app.state.ontology
+        out = []
+        for n, matched, score in onto.search(q, limit=max(1, min(limit, 20))):
+            anchor_id = n.id if n.kind == "anchor" else onto.anchor_of(n.id)
+            out.append(
+                {
+                    "id": n.id,
+                    "label": n.display_name,
+                    "kind": n.kind,
+                    "anchor_id": anchor_id,
+                    "matched": matched,
+                    "score": score,
+                }
+            )
+        return {"query": q, "results": out, "ontology_snapshot": onto.snapshot_id}
 
     return app
 
