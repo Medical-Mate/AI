@@ -466,3 +466,29 @@ def test_surface_must_hang_directly_under_anchor(tmp_path: Path):
     d = _write(tmp_path, ["A1", "s1", "Z1"], ["s1,part_of,A1", "Z1,part_of,s1"])
     with pytest.raises(OntologyError, match="직접 자식"):
         load_ontology(d)
+
+
+# ---------------------------------------------------------------------------
+# 유의어 검색 (aliases.csv) — 폼 입력 "복부"를 "배"로
+def test_aliases_loaded_and_search_maps_common_words():
+    onto = load_ontology()
+    assert "복부" in onto.get("ANC:004").aliases
+    top = lambda q: onto.search(q, limit=1)[0][0].id  # noqa: E731
+    assert top("복부") == "ANC:004"  # 배
+    assert top("옆구리") == "SUR:042"  # 허리 옆
+    assert top("뒷목") == "SUR:012"  # 목 뒤·옆
+    assert top("하복부") == "SUR:032"  # 아랫배
+    assert top("명치") == "SUR:031"
+    assert top("꼬리뼈") == "SUR:041"  # 디자이너 좌표표 '꼬리뼈' → 허리 가운데
+    assert top("발가락") == "SUR:102"
+    assert top("온몸") == "ANC:010"
+
+
+def test_search_prefers_specific_zone_in_sentence_and_returns_empty_for_unknown():
+    onto = load_ontology()
+    hits = onto.search("왼쪽 아랫배가 아파요")
+    assert hits and hits[0][0].id == "SUR:032"  # 아랫배가 배보다 먼저
+    assert onto.search("무릅") == []  # 오타는 잡지 않는다(유의어 표 범위 밖)
+    assert onto.search("") == []
+    # 구조 노드(앞십자인대 등)는 검색 대상이 아니다 — 넓히기가 따로 맡는다
+    assert all(n.kind in ("anchor", "surface") for n, _, _ in onto.search("인대"))
