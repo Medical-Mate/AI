@@ -439,10 +439,14 @@ def create_app(
 
         앱은 body-map의 aliases로 같은 매칭을 로컬에서 해도 된다. 이 엔드포인트는 서버 쪽 소비자와
         규칙을 한 곳에 두기 위한 것이다. 증상·병명은 매칭하지 않는다(부위 이름·유의어만).
+
+        q는 발화 상한과 같은 값으로 자른다(팀 합의 300자). 정상 입력은 닿지 않는다 — 부위 이름은
+        길어야 열 글자다. 엔진과 같은 방식(거절이 아니라 자르기)으로 맞춘다.
         """
         if app.state.ontology is None:
             app.state.ontology = load_ontology()
         onto = app.state.ontology
+        q = q[: app.state.limits.max_utterance_chars]
         out = []
         for n, matched, score in onto.search(q, limit=max(1, min(limit, 20))):
             anchor_id = n.id if n.kind == "anchor" else onto.anchor_of(n.id)

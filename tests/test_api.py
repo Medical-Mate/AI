@@ -231,3 +231,26 @@ def test_patient_message_round_trips_through_state():
         "/v1/previsit/turns", json={"state": b1["state"], "utterance": "약은 최소로 부탁드려요"}
     ).json()
     assert b2["ended"] and b2["card"]["patient_message"] == "약은 최소로 부탁드려요"
+
+
+def test_ontology_search_endpoint_exposes_restoration_and_zone_expansion():
+    client = TestClient(create_app())
+
+    r = client.get("/v1/ontology/search", params={"q": "qo"})  # 한/영 오타
+    assert r.status_code == 200
+    assert r.json()["results"][0]["id"] == "ANC:004"
+
+    r = client.get("/v1/ontology/search", params={"q": "다리"})
+    labels = {x["label"]: x["score"] for x in r.json()["results"]}
+    assert labels["다리"] == 3
+    assert labels["무릎"] == 0  # 앵커에 딸려 온 구역. score > 0으로 거르면 사라진다
+
+    r = client.get("/v1/ontology/search", params={"q": "전체"})
+    assert all(x["score"] > 0 for x in r.json()["results"])  # 약한 매칭은 펼치지 않는다
+
+
+def test_ontology_search_truncates_a_long_query_instead_of_failing():
+    client = TestClient(create_app())
+    r = client.get("/v1/ontology/search", params={"q": "배" + "가" * 5000})
+    assert r.status_code == 200
+    assert len(r.json()["query"]) == 300  # 발화 상한과 같은 값에서 자른다
