@@ -14,6 +14,7 @@ from medimate.ontology import (
     load_ontology,
 )
 from medimate.ontology.korean_keys import (
+    _KEY_TO_JAMO,
     english_keys_to_hangul,
     looks_like_korean_typed_in_english,
 )
@@ -501,6 +502,48 @@ def test_search_prefers_specific_zone_in_sentence_and_returns_empty_for_unknown(
 # ── 한/영 오타 복원 ────────────────────────────────────────────────
 
 
+_CHO = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ"
+_JUNG = "ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ"
+_JONG = "ㄱㄲㄳㄴㄵㄶㄷㄹㄺㄻㄼㄽㄾㄿㅀㅁㅂㅄㅅㅆㅇㅈㅊㅋㅌㅍㅎ"
+_SPLIT = {
+    "ㅘ": "ㅗㅏ",
+    "ㅙ": "ㅗㅐ",
+    "ㅚ": "ㅗㅣ",
+    "ㅝ": "ㅜㅓ",
+    "ㅞ": "ㅜㅔ",
+    "ㅟ": "ㅜㅣ",
+    "ㅢ": "ㅡㅣ",
+    "ㄳ": "ㄱㅅ",
+    "ㄵ": "ㄴㅈ",
+    "ㄶ": "ㄴㅎ",
+    "ㄺ": "ㄹㄱ",
+    "ㄻ": "ㄹㅁ",
+    "ㄼ": "ㄹㅂ",
+    "ㄽ": "ㄹㅅ",
+    "ㄾ": "ㄹㅌ",
+    "ㄿ": "ㄹㅍ",
+    "ㅀ": "ㄹㅎ",
+    "ㅄ": "ㅂㅅ",
+}
+
+
+def _hangul_to_english_keys(text: str) -> str:
+    """테스트 전용 역변환 — 한글을 영문 자판 키로 되돌린다. 복원기의 역함수."""
+    jamo_to_key = {v: k for k, v in _KEY_TO_JAMO.items()}
+    out = []
+    for ch in text:
+        if not ("가" <= ch <= "힣"):
+            out.append(ch)
+            continue
+        code = ord(ch) - 0xAC00
+        parts = [_CHO[code // 588], _JUNG[(code % 588) // 28]]
+        if code % 28:
+            parts.append(_JONG[code % 28 - 1])
+        for jamo in parts:
+            out.extend(jamo_to_key[x] for x in _SPLIT.get(jamo, jamo))
+    return "".join(out)
+
+
 @pytest.mark.parametrize(
     ("keys", "hangul"),
     [
@@ -516,6 +559,12 @@ def test_search_prefers_specific_zone_in_sentence_and_returns_empty_for_unknown(
         ("rkqtwl", "값지"),  # 복종성 뒤 자음 → 다음 초성
         ("ansdj", "문어"),  # 종성 ㄴ 뒤 ㅇ+모음 → 종성 이월
         ("gksrmf", "한글"),
+        # shift 자리. 정규화(소문자)를 거치면 죽으므로 복원은 원문으로 해야 한다
+        ("djRo", "어깨"),
+        ("RhflQu", "꼬리뼈"),  # ㅃ은 받침이 될 수 없다 → 앞 글자를 확정하고 새로 시작
+        ("dlQkf", "이빨"),
+        ("qo dnlWhr", "배 위쪽"),  # ㅉ도 마찬가지
+        ("wkdEkswl", "장딴지"),
     ],
 )
 def test_english_keys_to_hangul_composes_syllables(keys, hangul):
@@ -538,7 +587,27 @@ def test_search_restores_korean_typed_on_english_layout():
     assert top("audcl") == "SUR:031"  # 명치 → 윗배
     assert top("duvrnfl") == "SUR:042"  # 옆구리 → 허리 옆
     assert top("anfmv") == "SUR:091"  # 무릎
+    assert top("djRo") == "SUR:051"  # 어깨 — shift 자리가 정규화로 죽지 않는다
+    assert top("vkfRnacl") == "SUR:061"  # 팔꿈치
+    assert top("RhflQu") == "SUR:041"  # 꼬리뼈 → 허리 가운데
     assert onto.search("zzzz") == []  # 복원해도 안 걸리면 그대로 0건
+
+
+def test_every_anchor_and_zone_is_reachable_by_typing_its_name_on_the_english_layout():
+    """앵커 9 · 구역 25의 이름과 별칭 전부가 자판 오타로도 상위 3위 안에 들어야 한다."""
+    onto = load_ontology()
+    misses = []
+    for node in onto.nodes.values():
+        if node.kind not in ("anchor", "surface"):
+            continue
+        for term in (node.name_ko, *node.aliases):
+            keys = _hangul_to_english_keys(term)
+            if any("가" <= c <= "힣" for c in keys):  # 역변환이 안 된 글자가 남으면 건너뛴다
+                continue
+            hits = onto.search(keys)
+            if not any(h[0].id == node.id for h in hits[:3]):
+                misses.append((term, keys, node.id))
+    assert misses == []
 
 
 def test_search_restoration_runs_only_when_there_is_no_hit():

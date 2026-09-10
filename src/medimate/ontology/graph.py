@@ -288,9 +288,10 @@ class Ontology:
                 hits.append((n, best[0], best[1]))
         # 점수 같으면 더 구체적인(긴) 표현이 먼저: "왼쪽 아랫배가 아파요" → 아랫배 > 배
         hits.sort(key=lambda h: (-h[2], -len(h[1]), 0 if h[0].kind == "anchor" else 1, h[0].id))
-        if not hits and looks_like_korean_typed_in_english(q):
-            restored = english_keys_to_hangul(q)
-            if restored != q:  # 복원 결과에는 한글이 있어 오타 판정이 다시 참이 되지 않는다
+        # 복원은 정규화 전 원문으로 한다 — 소문자로 바꾸면 shift 자리(ㄲ ㅒ 등)가 죽는다
+        if not hits and looks_like_korean_typed_in_english(query):
+            restored = english_keys_to_hangul(query)
+            if restored != query:  # 복원 결과에는 한글이 있어 오타 판정이 다시 참이 되지 않는다
                 return self.search(restored, limit=limit)
         return hits[:limit]
 

@@ -107,7 +107,9 @@ def english_keys_to_hangul(s: str) -> str:
                 else:
                     flush()
                     cho = j
-            elif cho and not jung:
+            elif cho:
+                # 종성이 될 수 없는 자음(ㅃ ㅉ ㄸ)이거나 초성만 있는 상태
+                # → 앞 글자를 확정하고 새로 시작
                 flush()
                 cho = j
             else:
