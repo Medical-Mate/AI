@@ -23,13 +23,13 @@ from datetime import date
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from medimate.api import auth
 from medimate.dialog.engine import Limits, Session
 from medimate.dialog.guard import GuardConfig
 from medimate.dialog.memo import classify_memo
-from medimate.dialog.site import resolve_site
+from medimate.dialog.site import normalize_side, resolve_site
 from medimate.dialog.spec import PREVISIT_SPEC
 from medimate.dialog.state import SessionState
 from medimate.dialog.widening import compare_sites, widen_card
@@ -53,7 +53,15 @@ class StartRequest(BaseModel):
     # 인체도 선택 (앱 1l). 노드 ID(앵커 또는 구역) + 좌우. SITE 축을 채우고 첫 질문을 앵커하며
     # 진료과 안내가 카드에 붙는다
     site_node_id: str | None = Field(default=None, max_length=40)
+    # 대소문자를 가리지 않는다(2026-09-11) — 백엔드가 `LEFT`로 보내 422가 났다.
+    # 검증 **전에** 소문자로 접으므로 `LEFT`·`Left`·`left` 모두 통과하고 카드에는 소문자로 남는다
     side: str | None = Field(default=None, pattern="^(left|right|both)$")
+
+    @field_validator("side", mode="before")
+    @classmethod
+    def _fold_side(cls, v):
+        return normalize_side(v) if isinstance(v, str) else v
+
     # 온톨로지 없이 라벨만 넘길 때(테스트·임시). site_node_id가 있으면 무시된다
     site_label: str | None = Field(default=None, max_length=40)
     # server(기본): 서버가 추출, 첫 자유 발화 있음. ondevice: 폰이 추출, 첫 축 질문부터, 가드 강화
