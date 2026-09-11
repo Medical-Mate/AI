@@ -1,110 +1,131 @@
-# AI 서버 배포 요구사항 (백엔드 전달)
+# AI 서버 배포 요구사항
 
-작성 2026-09-11. 관련 이슈 #7. AWS·GCP 중 고르시는 데 필요한 정보다.
+2026-09-11 갱신. 배포 구성이 확정된 뒤의 최종본이다. 관련 이슈 #7, 백엔드 PR #45.
 
 ## 한 줄
 
-**컨테이너 하나, 1 vCPU · 512MB~1GB, GPU 없음, 무상태.** 클라우드 종류는 우리 쪽에서 갈리지 않는다.
+**컨테이너 하나, 1 vCPU · 512MB~1GB, GPU 없음, 무상태.** 외부 호출은 Bedrock 하나뿐이다.
 
-## 실측 (2026-09-11, 이 저장소 코드 기준)
+## 확정된 구성
+
+| | |
+|---|---|
+| 실행 | AWS Lightsail 1대(`small_3_0` · 2 vCPU · 2GB · Ubuntu 24.04 · x86_64)에 Docker Compose |
+| 이미지 | `ghcr.io/medical-mate/ai` — `:latest` `:main` `:sha-<커밋>` |
+| 모델 | Bedrock **`apac.amazon.nova-pro-v1:0`** (서울) |
+| 인증 | Bedrock은 IAM. Lightsail은 역할을 못 붙여 **액세스 키를 서버에 둔다** |
+
+이미지는 main 머지 시 GitHub Actions가 굽는다(`.github/workflows/publish-image.yml`).
+**컨테이너를 실제로 띄워 `/health`가 200인지 확인한 뒤에만 푸시한다.** 서버는 `pull`만 한다.
+
+저장소가 private이라 GHCR 패키지도 private이다. 서버 토큰에 `medical-mate/ai` 패키지 읽기 권한이 필요하다
+(`docker compose pull`에서 401이 나면 이것이다).
+
+## 실측 (2026-09-11)
 
 | 항목 | 값 |
 |---|---|
-| 메모리(RSS) | **46MB** — 인터프리터 13.6 + 앱 30.7 + 온톨로지 1.6 |
-| 기동 | **0.35초** + 첫 요청 때 온톨로지 로드 19ms |
+| 메모리(RSS) | **70MB** — 인터프리터 13.4 + 앱 30.5 + 온톨로지 1.8 + boto3 9.9 + Bedrock 클라이언트 14.7 |
+| 기동 | 0.35초 + 첫 요청 때 온톨로지 로드 19ms |
 | 온톨로지 요청 처리 | 0.2ms (검색), LLM 호출 없음 |
 | 베이스 이미지 | `python:3.12-slim` |
-| 모델 가중치 | **없음.** 추출은 외부 API 또는 폰 |
+| 모델 가중치 | **없음.** 추출은 폰, 생성은 Bedrock |
 
-512MB로 잡아도 여유가 크다. 1GB면 충분하고도 남는다.
+백엔드가 잡은 `mem_limit: 192m`이면 2.7배 여유다. **그보다 조이지 않는 게 좋다** —
+2026-09-10 시점 46MB는 boto3 이전 값이고, Bedrock 전환으로 24MB 늘었다.
 
-## 무상태다 — 운영이 쉬워지는 지점
+## 무상태다 — 운영에서 빠지는 것들
 
 세션 상태를 **백엔드가 들고 다닌다**(`state`를 요청·응답으로 주고받음). AI 서버는 아무것도 기억하지 않는다.
 
-- 세션 스토어(Redis 등) **불필요**
-- 인스턴스 간 스티키 세션 **불필요**. 아무 인스턴스나 받으면 된다
-- 재시작·오토스케일·롤링 배포에 세션이 안 끊긴다
-- 영속 볼륨 **불필요**. 디스크는 이미지뿐
-- DB **불필요**
+- 세션 스토어(Redis 등) **불필요** · 스티키 세션 **불필요** · 영속 볼륨 **불필요** · DB **불필요**
+- 재시작·재배포에 세션이 안 끊긴다. 아무 인스턴스나 받으면 된다
 
 `GET /health` 있고 Dockerfile에 HEALTHCHECK가 들어 있다.
 
+## 모델 — Nova Pro
+
+프롬프트 `questions-v5`를 고정하고 모델만 바꿔 비교했다(`evals/RESULTS.md`).
+
+| 모델 | 통과 | 병명 위반 | 유효 항목 | S 카드 고유 | 지연 p50 | 세션당 |
+|---|---|---|---|---|---|---|
+| gpt-5.6-terra (이전 기준) | 20/20 | 0 | 79/79 | 82% | 2.8s | $0.0038 |
+| **apac.amazon.nova-pro-v1:0** | **20/20** | **0** | 74/74 | **85%** | **1.08s** | **$0.0013** |
+
+`gpt-5.6-terra`·`claude-sonnet-5`·`opus-5`는 Bedrock 카탈로그에 있지만 **신규 계정 등급으로 호출이 막힌다**
+(`AccessDeniedException: not available for this account`). 사용 사례 양식 제출과 모델 계약 생성까지 해도 열리지 않았다.
+Nova Pro가 이전 기준보다 나은 수치라 되돌릴 이유는 없다.
+
 ## 네트워크
 
-### 아웃바운드 — 이게 제일 중요하다
+### 아웃바운드
 
-| 대상 | 필수 여부 |
-|---|---|
-| `api.openai.com:443` | **필수** (기본 추출 모델 `gpt-5.6-terra`) |
-| `api.anthropic.com:443` | 대안 모델(`claude-sonnet-5`)로 갈아탈 때 |
-
-**여기가 막히면 서버 추출이 동작하지 않는다.** VPC에 두시면 NAT 게이트웨이나 egress 허용이 필요하다.
-
-폰에서 추출하는 프로필(`profile: ondevice`)은 외부 호출이 0이라 이 경로 없이도 동작한다. 다만 폰 실패 시
-폴백이 서버 호출이라, 아웃바운드가 없으면 폴백도 없다.
+`bedrock-runtime.ap-northeast-2.amazonaws.com:443` 하나면 된다. **`api.openai.com`은 더 이상 필요 없다.**
 
 ### 인바운드
 
-백엔드에서만 들어온다. **인터넷에 공개할 필요 없다.** 앱은 백엔드를 거친다.
+백엔드에서만 들어온다. 같은 호스트의 Docker 네트워크에 있으므로 호스트 포트를 열지 않는다.
 
 ## 환경변수 · 시크릿
 
-| 이름 | 필수 | 용도 |
-|---|---|---|
-| `OPENAI_API_KEY` | 서버 추출 쓰면 필수 | 외부 LLM |
-| `MEDIMATE_HMAC_SECRET` | 권장 | 요청 서명 검증. 비우면 검증 생략 |
-| `MEDIMATE_PROVIDER` / `MEDIMATE_MODEL` | 선택 | 기본 `openai` / `gpt-5.6-terra` |
-| `ANTHROPIC_API_KEY` | 선택 | 대안 모델 쓸 때 |
+```
+MEDIMATE_PROVIDER=bedrock
+MEDIMATE_MODEL=apac.amazon.nova-pro-v1:0
+MEDIMATE_BEDROCK_REGION=ap-northeast-2
+AWS_ACCESS_KEY_ID=...
+AWS_SECRET_ACCESS_KEY=...
+MEDIMATE_HMAC_SECRET=          # 비워둠
+```
 
-시크릿 매니저(AWS Secrets Manager / GCP Secret Manager) 어느 쪽이든 환경변수로 주입만 되면 된다.
+- **`OPENAI_API_KEY`는 필요 없다.** Bedrock은 IAM 인증이다
+- `MEDIMATE_HMAC_SECRET`이 비면 검증 미들웨어를 아예 붙이지 않는다(`api/auth.py`).
+  **한쪽만 채우면 AI가 백엔드 요청을 전부 거부한다.** 같은 사설망이므로 양쪽 다 비워 둔다
 
-## 비용 — 인스턴스가 아니라 LLM 호출이 지배한다
+## IAM 정책 — 서울 ARN만 넣으면 깨진다
 
-인스턴스는 1 vCPU짜리 하나라 어느 클라우드든 월 몇 만 원 수준이다. 실제 비용은 호출이다.
+`apac` 추론 프로파일은 **아시아 6개 리전 모델로 분산된다.** 서울 것만 허용하면 도쿄·싱가포르로
+라우팅될 때 거부된다. `iam simulate-custom-policy`로 확인했다.
 
-`evals/results/gpt-5.6-terra.jsonl` 88회 실측 기준:
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
+    "Resource": [
+      "arn:aws:bedrock:ap-northeast-2:169523632526:inference-profile/apac.amazon.nova-pro-v1:0",
+      "arn:aws:bedrock:ap-northeast-2::foundation-model/amazon.nova-pro-v1:0",
+      "arn:aws:bedrock:ap-northeast-1::foundation-model/amazon.nova-pro-v1:0",
+      "arn:aws:bedrock:ap-northeast-3::foundation-model/amazon.nova-pro-v1:0",
+      "arn:aws:bedrock:ap-southeast-1::foundation-model/amazon.nova-pro-v1:0",
+      "arn:aws:bedrock:ap-southeast-2::foundation-model/amazon.nova-pro-v1:0",
+      "arn:aws:bedrock:ap-south-1::foundation-model/amazon.nova-pro-v1:0"
+    ]
+  }]
+}
+```
 
-| | 입력 | 출력 | 턴당 | 18턴 세션 |
-|---|---|---|---|---|
-| `gpt-5.6-terra` (기본) | 1,133 tok | 73 tok | **$0.00315** | **$0.057** |
-| `claude-sonnet-5` (대안) | 1,801 tok | 224 tok | $0.00585 | $0.105 |
+모델을 바꾸면 이 목록도 바뀐다. `global.` 프로파일은 분산 범위가 다르다(예: haiku는 3개).
 
-- 18턴은 **정상 최대**다(첫 발화 1 + 8축 + 확인 8 + 전할 말 1). 대부분 그보다 짧다
-- `profile: ondevice`면 **세션당 $0**. 폰이 추출한다
-- 진료 후 메모는 세션당 1회 호출(폰 분류면 0회)
+## 비용
 
-GPU 인스턴스를 띄워 자체 모델을 굴리는 안은 2026-09-09에 기각했다 — 월 ~$700 대 호출당 $0.003이고
-품질도 API가 위였다. `docs/decisions/`에 근거가 있다.
+추출이 폰으로 내려가면서 외부 호출이 세션당 한 번으로 줄었다. **인스턴스도 토큰도 작다.**
+
+| | |
+|---|---|
+| 질문 후보 1회 | 입력 1,223 tok · 출력 110 tok → **세션당 $0.0013** |
+| 진료 전 추출 | **$0** — 폰에서 돈다(Qwen3-1.7B) |
+| 진료 후 메모 분류 | **$0** — 폰. 서버는 실패 시 폴백만 |
+
+Bedrock 몫으로 $48을 남긴다면 **약 36,000세션**이다. 발표 규모에서 토큰 비용은 문제가 되지 않는다.
 
 ## 지연
 
-**LLM 왕복이 전부다.** Terra 실측 1.4~8.4초(발화 길이에 따라). 우리 처리 자체는 ms 단위다.
+**LLM 왕복이 전부다.** Nova Pro 실측 p50 1.08초, p90 1.62초. 우리 처리 자체는 ms 단위다.
+Caddy의 90초 타임아웃이면 충분하다.
 
-- 게이트웨이·로드밸런서 타임아웃을 **최소 30초**로 잡아주시면 안전하다
-- 리전은 사용자→백엔드 지연으로 고르시면 된다. AI 서버→LLM 공급자 왕복이 지배적이라 AI 서버 리전은
-  체감에 큰 영향이 없다
+## 남은 확인
 
-## AWS냐 GCP냐 — 우리 쪽 입장
-
-**지금 구성으로는 어느 쪽이든 같다.** 컨테이너 하나에 아웃바운드 하나다. Cloud Run이든 ECS/Fargate든
-App Runner든 무상태·1 vCPU를 굴릴 수 있으면 된다.
-
-**갈리는 조건은 하나다: "외부 LLM 호출 금지"로 정책이 바뀌는 경우.**
-
-- AWS면 **Bedrock**, GCP면 **Vertex AI**로 Claude를 VPC 안에서 부를 수 있다. 둘 다 가능하다
-- 다만 우리 기본 모델 `gpt-5.6-terra`는 OpenAI라 **둘 중 어디서도 내부로 못 넣는다.**
-  그 경우 `claude-sonnet-5`로 갈아타는 결정이 먼저다(eval에서 Terra와 동률이라 품질 손실은 없다.
-  비용은 세션당 $0.057 → $0.105로 약 1.8배)
-- 이 정책이 정해지지 않았다면, 그것부터 정하시는 게 클라우드 선택보다 앞선다
-
-## 우리가 답을 기다리는 것
-
-1. **컨테이너 레지스트리** — ECR / Artifact Registry 중 어디에 올릴지, 푸시 권한
-2. **egress 정책** — `api.openai.com` 아웃바운드가 허용되는지
-3. **시크릿 주입 방식**
-4. **게이트웨이 타임아웃** — 현재 우리 쪽 LLM 호출에 명시적 타임아웃이 없다(SDK 기본값).
-   그쪽 타임아웃을 알려주시면 그보다 짧게 걸어두겠다
-5. **동시 세션 추정치** — 인스턴스 수를 잡는 데 쓴다. 대략이면 충분하다
-
-1~3번이 오면 배포는 1시간이면 된다.
+- [ ] GHCR 패키지 접근 권한 — 서버 토큰이 `medical-mate/ai`를 읽을 수 있는지
+- [ ] 서버에서 `uname -m` → `x86_64` 확인 (이미지가 amd64 단일이다)
+- [ ] 첫 `docker compose up -d` 후 `/health` 200
