@@ -52,5 +52,24 @@ def test_safe_model_name_strips_colon():
     from medimate.evals.score import safe_model_name
 
     assert safe_model_name("apac.amazon.nova-pro-v1:0") == "apac.amazon.nova-pro-v1_0"
-    assert safe_model_name("openai/gpt-5.6-terra") == "openai_gpt-5.6-terra"
     assert safe_model_name("gpt-5.6-terra") == "gpt-5.6-terra"
+    assert safe_model_name("a|b?c*d") == "a_b_c_d"
+
+
+def test_safe_model_name_keeps_the_existing_local_convention():
+    """`/`는 `-`로 간다. 쌓인 결과 파일이 그 이름이라 바꾸면 재채점이 끊긴다"""
+    from medimate.evals.score import safe_model_name
+
+    assert safe_model_name("local/Qwen3-1.7B-Q4_0") == "local-Qwen3-1.7B-Q4_0"
+
+
+def test_budget_guard_refuses_an_unpriced_model():
+    """PRICES에 없으면 비용이 0으로 계산돼 --budget이 영원히 안 걸린다"""
+    import pytest
+
+    from medimate.llm.providers import BudgetExceeded, require_price
+
+    assert require_price("gpt-5.6-terra") == (2.00, 12.00)
+    assert require_price("local/Qwen3-1.7B-Q4_0") == (0.0, 0.0)  # 온디바이스는 0이 맞다
+    with pytest.raises(BudgetExceeded, match="PRICES에 없다"):
+        require_price("gpt-5.6-terra-2026-09-11")  # 날짜 접미사 임의 추가 같은 오타

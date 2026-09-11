@@ -22,7 +22,14 @@ from pathlib import Path
 
 from medimate.evals.score import ROOT, load_cases, load_lexicon, safe_model_name, score
 from medimate.llm.base import TurnExtraction
-from medimate.llm.providers import PRICES, BudgetExceeded, LLMExtractor, RawResult, _parse_json
+from medimate.llm.providers import (
+    PRICES,
+    BudgetExceeded,
+    LLMExtractor,
+    RawResult,
+    _parse_json,
+    require_price,
+)
 from medimate.schema.card import Axis
 
 RESULTS = ROOT / "evals" / "results"
@@ -52,8 +59,9 @@ class DryRunExtractor:
 
 
 def estimate(cases, model_id: str, in_tok: int = 800, out_tok: int = 150) -> tuple[int, float]:
+    """실호출 직전 견적. 가격표에 없으면 여기서 멈춘다(require_price)"""
     calls = sum(c["k"] for c in cases)
-    i, o = PRICES.get(model_id, (0.0, 0.0))
+    i, o = require_price(model_id)
     return calls, (calls * in_tok * i + calls * out_tok * o) / 1_000_000
 
 

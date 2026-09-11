@@ -32,7 +32,7 @@ from pathlib import Path
 from medimate.dialog.memo import split_sentences
 from medimate.evals.score import load_lexicon, safe_model_name
 from medimate.llm import assist_prompts as ap
-from medimate.llm.providers import PRICES, LLMExtractor
+from medimate.llm.providers import PRICES, LLMExtractor, require_price
 
 ROOT = Path(__file__).resolve().parents[3]
 CARDS = ROOT / "evals" / "previsit_cards.jsonl"
@@ -446,7 +446,7 @@ def main() -> None:
         return
     if not (args.provider and args.model):
         a.error("--provider 와 --model 필요 (또는 --dry-run / --report)")
-    pi, po = PRICES.get(args.model, (0.0, 0.0))
+    pi, po = require_price(args.model)  # 가격표에 없으면 호출 전에 멈춘다
     n = len(cases)
     est_in, est_out = (1200, 160) if args.task == "questions" else (900, 120)
     print(
