@@ -24,6 +24,7 @@ def to_backend_payload(card: InterviewCard) -> dict[str, Any]:
                 "status": entry.status.value,
                 "value": entry.value,
                 "evidence": entry.evidence,
+                "source": _axis_source(entry),
             }
             for axis, entry in card.axes.items()
         },
@@ -177,3 +178,34 @@ def _duration(card: PreVisitCard) -> str | None:
             if word in v:
                 return word
     return None
+
+
+# 축 값이 어디서 왔는가. 백엔드 합의(#7, 2026-09-11).
+#
+# `_department_guidance`의 `source`와 **이름만 같고 다른 것**이다 — 그쪽은 진료과 콘텐츠의
+# 출처이고, 이쪽은 축 값의 출처다.
+#
+# `patient_edit`은 **백엔드가 채운다.** 환자가 카드 화면에서 고친 값이라 우리는 만들지 않는다.
+# 우리가 내는 것은 앞의 둘뿐이고, 자리를 만들어 두는 것이 우리 몫이다.
+AXIS_SOURCE_AI = "ai_extraction"  # 발화에서 뽑았다
+AXIS_SOURCE_SELECTION = "selection"  # 인체도·슬라이더·폼으로 고른 값. LLM을 안 불렀다
+AXIS_SOURCE_PATIENT_EDIT = "patient_edit"  # 환자가 카드에서 고쳤다. 백엔드가 채운다
+
+# 선택으로 들어온 값은 evidence가 이 표시로 시작한다
+# (engine.SELECTED_TAG / questions.SITE_PRESELECTED). 발화가 아님을 드러내려고 붙인 것인데,
+# 그게 그대로 출처 판정의 근거가 된다
+_SELECTION_TAGS = ("[선택]", "[부위 선택]")
+
+
+def _axis_source(entry: Any) -> str | None:
+    """이 축 값이 어디서 왔는지. 값이 없으면 `None`.
+
+    아직 안 물은 축(`not_asked`)이나 답을 못 얻은 축은 출처가 없다 — 빈 값에 출처를 붙이면
+    백엔드가 "AI가 뽑았는데 비어 있다"로 읽는다.
+    """
+    if not entry.evidence or entry.value is None:
+        return None
+    first = entry.evidence[0] if isinstance(entry.evidence, list) else str(entry.evidence)
+    if any(str(first).startswith(tag) for tag in _SELECTION_TAGS):
+        return AXIS_SOURCE_SELECTION
+    return AXIS_SOURCE_AI
