@@ -7,13 +7,12 @@ SDK는 선택 의존성이다: `uv sync --group providers`.
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from medimate.llm import prompt as prompt_v3
 from medimate.llm import prompt_small
-from medimate.llm.base import Turn, TurnExtraction
+from medimate.llm.base import Turn, TurnExtraction, parse_json_text
 from medimate.schema.card import Axis
 
 PROMPTS = {"v3": prompt_v3, "small": prompt_small}  # 프롬프트 계열. small은 온디바이스 소형 모델용
@@ -56,15 +55,8 @@ class Usage:
         return (self.input_tokens * i + self.output_tokens * o) / 1_000_000
 
 
-def _parse_json_text(text: str) -> dict:
-    """모델 원문 → dict. 코드펜스를 벗긴다. 스키마 검증은 호출자가 한다."""
-    t = text.strip()
-    t = re.sub(r"^```(?:json)?\s*|\s*```$", "", t)
-    return json.loads(t)
-
-
 def _parse_json(text: str) -> TurnExtraction:
-    return TurnExtraction.model_validate(_parse_json_text(text))
+    return TurnExtraction.model_validate(parse_json_text(text))
 
 
 @dataclass

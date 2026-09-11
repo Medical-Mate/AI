@@ -8,6 +8,8 @@ LLM이 하는 일은 하나다: 환자 발화에서 어느 축에 무엇이 말�
 
 from __future__ import annotations
 
+import json
+import re
 from collections.abc import Sequence
 from typing import Protocol
 
@@ -15,6 +17,17 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from medimate.schema.card import Axis, FieldStatus
 from medimate.schema.postvisit import PostAxis
+
+_FENCE = re.compile(r"^```(?:json)?\s*|\s*```$")
+
+
+def parse_json_text(text: str) -> dict:
+    """모델 원문 → dict. 코드펜스를 벗긴다. 스키마 검증은 호출자가 한다.
+
+    펜스를 두르는 모델이 실제로 있다(Haiku·Nova Lite는 questions eval 20/20을 ```json으로 감쌌다).
+    추출·보조 프롬프트가 같은 파서를 쓰게 여기 둔다 — 한쪽만 벗기면 모델 비교가 파서 비교가 된다.
+    """
+    return json.loads(_FENCE.sub("", text.strip()))
 
 
 class AxisUpdate(BaseModel):

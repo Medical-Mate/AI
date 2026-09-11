@@ -20,7 +20,7 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from medimate.evals.score import ROOT, load_cases, load_lexicon, score
+from medimate.evals.score import ROOT, load_cases, load_lexicon, safe_model_name, score
 from medimate.llm.base import TurnExtraction
 from medimate.llm.providers import PRICES, BudgetExceeded, LLMExtractor, RawResult, _parse_json
 from medimate.schema.card import Axis
@@ -236,7 +236,7 @@ def main() -> None:
     if not a.yes and input("진행? [y/N] ").strip().lower() != "y":
         return
     ex = LLMExtractor(a.provider, a.model, budget_usd=a.budget, prompt_family=a.prompt)
-    rows = run(ex, cases, RESULTS / f"{a.model}.jsonl")
+    rows = run(ex, cases, RESULTS / f"{safe_model_name(a.model)}.jsonl")
     report(rows, cases)
     print(f"\n실제 비용 ${ex.usage.cost_usd(a.model):.3f}")
 

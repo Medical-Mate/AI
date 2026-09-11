@@ -24,6 +24,7 @@ from datetime import date
 from pathlib import Path
 
 from medimate.dialog.memo import MemoLabels, classify_memo, split_sentences
+from medimate.evals.score import safe_model_name
 from medimate.llm import prompt_memo_small
 from medimate.llm.memo_classifier import LLMMemoClassifier
 from medimate.llm.providers import PRICES
@@ -225,7 +226,7 @@ def main() -> None:
     if not a.yes and input("진행? [y/N] ").strip().lower() != "y":
         return
     clf = LLMMemoClassifier(a.provider, a.model, budget_usd=a.budget)
-    rows = run(clf, cases, RESULTS / f"{a.model.replace('/', '-')}{suffix}.jsonl")
+    rows = run(clf, cases, RESULTS / f"{safe_model_name(a.model)}{suffix}.jsonl")
     report(rows, cases)
     print(f"\n실제 비용 ${clf.ex.usage.cost_usd(a.model):.3f}")
 

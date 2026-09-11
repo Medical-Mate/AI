@@ -11,7 +11,8 @@ from collections.abc import Sequence
 
 from medimate.dialog.memo import MemoLabels
 from medimate.llm import prompt_memo_small
-from medimate.llm.providers import LLMExtractor, _parse_json_text
+from medimate.llm.base import parse_json_text
+from medimate.llm.providers import LLMExtractor
 
 
 class LLMMemoClassifier:
@@ -35,7 +36,7 @@ class LLMMemoClassifier:
         self.ex.usage.input_tokens += i
         self.ex.usage.output_tokens += o
         self.last_text, self.last_tokens = text, (i, o)
-        return MemoLabels.from_keyed(_parse_json_text(text), len(sentences))
+        return MemoLabels.from_keyed(parse_json_text(text), len(sentences))
 
 
 class FixedLabels:

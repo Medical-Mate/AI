@@ -15,7 +15,7 @@ v5 (질문만): v4 + 퍼짐·동반이 비면 전할 말 금지(없다는 뜻), 
 
 from __future__ import annotations
 
-import json
+from medimate.llm.base import parse_json_text
 
 QUESTIONS_VERSION = "questions-v5"  # 기본. v1~v4는 비교용으로 남긴다
 TODOS_VERSION = "todos-v2"
@@ -264,7 +264,7 @@ TODOS_SCHEMA = {
 
 
 def parse_items(text: str) -> list[dict]:
-    obj = json.loads(text)
+    obj = parse_json_text(text)
     items = obj["items"]
     if not isinstance(items, list):
         raise ValueError("items가 배열이 아님")

@@ -30,7 +30,7 @@ import time
 from pathlib import Path
 
 from medimate.dialog.memo import split_sentences
-from medimate.evals.score import load_lexicon
+from medimate.evals.score import load_lexicon, safe_model_name
 from medimate.llm import assist_prompts as ap
 from medimate.llm.providers import PRICES, LLMExtractor
 
@@ -327,6 +327,25 @@ def run(task: str, llm, cases: list[dict], version: str, out_path: Path) -> list
     return rows
 
 
+def reparse(rows: list[dict]) -> int:
+    """items가 비었지만 text가 남은 행을 다시 파싱한다. 호출 0 — 원본은 저장돼 있다.
+
+    파서를 고쳐도 저장된 items는 그대로다(호출 당시 값). 재채점이 파서 수정을 반영하려면
+    여기서 원문을 다시 읽어야 한다. 2026-09-11 코드펜스 사고가 이 경로로 복구됐다.
+    """
+    fixed = 0
+    for r in rows:
+        if r.get("items") or not r.get("text"):
+            continue
+        try:
+            r["items"] = ap.parse_items(r["text"])
+            r["error"] = None
+            fixed += 1
+        except Exception:  # noqa: BLE001 — 여전히 못 읽으면 실패로 둔다
+            pass
+    return fixed
+
+
 def report(task: str, rows: list[dict], cases: list[dict], show: bool) -> None:
     by_id = {c["id"]: c for c in cases}
     lexicon = load_lexicon()
@@ -417,6 +436,8 @@ def main() -> None:
     vsuf = "" if version.endswith("-v1") else "-" + version.split("-")[-1]
     if args.report:
         rows = [json.loads(ln) for ln in args.report.read_text(encoding="utf-8").splitlines() if ln]
+        if n := reparse(rows):
+            print(f"원문에서 다시 파싱: {n}건 (저장 당시 파싱 실패)")
         report(args.task, rows, cases, args.show)
         return
     if args.dry_run:
@@ -439,7 +460,7 @@ def main() -> None:
         llm,
         cases,
         version,
-        RESULTS / f"{args.task}-{args.model.replace('/', '-')}{vsuf}.jsonl",
+        RESULTS / f"{args.task}-{safe_model_name(args.model)}{vsuf}.jsonl",
     )
     report(args.task, rows, cases, args.show)
     print(f"\n실제 비용 ${llm.usage.cost_usd(args.model):.3f}")
