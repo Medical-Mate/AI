@@ -159,9 +159,10 @@ class LLMExtractor:
         """
         import os
 
-        import boto3
-
         if self._client is None:
+            # 클라이언트를 만들 때만 임포트한다. providers 그룹 없이도 어댑터 테스트가 돈다
+            import boto3
+
             self._client = boto3.client(
                 "bedrock-runtime",
                 region_name=os.getenv("MEDIMATE_BEDROCK_REGION", "ap-northeast-2"),
