@@ -18,6 +18,21 @@ from medimate.ontology import Ontology, UnknownNodeError
 SIDES = {"left": "왼쪽", "right": "오른쪽", "both": "양쪽"}
 
 
+def normalize_side(side: str | None) -> str | None:
+    """좌우 값을 소문자로 접는다. 대소문자를 가리지 않는다.
+
+    2026-09-11: 백엔드가 `LEFT`/`RIGHT`/`BOTH` 대문자로 구현했는데 우리는 소문자만 받아
+    422를 냈다. 그쪽 테스트가 `side: null`이라 안 걸렸고, **좌우가 있는 부위(34곳 중 21곳)를
+    처음 보내는 순간 터지는** 상태였다. 계약 문서에 소문자라는 명시도 약했다.
+
+    받는 쪽을 넓히는 게 맞다 — 좁히면 상대가 고쳐야 하고, 넓히면 기존 호출이 그대로 돈다.
+    `Left` 같은 혼합도 받는다. 값을 만드는 곳은 여전히 여기 하나라 카드에는 소문자로만 남는다.
+    """
+    if side is None:
+        return None
+    return side.strip().lower()
+
+
 class SiteSelection(BaseModel):
     """카드에 남는 선택 기록. 라벨·노드·진료과 안내. 나중에 온톨로지가 바뀌어도 그때 값이 남는다."""
 
@@ -50,6 +65,7 @@ def resolve_site(onto: Ontology, node_id: str, side: str | None = None) -> SiteS
         raise ValueError(f"앵커에 닿지 않는 구역: {node_id}")
     anchor = onto.get(anchor_id)
 
+    side = normalize_side(side)
     if side is not None:
         if side not in SIDES:
             raise ValueError(f"side는 {sorted(SIDES)} 중 하나: {side}")

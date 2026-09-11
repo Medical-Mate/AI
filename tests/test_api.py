@@ -309,3 +309,39 @@ def test_ontology_search_truncates_a_long_query_instead_of_failing():
     r = client.get("/v1/ontology/search", params={"q": "배" + "가" * 5000})
     assert r.status_code == 200
     assert len(r.json()["query"]) == 300  # 발화 상한과 같은 값에서 자른다
+
+
+def test_side_is_case_insensitive():
+    """백엔드가 `LEFT`/`RIGHT`/`BOTH` 대문자로 구현했는데 우리는 소문자만 받아 422를 냈다.
+
+    2026-09-11. 그쪽 테스트가 `side: null`이라 안 걸렸고, **좌우가 있는 부위(34곳 중 21곳)를
+    처음 보내는 순간 터지는** 상태였다. 받는 쪽을 넓힌다 — 좁히면 상대가 고쳐야 하고,
+    넓히면 기존 호출이 그대로 돈다.
+    """
+    client, _ = make_client([])
+    for value, want in (
+        ("left", "왼쪽 허리 옆"),
+        ("LEFT", "왼쪽 허리 옆"),
+        ("Left", "왼쪽 허리 옆"),
+        ("RIGHT", "오른쪽 허리 옆"),
+        ("BOTH", "양쪽 허리 옆"),
+        ("  left  ", "왼쪽 허리 옆"),  # 공백도 접는다
+    ):
+        r = client.post("/v1/previsit/sessions", json={"site_node_id": "SUR:042", "side": value})
+        assert r.status_code == 200, f"{value}: {r.text}"
+        assert r.json()["state"]["card"]["axes"]["site"]["value"] == want
+
+
+def test_side_is_stored_lowercase_whatever_came_in():
+    """값을 만드는 곳은 여전히 하나라 카드에는 소문자로만 남는다"""
+    client, _ = make_client([])
+    r = client.post("/v1/previsit/sessions", json={"site_node_id": "SUR:042", "side": "LEFT"})
+    assert r.json()["state"]["card"]["site_selection"]["side"] == "left"
+
+
+def test_a_bogus_side_is_still_rejected():
+    """넓히는 것이지 검증을 없애는 게 아니다"""
+    client, _ = make_client([])
+    for bad in ("sideways", "왼쪽", "l"):
+        r = client.post("/v1/previsit/sessions", json={"site_node_id": "SUR:042", "side": bad})
+        assert r.status_code == 422, bad
