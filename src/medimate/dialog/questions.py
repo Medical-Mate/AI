@@ -36,11 +36,16 @@ CLARIFY: dict[Axis, str] = {
     Axis.SEVERITY: "정도를 대략이라도 숫자나 말로 표현해 주실 수 있을까요?",
 }
 
+# 묻는 순서. **심각도는 여기 없다**(2026-09-11, 백엔드 합의 #7).
+# 와이어프레임 3단계가 5단계 슬라이더로 받아 NRS로 병기하므로 문답에서 또 물으면 중복이고,
+# 슬라이더 값이 더 정확하다. 앱이 `selections: [{axis: "severity", value: ...}]`로 보내면
+# LLM 없이 카드에 들어가고 근거는 `[선택] …`으로 남는다.
+# 축 자체는 카드에 그대로 있다 — 채우는 경로만 바뀌었다. 질문 템플릿도 QUESTIONS에 남겨 둔다
+# (문답으로 되돌리려면 이 목록에 한 줄 넣으면 된다).
 ASK_ORDER: list[Axis] = [
     Axis.SITE,
     Axis.ONSET,
     Axis.CHARACTER,
-    Axis.SEVERITY,
     Axis.TIME_COURSE,
     Axis.EXACERBATING_RELIEVING,
     Axis.RADIATION,

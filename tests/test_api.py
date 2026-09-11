@@ -217,20 +217,35 @@ def test_side_on_non_lateral_zone_is_rejected():
     assert r.status_code == 422  # 구조 노드는 짚는 대상이 아니다
 
 
-def test_patient_message_round_trips_through_state():
-    from medimate.dialog.questions import MESSAGE_QUESTION
+def test_axes_closed_ends_the_session_without_a_message_turn():
+    """진료 전은 "전하고 싶은 말" 턴이 없다(2026-09-11). 4단계 화면이 대신한다.
 
+    `patient_message`도 채울 경로가 없어져 export에서 뺐다(백엔드 요청 #7 — 항상 null이면
+    앱이 헷갈린다).
+    """
     updates = [AxisUpdate(axis=a, status=FieldStatus.FILLED, value="x", evidence="x") for a in Axis]
-    client, _ = make_client(
-        [TurnExtraction(chief_complaint="c", updates=updates), TurnExtraction()]
-    )
+    client, _ = make_client([TurnExtraction(chief_complaint="c", updates=updates)])
     state = client.post("/v1/previsit/sessions").json()["state"]
-    b1 = client.post("/v1/previsit/turns", json={"state": state, "utterance": "x 전부"}).json()
-    assert b1["reply"] == MESSAGE_QUESTION and b1["state"]["message_asked"] is True
-    b2 = client.post(
-        "/v1/previsit/turns", json={"state": b1["state"], "utterance": "약은 최소로 부탁드려요"}
+    b = client.post("/v1/previsit/turns", json={"state": state, "utterance": "x 전부"}).json()
+    assert b["ended"] and b["end_reason"] == "complete"
+    assert "patient_message" not in b["card"]
+
+
+def test_severity_arrives_by_selection_not_by_question():
+    """3단계 슬라이더 값을 `selections`로 받는다. LLM을 부르지 않고 근거는 `[선택] …`"""
+    client, _ = make_client([TurnExtraction(updates=[])])
+    state = client.post("/v1/previsit/sessions").json()["state"]
+    b = client.post(
+        "/v1/previsit/turns",
+        json={"state": state, "selections": [{"axis": "severity", "value": "4 (매우 심함)"}]},
     ).json()
-    assert b2["ended"] and b2["card"]["patient_message"] == "약은 최소로 부탁드려요"
+    sev = b["card"]["axes"]["severity"]
+    assert sev["status"] == "filled" and sev["value"] == "4 (매우 심함)"
+    assert sev["evidence"] == ["[선택] 4 (매우 심함)"]  # evidence는 배열이다
+    # LLM을 안 불렀지만 audit은 **있다**. source로 구분하고 usage가 0이다.
+    # audit이 None인 것은 빈 입력·상한 종료처럼 턴 처리 자체가 없을 때뿐이다
+    assert b["audit"]["source"] == "none"
+    assert b["audit"]["usage"] == {"input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0}
 
 
 def test_ontology_search_endpoint_exposes_restoration_and_zone_expansion():

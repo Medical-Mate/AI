@@ -64,45 +64,44 @@ def test_update_without_evidence_is_dropped():
     assert s.card.axes[Axis.SEVERITY].status == FieldStatus.NOT_ASKED
 
 
-def test_all_axes_answered_asks_for_message_then_ends():
-    from medimate.dialog.questions import MESSAGE_QUESTION
+def test_all_axes_answered_ends_without_a_message_turn():
+    """진료 전은 "전하고 싶은 말" 턴이 없다(2026-09-11).
 
+    와이어프레임 4단계("의사에게 물어볼 것")가 그 역할을 대신한다 — AI 후보 + 환자 직접 입력.
+    축이 닫히면 바로 종료한다.
+    """
     updates = [filled(a, "x", "x") for a in Axis]
-    ex = ScriptedExtractor([TurnExtraction(chief_complaint="c", updates=updates), TurnExtraction()])
+    ex = ScriptedExtractor([TurnExtraction(chief_complaint="c", updates=updates)])
     s = Session(ex)
-    assert s.step("x 전부 말함") == MESSAGE_QUESTION  # 8축이 닫혀도 바로 끝내지 않는다
-    assert s.card.completeness() == 1.0 and not s.ended
-    assert s.step("수술은 피하고 싶어요") == CLOSING
+    assert s.step("x 전부 말함") == CLOSING
     assert s.ended and s.end_reason == "complete"
-    assert s.card.patient_message == "수술은 피하고 싶어요"  # 원문 그대로
+    assert s.card.patient_message is None  # 채울 경로가 없다
 
 
-def test_no_message_answer_leaves_field_empty():
-    updates = [filled(a, "x", "x") for a in Axis]
-    ex = ScriptedExtractor([TurnExtraction(updates=updates), TurnExtraction()])
+def test_severity_is_not_asked_in_the_interview():
+    """3단계 슬라이더가 NRS로 주므로 문답에서 묻지 않는다(백엔드 합의 #7).
+
+    축은 카드에 그대로 있고 채우는 경로만 바뀌었다 — 앱이 `selections`로 보낸다.
+    """
+    from medimate.dialog.questions import ASK_ORDER, QUESTIONS
+
+    assert Axis.SEVERITY not in ASK_ORDER
+    assert Axis.SEVERITY in QUESTIONS  # 템플릿은 남겨 둔다(되돌리기 쉽게)
+    assert len(ASK_ORDER) == 7
+
+    ex = ScriptedExtractor([TurnExtraction(updates=[filled(Axis.SITE, "무릎", "무릎")])])
     s = Session(ex)
-    s.step("x 전부")
-    assert s.step("없어요.") == CLOSING
-    assert s.card.patient_message is None
+    s.step("무릎이 아파요")
+    # 다음 질문이 심각도가 아니다
+    assert s.asked_axis is not None and s.asked_axis != Axis.SEVERITY
 
 
-def test_message_turn_still_extracts_symptoms_into_axes():
-    # 마지막 질문에 증상이 섞여 나오면 축에도 들어간다
-    updates = [filled(a, "x", "x") for a in Axis if a != Axis.RADIATION]
-    ex = ScriptedExtractor(
-        [
-            TurnExtraction(updates=updates),
-            TurnExtraction(),  # RADIATION 질문에 무응답 → skipped
-            TurnExtraction(updates=[filled(Axis.RADIATION, "종아리까지", "종아리까지 저려요")]),
-        ]
-    )
-    s = Session(ex)
-    s.step("x 거의 다 말함")  # RADIATION만 남음 → 그 질문
-    s.step("...")  # skipped → 8축 닫힘 → 마지막 질문
-    s.step("아 그리고 종아리까지 저려요")
-    assert s.ended
-    assert s.card.axes[Axis.RADIATION].value == "종아리까지"
-    assert s.card.patient_message == "아 그리고 종아리까지 저려요"
+def test_postvisit_still_has_a_message_turn():
+    """진료 전만 없애는 것이다. 진료 후 명세는 그대로 유지된다"""
+    from medimate.dialog.spec import POSTVISIT_SPEC, PREVISIT_SPEC
+
+    assert PREVISIT_SPEC.message_question is None
+    assert POSTVISIT_SPEC.message_question is not None
 
 
 def test_stop_skips_message_question():
