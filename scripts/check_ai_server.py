@@ -37,6 +37,7 @@ from pathlib import Path
 
 sys.path.insert(0, "src")
 
+from medimate.api import auth  # noqa: E402
 from medimate.api.auth import sign  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -58,11 +59,26 @@ def call(base: str, method: str, path: str, body: dict | None, secret: str | Non
     t0 = time.perf_counter()
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
-            return r.status, json.loads(r.read() or b"{}"), time.perf_counter() - t0
+            return r.status, _body(r.read()), time.perf_counter() - t0
     except urllib.error.HTTPError as e:
-        return e.code, json.loads(e.read() or b"{}"), time.perf_counter() - t0
+        return e.code, _body(e.read()), time.perf_counter() - t0
     except Exception as e:  # noqa: BLE001 — 연결 실패도 결과다
         return 0, {"detail": f"{type(e).__name__}: {e}"}, time.perf_counter() - t0
+
+
+def _body(raw: bytes) -> dict:
+    """JSON이 아니어도 죽지 않는다.
+
+    게이트웨이가 HTML 오류 페이지를 돌려주는 상황이 바로 이 스크립트가 필요한 때인데,
+    거기서 죽으면 쓸모가 없다. 원문 앞부분을 담아 돌려준다.
+    """
+    if not raw:
+        return {}
+    try:
+        return json.loads(raw)
+    except ValueError:
+        text = raw.decode("utf-8", "replace").strip()
+        return {"detail": f"JSON이 아닌 응답: {text[:200]}"}
 
 
 def main() -> None:
@@ -83,7 +99,27 @@ def main() -> None:
     st, b, dt = call(args.base, "GET", "/health", None, None, "chk-health")
     ok = st == 200 and b.get("status") == "ok"
     fails += not ok
-    print(f"{OK if ok else NO}/health  {st}  {dt * 1000:.0f}ms  {b}")
+    print(f"{OK if ok else NO}/health  {st}  {dt * 1000:.0f}ms  hmac_enforced={b.get('hmac_enforced')}")
+
+    # 1-b. **이 스크립트가 쓰는 계산식과 서버가 검증하는 계산식이 같은가**
+    #
+    # 2026-09-11 사고를 막는 검사다. 이 스크립트는 서명을 **로컬 코드**로 만든다. 배포본이
+    # 옛 형식이면 서명이 안 맞는데, 벡터 파일도 같은 브랜치에 있어서 벡터만 보면 안 드러난다.
+    # 실제로 백엔드가 벡터 10 pass를 받고도 운영에서 401이 났다.
+    mine = auth.signing_spec()
+    theirs = b.get("signing")
+    if theirs is None:
+        print("       (서버가 signing을 안 낸다 — 이 필드 이전 버전이다. 계산식 대조를 건너뛴다)")
+    else:
+        same = theirs == mine
+        fails += not same
+        print(f"{OK if same else NO}서명 계산식이 서버와 같다")
+        if not same:
+            print(f"       이 스크립트 {mine}")
+            print(f"       서버      {theirs}")
+            print("       → 배포본이 로컬 코드와 다르다. 서명이 맞을 리 없으니 이미지를 다시 구워야 한다")
+    if b.get("hmac_enforced") is False and args.secret:
+        print("       ⚠ 키를 줬는데 서버는 검증이 꺼져 있다 — 서버 .env의 MEDIMATE_HMAC_SECRET이 비었다")
 
     # 2. 온톨로지 (GET도 서명 필요)
     st, b, dt = call(args.base, "GET", "/v1/ontology/body-map", None, args.secret, "chk-map")

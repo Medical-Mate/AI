@@ -186,7 +186,23 @@ AI 서버는 무상태다. 인증·세션 식별·저장은 백엔드가 한다(
   **`GET`도 서명이 필요하다**(2026-09-11 변경). 이전에는 메서드 단위로 GET 전체를 면제해서
   화이트리스트가 무의미했고, 그 사이 `GET /v1/ontology/search`가 생겼다. GET 본문은 비어 있다
 - 실패 시 401 `{"detail": "hmac: <이유>"}`
+- **`GET /health`가 서버가 실제로 검증하는 계산식을 낸다**(2026-09-11 추가).
+
+  ```json
+  { "status": "ok", "hmac_enforced": true,
+    "signing": { "template": "{method}.{path}.{timestamp}.{request_id}.", "algorithm": "hmac-sha256-hex" } }
+  ```
+
+  `signing`은 `auth.sign()`이 쓰는 템플릿에서 나온다 — 손으로 관리하는 버전 번호가 아니라서
+  형식을 바꾸면 이 값이 자동으로 따라간다. **붙이기 전에 이 값과 자기 계산식을 대조하면**
+  배포본이 옛 형식인 상태를 바로 잡을 수 있다(2026-09-11에 그게 안 잡혀서 벡터 10 pass인데
+  운영만 401이 났다). `scripts/check_ai_server.py`가 이 대조를 자동으로 한다.
+
+  `hmac_enforced`가 `false`면 **서명 없이 모든 요청이 통과하는 상태**다. 노출이 아니다 —
+  꺼져 있으면 어차피 아무 요청이나 통과하니 이미 알 수 있는 사실이다.
 - 서버 설정: `MEDIMATE_HMAC_SECRET`, `MEDIMATE_HMAC_HEADER_*`, `MEDIMATE_HMAC_MAX_SKEW_S`.
+  **키가 없으면 기동 로그에 경고를 남긴다**(2026-09-11). 이전에는 조용히 꺼져서 운영이
+  무검증으로 떠 있는 걸 아무도 몰랐다.
   **한쪽만 채우면 AI가 전 요청을 거부한다** — 양쪽을 같은 값으로 동시에 채운다
 
 ### 배포 — Dockerfile (저장소 루트)

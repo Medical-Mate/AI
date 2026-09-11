@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import os
 import time
 from dataclasses import dataclass
@@ -56,14 +57,37 @@ class HmacConfig:
         )
 
 
+# 서명 메시지 조립 템플릿. **`sign()`이 이 문자열 하나만 쓴다.**
+#
+# 손으로 관리하는 버전 번호를 두지 않는 이유: 계산식은 바꾸고 번호는 안 바꾸는 일이 생기고,
+# 그러면 `/health`가 "v2"라는데 실제로는 v3를 검증하는 상태가 된다. 점검 도구는 또 통과를 낸다.
+# 2026-09-11에 정확히 그 사고가 났다 — `main`의 계산식이 옛 형식인데 새 형식 벡터로 대조해
+# 10 pass가 나왔고 운영에서만 401이 났다. **검증 자료와 구현이 같이 움직이면 서로를 확인해
+# 주지 못한다.** 그래서 형식을 바꾸면 `/health` 값이 자동으로 따라가게 묶어 둔다.
+SIGNING_TEMPLATE = "{method}.{path}.{timestamp}.{request_id}."
+SIGNING_ALGORITHM = "hmac-sha256-hex"
+
+
+def signing_spec() -> dict[str, str]:
+    """서버가 **실제로 검증하는** 서명 규격. `/health`가 그대로 내보낸다.
+
+    점검 도구(`scripts/check_ai_server.py`)가 자기 템플릿과 문자열 비교해서, 로컬 코드와
+    배포본이 갈린 상태를 잡는다. 서명 형식은 계약 문서·벡터 파일에 이미 공개돼 있고
+    비밀은 키뿐이라 내보내도 새로 알려주는 것이 없다.
+    """
+    return {"template": SIGNING_TEMPLATE, "algorithm": SIGNING_ALGORITHM}
+
+
 def sign(secret: str, method: str, path: str, timestamp: str, request_id: str, body: bytes) -> str:
     """백엔드가 쓰는 것과 같은 계산. 테스트와 문서의 기준.
 
     `method`는 대문자로 맞춘다. `path`는 쿼리 없이, 앞 `/`를 포함해서 넘긴다.
     `request_id`가 없으면 빈 문자열로 계산한다(백엔드는 항상 보내기로 했다 — #7).
     """
-    msg = f"{method.upper()}.{path}.{timestamp}.{request_id}.".encode() + body
-    return hmac.new(secret.encode(), msg, hashlib.sha256).hexdigest()
+    head = SIGNING_TEMPLATE.format(
+        method=method.upper(), path=path, timestamp=timestamp, request_id=request_id
+    )
+    return hmac.new(secret.encode(), head.encode() + body, hashlib.sha256).hexdigest()
 
 
 def verify(
@@ -97,6 +121,13 @@ def install(app, cfg: HmacConfig | None = None) -> None:
     cfg = cfg or HmacConfig.from_env()
     app.state.hmac = cfg
     if not cfg.secret:
+        # **꺼질 때 반드시 남긴다**(2026-09-11). 이전에는 조용히 return해서 운영 컨테이너가
+        # 무검증으로 떠 있는데 아무도 몰랐다. `/health`의 `hmac_enforced`도 같은 사실을 낸다 —
+        # 로그는 사람이 봐야 알고 `/health`는 점검 도구가 자동으로 본다.
+        logging.getLogger("medimate.auth").warning(
+            "HMAC 검증이 꺼진 상태로 기동합니다 — MEDIMATE_HMAC_SECRET이 비어 있어 "
+            "모든 요청이 서명 없이 통과합니다. 운영이면 백엔드와 같은 값을 양쪽에 채우세요."
+        )
         return
 
     @app.middleware("http")
