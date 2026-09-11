@@ -99,7 +99,7 @@ MEDIMATE_HMAC_SECRET=          # 비워둠
     "Effect": "Allow",
     "Action": ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
     "Resource": [
-      "arn:aws:bedrock:ap-northeast-2:169523632526:inference-profile/apac.amazon.nova-pro-v1:0",
+      "arn:aws:bedrock:ap-northeast-2:<AWS_ACCOUNT_ID>:inference-profile/apac.amazon.nova-pro-v1:0",
       "arn:aws:bedrock:ap-northeast-2::foundation-model/amazon.nova-pro-v1:0",
       "arn:aws:bedrock:ap-northeast-1::foundation-model/amazon.nova-pro-v1:0",
       "arn:aws:bedrock:ap-northeast-3::foundation-model/amazon.nova-pro-v1:0",
@@ -110,6 +110,10 @@ MEDIMATE_HMAC_SECRET=          # 비워둠
   }]
 }
 ```
+
+`<AWS_ACCOUNT_ID>`는 실제 계정 ID로 바꿔 넣는다. 저장소가 공개라 값을 적지 않는다
+(`aws sts get-caller-identity --query Account --output text`로 확인). 계정 ID가 필요한 것은
+**inference-profile ARN 하나뿐**이고, foundation-model ARN 6개는 그 자리가 비어 있다.
 
 모델을 바꾸면 이 목록도 바뀐다. `global.` 프로파일은 분산 범위가 다르다(예: haiku는 3개).
 
