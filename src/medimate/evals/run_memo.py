@@ -24,9 +24,10 @@ from datetime import date
 from pathlib import Path
 
 from medimate.dialog.memo import MemoLabels, classify_memo, split_sentences
+from medimate.evals.score import safe_model_name
 from medimate.llm import prompt_memo_small
 from medimate.llm.memo_classifier import LLMMemoClassifier
-from medimate.llm.providers import PRICES
+from medimate.llm.providers import PRICES, require_price
 
 ROOT = Path(__file__).resolve().parents[3]
 CASES = ROOT / "evals" / "postvisit_cases.jsonl"
@@ -220,12 +221,12 @@ def main() -> None:
     if not (a.provider and a.model):
         ap.error("--provider 와 --model 필요 (또는 --dry-run / --report)")
     est = len(cases)
-    i, o = PRICES.get(a.model, (0.0, 0.0))
+    i, o = require_price(a.model)  # 가격표에 없으면 호출 전에 멈춘다
     print(f"{a.model}: 호출 {est}회, 예상 비용 약 ${(est * 900 * i + est * 80 * o) / 1e6:.3f}")
     if not a.yes and input("진행? [y/N] ").strip().lower() != "y":
         return
     clf = LLMMemoClassifier(a.provider, a.model, budget_usd=a.budget)
-    rows = run(clf, cases, RESULTS / f"{a.model.replace('/', '-')}{suffix}.jsonl")
+    rows = run(clf, cases, RESULTS / f"{safe_model_name(a.model)}{suffix}.jsonl")
     report(rows, cases)
     print(f"\n실제 비용 ${clf.ex.usage.cost_usd(a.model):.3f}")
 

@@ -24,7 +24,11 @@ class InterviewSpec:
     clarify: dict  # axis → 확인 질문(AMBIGUOUS 1회)
     ask_order: list  # 묻는 순서
     opening: str
-    message_question: str  # 축이 모두 닫힌 뒤 한 번
+    # 축이 모두 닫힌 뒤 한 번. None이면 그 턴을 내지 않고 바로 종료한다.
+    # 진료 전은 2026-09-11에 None으로 바꿨다 — 와이어프레임 4단계가 그 역할을 대신한다
+    # ("의사에게 물어볼 것" 화면에서 AI 후보 + 환자 직접 입력). card.patient_message는
+    # 채울 경로가 없어져 항상 None이고, export에서도 뺐다
+    message_question: str | None
     closing: str
     # 부위를 미리 짚고 들어올 수 있는 축(진료 전만). None이면 사전 채움 없음
     site_axis: StrEnum | None = None
@@ -47,7 +51,7 @@ PREVISIT_SPEC = InterviewSpec(
     clarify=pre_q.CLARIFY,
     ask_order=pre_q.ASK_ORDER,
     opening=pre_q.OPENING,
-    message_question=pre_q.MESSAGE_QUESTION,
+    message_question=None,  # 4단계 화면이 대신한다(2026-09-11). 템플릿은 questions.py에 남겨 둔다
     closing=pre_q.CLOSING,
     site_axis=Axis.SITE,
     opening_with_site=pre_q.OPENING_WITH_SITE,

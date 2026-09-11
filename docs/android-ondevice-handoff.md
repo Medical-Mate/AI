@@ -7,12 +7,46 @@ AI 쪽 실험은 끝났고(이슈 #24), 안드로이드에는 **고정된 묶음
 
 | 항목 | 값 / 위치 | 비고 |
 |---|---|---|
-| 엔진 | llama.cpp (Snapdragon 빌드, Hexagon 포함) | `scripts/snapdragon/build.py --target android` — 도커 툴체인 `ghcr.io/snapdragon-toolchain/arm64-android:v0.7`. 산출물 `pkg-android/llama.cpp/{bin,lib}`; lib에 `libggml-hexagon.so`, `libggml-htp-v75.so`(8 Gen 3) |
-| 모델 | **Qwen3-1.7B-Q4_0.gguf** (1.0GB) | `unsloth/Qwen3-1.7B-GGUF` 의 Q4_0. K-quant(Q4_K_M)는 NPU 오프로드가 안 될 수 있어 Q4_0 고정 |
+| 엔진 | llama.cpp (Snapdragon 빌드, Hexagon 포함) | **llama.cpp 업스트림의** `scripts/snapdragon/build.py --target android` — 도커 툴체인 `ghcr.io/snapdragon-toolchain/arm64-android:v0.7`. 산출물 `pkg-android/llama.cpp/{bin,lib}`; lib에 `libggml-hexagon.so`, `libggml-htp-v75.so`(8 Gen 3) |
+| 모델 | **Qwen3-1.7B-Q4_0.gguf** (1,056,782,912 bytes) | 받는 방법·해시는 아래 [모델 파일 받기](#모델-파일-받기). K-quant(Q4_K_M)는 NPU 오프로드가 안 될 수 있어 Q4_0 고정 |
 | 프롬프트 | `extract-small-v4` — `evals/ondevice/prompt-small-v4.system.txt` | 시스템 프롬프트 전문. 사용자 메시지 형식은 벡터 파일의 `user` 참고 |
 | 스키마 | `evals/ondevice/turn_extraction.small.schema.json` | 요청별 `response_format: json_schema`로 강제(서버 전역 `--json-schema-file`은 템플릿 토큰과 충돌해 사용 금지) |
 | 추론 설정 | temperature 0 · seed 42 · max_tokens 1024 · reasoning off · `-c 4096 -t 6` | NPU: `--device HTP0 -ngl 99`, 환경 `LD_LIBRARY_PATH=<lib> ADSP_LIBRARY_PATH=<lib>` |
 | 테스트 벡터 | `evals/ondevice/vectors-qwen3-1.7b-q4_0-small-v4.jsonl` (88) | 각 줄: `system`, `user`, `settings`, `expected_output`(PC에서 같은 설정으로 얻은 원문), `pc_latency_s` |
+
+## 모델 파일 받기
+
+**파일을 주고받을 필요가 없습니다.** 아래 URL로 직접 받고 해시만 맞추면 됩니다 —
+AI 쪽이 eval을 돌린 파일과 **바이트 단위로 같은 것**임을 확인했습니다(2026-09-11).
+
+```bash
+curl -L -o Qwen3-1.7B-Q4_0.gguf "https://huggingface.co/unsloth/Qwen3-1.7B-GGUF/resolve/d7f544eead698dbd1f15126ef60b45a1e1933222/Qwen3-1.7B-Q4_0.gguf"
+
+sha256sum Qwen3-1.7B-Q4_0.gguf
+# c876f159707a4e4f70e045106c69db15bfc935a4981706fd4f65c6e7ea1e81c5
+```
+
+윈도우: `Get-FileHash .\Qwen3-1.7B-Q4_0.gguf -Algorithm SHA256`
+폰에 올릴 때: `adb push Qwen3-1.7B-Q4_0.gguf /data/local/tmp/`
+
+| | 값 |
+|---|---|
+| SHA256 | `c876f159707a4e4f70e045106c69db15bfc935a4981706fd4f65c6e7ea1e81c5` |
+| 크기 | 1,056,782,912 bytes |
+| 저장소·커밋 | `unsloth/Qwen3-1.7B-GGUF` @ `d7f544eead698dbd1f15126ef60b45a1e1933222` |
+| 라이선스 | Apache-2.0 (Qwen3) |
+
+**URL을 `main`이 아니라 커밋으로 고정한 이유** — `main`으로 두면 업스트림이 파일을 갈아 끼울 때
+앱이 다른 모델을 받고, 그러면 아래 88개 벡터 검증이 조용히 깨집니다. 커밋 고정 URL에서도
+같은 해시가 오는 것을 확인했습니다.
+
+**해시가 위 값과 같으면** AI 쪽 eval 결과(진료 전 추출 61/88 위반 0, 진료 후 메모 라벨 93%)가
+그 기기에서도 성립하는 것으로 봅니다. 다르면 다른 파일이니 그 상태로 벡터 검증을 하지 마세요.
+
+받는 경로는 Range 요청을 지원하므로(`accept-ranges: bytes`, CloudFront) 모바일에서 끊겨도
+이어받을 수 있습니다. 구글 드라이브는 1GB 넘는 파일에 확인 페이지가 붙고 다운로드 쿼터 차단이
+있어 앱 배포 경로로 쓰지 않는 게 좋습니다. 정식 배포 때는 Play Asset Delivery가 안드로이드
+정석이지만(install-time 상한이 1GB라 `fast-follow`/`on-demand` 필요) 지금 단계에서 할 일은 아닙니다.
 
 ## 일치 확인 (안드로이드가 할 유일한 검증)
 
@@ -27,7 +61,7 @@ AI 쪽 실험은 끝났고(이슈 #24), 안드로이드에는 **고정된 묶음
 - 첫 호출은 시스템 프롬프트 처리(2,241토큰)가 붙는다. **NPU 1.7초, CPU 14.9초.** 문진 화면을 열 때 시스템 프롬프트만 먼저 보내 캐시를 만들어 두면 첫 턴 체감이 사라진다(llama.cpp는 프롬프트 캐시를 자동으로 재사용).
 - 턴당 지연 ≈ 0.2초 + 출력 토큰 ÷ 13. 출력 45토큰이면 3.4초, 25토큰이면 2초.
 - CPU 연속 추론은 발열로 5분 안에 무너졿다(실측). **NPU 기본, CPU는 폴백.** 미지원 기기면 서버 추출로 폴백(백엔드 `profile: server`).
-- 모델 파일은 앱 첫 실행 시 다운로드(1.0GB). 저장 위치와 무결성 확인(해시)은 앱 몫.
+- 모델 파일은 앱 첫 실행 시 다운로드(1.0GB). **기준 해시는 아래에서 드립니다** — 저장 위치와 검증 실행은 앱 몫.
 
 ## 앱 흐름에서 모델이 받는 것 (UX 결정 대기 — 이슈 #24)
 

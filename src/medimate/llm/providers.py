@@ -7,13 +7,12 @@ SDK는 선택 의존성이다: `uv sync --group providers`.
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from medimate.llm import prompt as prompt_v3
 from medimate.llm import prompt_small
-from medimate.llm.base import Turn, TurnExtraction
+from medimate.llm.base import Turn, TurnExtraction, parse_json_text
 from medimate.schema.card import Axis
 
 PROMPTS = {"v3": prompt_v3, "small": prompt_small}  # 프롬프트 계열. small은 온디바이스 소형 모델용
@@ -52,19 +51,13 @@ class Usage:
     output_tokens: int = 0
 
     def cost_usd(self, model_id: str) -> float:
-        i, o = PRICES.get(model_id, (0.0, 0.0))  # local/… 은 항상 0
+        # local/… 은 가격표에 없어 0. 그 밖의 미등록 ID는 LLMExtractor가 생성 때 막는다
+        i, o = PRICES.get(model_id, (0.0, 0.0))
         return (self.input_tokens * i + self.output_tokens * o) / 1_000_000
 
 
-def _parse_json_text(text: str) -> dict:
-    """모델 원문 → dict. 코드펜스를 벗긴다. 스키마 검증은 호출자가 한다."""
-    t = text.strip()
-    t = re.sub(r"^```(?:json)?\s*|\s*```$", "", t)
-    return json.loads(t)
-
-
 def _parse_json(text: str) -> TurnExtraction:
-    return TurnExtraction.model_validate(_parse_json_text(text))
+    return TurnExtraction.model_validate(parse_json_text(text))
 
 
 @dataclass
@@ -76,6 +69,27 @@ class RawResult:
     error: str | None
     input_tokens: int
     output_tokens: int
+
+
+def require_price(model_id: str) -> tuple[float, float]:
+    """가격표에서 단가를 꺼낸다. 없으면 호출하지 않는다.
+
+    `PRICES.get(model_id, (0, 0))`은 미등록 모델의 비용을 0으로 계산한다. 그러면
+    `--budget` 상한이 영원히 안 걸리고 예상 비용도 $0.000으로 보인다. 사비로 운영하므로
+    조용히 새는 쪽보다 멈추는 쪽을 택한다. 모델 ID 오타도 여기서 걸린다.
+
+    러너(실호출 경로)만 부른다. 서버는 요청마다 LLMExtractor를 만들고 상한이 쓰이지 않으므로
+    생성자에 두면 배포된 서버가 가격표 누락으로 전 요청을 실패시킨다.
+    로컬(온디바이스 후보)은 값이 0이 맞다.
+    """
+    if model_id.startswith(LOCAL_PREFIX):
+        return (0.0, 0.0)
+    if model_id not in PRICES:
+        raise BudgetExceeded(
+            f"{model_id}: PRICES에 없다. 지출 상한이 무력화되므로 호출하지 않는다. "
+            f"providers.PRICES에 (입력, 출력) $/1M 을 추가할 것"
+        )
+    return PRICES[model_id]
 
 
 @dataclass

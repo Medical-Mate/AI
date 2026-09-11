@@ -172,7 +172,7 @@ def test_hmac_rejects_unsigned_and_accepts_signed_requests(monkeypatch):
     assert r.status_code == 401
     body = json.dumps({}).encode()
     ts = str(int(time.time()))
-    sig = auth.sign("s3cret", ts, "rid-1", body)
+    sig = auth.sign("s3cret", "POST", "/v1/previsit/sessions", ts, "rid-1", body)
     r = client.post(
         "/v1/previsit/sessions",
         content=body,
@@ -191,9 +191,112 @@ def test_hmac_rejects_unsigned_and_accepts_signed_requests(monkeypatch):
         content=body,
         headers={
             "Content-Type": "application/json",
-            "X-Signature": auth.sign("s3cret", old, "rid-1", body),
+            "X-Signature": auth.sign("s3cret", "POST", "/v1/previsit/sessions", old, "rid-1", body),
             "X-Timestamp": old,
             "X-Request-Id": "rid-1",
         },
     )
     assert r.status_code == 401
+
+
+def test_hmac_signature_covers_method_and_path(monkeypatch):
+    """2026-09-11: 서명에 메서드·경로가 없어서, 본문이 같으면 다른 엔드포인트로 재전송할 수 있었다.
+
+    같은 사설망이라 악용 경로는 좁았지만 구성은 바뀐다. 백엔드 합의로 넣었다(#7).
+    """
+    cfg = auth.HmacConfig(secret="s3cret")
+    app = create_app(lambda: ScriptedExtractor([]))
+    auth.install(app, cfg)
+    client = TestClient(app)
+    body = json.dumps({}).encode()
+    ts = str(int(time.time()))
+
+    def post(path, sig):
+        return client.post(
+            path,
+            content=body,
+            headers={
+                "Content-Type": "application/json",
+                "X-Signature": sig,
+                "X-Timestamp": ts,
+                "X-Request-Id": "rid-1",
+            },
+        )
+
+    right = auth.sign("s3cret", "POST", "/v1/previsit/sessions", ts, "rid-1", body)
+    assert post("/v1/previsit/sessions", right).status_code == 200
+    # 다른 경로로 서명한 것은 거부된다
+    wrong_path = auth.sign("s3cret", "POST", "/v1/previsit/turns", ts, "rid-1", body)
+    assert post("/v1/previsit/sessions", wrong_path).status_code == 401
+    # 메서드가 다르면 거부된다
+    wrong_method = auth.sign("s3cret", "GET", "/v1/previsit/sessions", ts, "rid-1", body)
+    assert post("/v1/previsit/sessions", wrong_method).status_code == 401
+
+
+def test_hmac_no_longer_exempts_get(monkeypatch):
+    """메서드 단위 GET 면제를 없앴다(2026-09-11).
+
+    이전에는 `request.method == "GET"` 조건 때문에 경로 화이트리스트가 무의미했고,
+    그 사이 `GET /v1/ontology/search`가 생겼다. 조회 엔드포인트가 조용히 무인증이 되는 것을 막는다.
+    """
+    cfg = auth.HmacConfig(secret="s3cret")
+    app = create_app(lambda: ScriptedExtractor([]))
+    auth.install(app, cfg)
+    client = TestClient(app)
+
+    # 서명 없는 GET은 이제 거부된다
+    assert client.get("/v1/ontology/body-map").status_code == 401
+    assert client.get("/v1/ontology/search", params={"q": "무릎"}).status_code == 401
+
+    # 서명하면 통과한다. GET은 본문이 비어 있다
+    ts = str(int(time.time()))
+    sig = auth.sign("s3cret", "GET", "/v1/ontology/body-map", ts, "rid-g", b"")
+    r = client.get(
+        "/v1/ontology/body-map",
+        headers={"X-Signature": sig, "X-Timestamp": ts, "X-Request-Id": "rid-g"},
+    )
+    assert r.status_code == 200
+
+    # 경로 화이트리스트는 그대로 면제
+    for path in ("/health", "/openapi.json"):
+        assert client.get(path).status_code == 200
+
+
+def test_hmac_request_id_header_may_be_absent(monkeypatch):
+    """백엔드는 항상 보내기로 했지만, 빠뜨렸을 때 원인을 찾기 쉽게 빈 문자열로 계산한다"""
+    cfg = auth.HmacConfig(secret="s3cret")
+    app = create_app(lambda: ScriptedExtractor([]))
+    auth.install(app, cfg)
+    client = TestClient(app)
+    body = json.dumps({}).encode()
+    ts = str(int(time.time()))
+    sig = auth.sign("s3cret", "POST", "/v1/previsit/sessions", ts, "", body)
+    r = client.post(
+        "/v1/previsit/sessions",
+        content=body,
+        headers={"Content-Type": "application/json", "X-Signature": sig, "X-Timestamp": ts},
+    )
+    assert r.status_code == 200
+
+
+def test_hmac_vectors_file_matches_the_implementation():
+    """백엔드가 자기 구현을 대조하는 벡터다. 규격을 바꾸면 여기서 먼저 깨져야 한다.
+
+    안드로이드에 준 88개 추출 벡터와 같은 방식 — 말로 설명하는 것보다 벡터 하나가 확실하다.
+    """
+    import json as _json
+    from pathlib import Path
+
+    f = Path(__file__).resolve().parents[1] / "docs" / "examples" / "hmac-vectors.json"
+    data = _json.loads(f.read_text(encoding="utf-8"))
+    assert len(data["vectors"]) >= 10
+    for v in data["vectors"]:
+        got = auth.sign(
+            data["secret"],
+            v["method"],
+            v["path"],
+            v["timestamp"],
+            v["request_id"],
+            v["body"].encode("utf-8"),
+        )
+        assert got == v["signature"], f"{v['id']} 불일치 — 규격이 바뀌었으면 벡터를 재생성할 것"

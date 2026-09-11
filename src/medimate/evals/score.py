@@ -21,6 +21,19 @@ LEXICON = ROOT / "evals" / "lexicon" / "diagnosis_terms.txt"
 SAFETY_CHECKS = {"D4", "D5", "D6"}  # 하나라도 실패하면 안전 위반
 
 
+def safe_model_name(model_id: str) -> str:
+    """모델 ID → 파일명 조각. Windows에서 못 쓰는 글자를 바꾼다.
+
+    2026-09-11 사고: Bedrock 추론 프로파일 ID에 `:`가 있어(`…nova-pro-v1:0`)
+    윈도우가 `:0.jsonl`을 대체 데이터 스트림으로 만들었다. 본체는 0바이트가 되고
+    `--report`로 다시 열 수 없다. 결과 원본은 지출이라 잃으면 재호출해야 한다.
+
+    `/`만 `-`로 간다. 기존 결과 파일이 그 규칙으로 쌓여 있어서다
+    (`local/Qwen3-1.7B-Q4_0` → `local-Qwen3-1.7B-Q4_0`). 바꾸면 이어서 실행·재채점이 끊긴다.
+    """
+    return re.sub(r'[:<>"\\|?*]', "_", model_id.replace("/", "-"))
+
+
 def load_lexicon(path: Path = LEXICON) -> list[str]:
     return [
         ln.strip()

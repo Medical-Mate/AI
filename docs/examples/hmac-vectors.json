@@ -1,0 +1,139 @@
+{
+  "note": "HMAC 서명 테스트 벡터. 아래 secret으로 각 요청을 서명하면 signature가 나와야 한다. 안 맞으면 어느 벡터에서 갈리는지 보고 원인을 좁힌다.",
+  "algorithm": "HMAC-SHA256, hex digest (소문자)",
+  "message": "f\"{METHOD}.{path}.{timestamp}.{request_id}.\" + body_utf8_bytes",
+  "rules": [
+    "METHOD는 대문자",
+    "path는 쿼리스트링 제외, 앞 / 포함. 프록시를 지난 뒤의 경로",
+    "구분자는 '.' 이고 request_id 뒤에도 하나 붙는다. 그 뒤에 바로 본문 바이트",
+    "본문은 직렬화된 그대로의 UTF-8 바이트. 재직렬화하면 공백·키 순서가 달라져 서명이 틀어진다",
+    "한글을 \\uXXXX로 이스케이프하지 않는다(UTF-8 원바이트)",
+    "request_id 헤더가 없으면 그 자리는 빈 문자열",
+    "timestamp는 epoch 초 정수 문자열. 허용 폭 ±300초(벡터에서는 검증 대상 아님)"
+  ],
+  "headers": {
+    "signature": "X-Signature",
+    "timestamp": "X-Timestamp",
+    "request_id": "X-Request-Id"
+  },
+  "exempt_paths": [
+    "/health",
+    "/docs",
+    "/openapi.json",
+    "/redoc"
+  ],
+  "secret": "test-secret-do-not-use-in-production",
+  "vectors": [
+    {
+      "id": "V01",
+      "note": "기본형. 빈 본문 POST",
+      "method": "POST",
+      "path": "/v1/previsit/sessions",
+      "timestamp": "1789000000",
+      "request_id": "req-0001",
+      "body": "{}",
+      "body_utf8_bytes": 2,
+      "signature": "0d0c6943e37c4b5adb86176bfb4790947d8db6f7be3f57ad35c0a32e59ba4aed"
+    },
+    {
+      "id": "V02",
+      "note": "한글 본문. UTF-8 바이트로 서명한다 — 이스케이프(\\uXXXX)하면 서명이 달라진다",
+      "method": "POST",
+      "path": "/v1/previsit/turns",
+      "timestamp": "1789000001",
+      "request_id": "req-0002",
+      "body": "{\"utterance\":\"오른쪽 무릎이 계단 내려갈 때 아파요\"}",
+      "body_utf8_bytes": 66,
+      "signature": "8625561ef1bba5f3742a42b24670e79d844ed7117ea514fe042adf9fd740bb09"
+    },
+    {
+      "id": "V03",
+      "note": "V02와 본문이 같고 경로만 다르다. 경로가 서명에 들어가는지 확인",
+      "method": "POST",
+      "path": "/v1/previsit/sessions",
+      "timestamp": "1789000001",
+      "request_id": "req-0002",
+      "body": "{\"utterance\":\"오른쪽 무릎이 계단 내려갈 때 아파요\"}",
+      "body_utf8_bytes": 66,
+      "signature": "f5dd9a6ca0ade67575c5a2c378d4ad874006bd0b22dd72e64484f247be9b6137"
+    },
+    {
+      "id": "V04",
+      "note": "V02와 전부 같고 메서드만 다르다. 메서드가 서명에 들어가는지 확인",
+      "method": "PUT",
+      "path": "/v1/previsit/turns",
+      "timestamp": "1789000001",
+      "request_id": "req-0002",
+      "body": "{\"utterance\":\"오른쪽 무릎이 계단 내려갈 때 아파요\"}",
+      "body_utf8_bytes": 66,
+      "signature": "30e4fd7c73e9d4b54bc0c3a8f4a4be97b04f3d576f4f42eb0776eb68187d1cf5"
+    },
+    {
+      "id": "V05",
+      "note": "GET + 빈 본문. GET도 서명이 필요하다(2026-09-11부터)",
+      "method": "GET",
+      "path": "/v1/ontology/body-map",
+      "timestamp": "1789000002",
+      "request_id": "req-0003",
+      "body": "",
+      "body_utf8_bytes": 0,
+      "signature": "5dcf7852963ab1a1028c09634785cc41b3ecbd9fcaeee27a79dc9ceeb1f1c567"
+    },
+    {
+      "id": "V06",
+      "note": "쿼리가 붙은 GET. **쿼리는 서명에서 제외한다** — path만 쓴다",
+      "method": "GET",
+      "path": "/v1/ontology/search",
+      "query_not_signed": "?q=무릎&limit=8",
+      "timestamp": "1789000003",
+      "request_id": "req-0004",
+      "body": "",
+      "body_utf8_bytes": 0,
+      "signature": "44ad849d930a263ce529045ec97af9246706eb83916918ad631c774acdedc9b1"
+    },
+    {
+      "id": "V07",
+      "note": "request_id 헤더가 없을 때. 그 자리를 빈 문자열로 계산한다(백엔드는 항상 보내기로 했다)",
+      "method": "POST",
+      "path": "/v1/previsit/turns",
+      "timestamp": "1789000004",
+      "request_id": "",
+      "body": "{\"state\":{}}",
+      "body_utf8_bytes": 12,
+      "signature": "8dc94b9ef57c61522e22133a2794e52bf491b55b6f0afbec3c65b9aec41f936a"
+    },
+    {
+      "id": "V08",
+      "note": "공백이 든 본문. **직렬화된 그대로**의 바이트로 서명한다 — 재직렬화하면 달라진다",
+      "method": "POST",
+      "path": "/v1/previsit/turns",
+      "timestamp": "1789000005",
+      "request_id": "req-0005",
+      "body": "{\"utterance\": \"무릎\", \"selections\": []}",
+      "body_utf8_bytes": 41,
+      "signature": "deb883787f4f9a48932ada5634f1179d773041648f583e17c9bc6f83f6efd5d0"
+    },
+    {
+      "id": "V09",
+      "note": "selections만 보내는 턴(3단계 통증 강도 슬라이더)",
+      "method": "POST",
+      "path": "/v1/previsit/turns",
+      "timestamp": "1789000006",
+      "request_id": "req-0006",
+      "body": "{\"selections\":[{\"axis\":\"severity\",\"value\":\"4 (매우 심함)\"}]}",
+      "body_utf8_bytes": 64,
+      "signature": "c5d23565a8d5efea9a30885621814d6b61fe4ffb565a35c5245f72ed7c4fe39e"
+    },
+    {
+      "id": "V10",
+      "note": "진료 후 메모. 줄바꿈이 든 본문",
+      "method": "POST",
+      "path": "/v1/postvisit/memo",
+      "timestamp": "1789000007",
+      "request_id": "req-0007",
+      "body": "{\"memo\":\"위염 초기래요.\\n약은 2주분 받았어요.\"}",
+      "body_utf8_bytes": 61,
+      "signature": "25e0bda36841b494325f4db13ef671506901bba8ad4bc5df68658d38723e9b08"
+    }
+  ]
+}

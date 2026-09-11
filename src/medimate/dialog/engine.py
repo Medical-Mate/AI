@@ -249,8 +249,10 @@ class Session:
 
         nxt = self._next_axis()
         if nxt is None:
-            # 축이 모두 닫혔다. 끝내기 전에 전할 말을 한 번 묻는다
+            # 축이 모두 닫혔다. 명세에 전할 말 질문이 있으면 한 번 묻고, 없으면 바로 끝낸다
             self.asked_axis = None
+            if self.spec.message_question is None:
+                return notice + self.end("complete")
             self.message_asked = True
             return notice + self.spec.message_question
         self.asked_axis = nxt
@@ -277,7 +279,9 @@ class Session:
 
     def _current_question(self) -> str:
         if self.asked_axis is None:
-            return self.spec.message_question if self.message_asked else self.opening()
+            if self.message_asked and self.spec.message_question is not None:
+                return self.spec.message_question
+            return self.opening()
         if self.asked_axis in self.clarified:
             return self.spec.clarify[self.asked_axis]
         return self.spec.questions[self.asked_axis]
