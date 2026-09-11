@@ -221,7 +221,7 @@ AI 서버는 무상태다. 인증·세션 식별·저장은 백엔드가 한다(
 - **`GET /health`가 서버가 실제로 검증하는 계산식을 낸다**(2026-09-11 추가).
 
   ```json
-  { "status": "ok", "hmac_enforced": true,
+  { "status": "ok", "hmac_enforced": true, "hmac_required": true,
     "signing": { "template": "{method}.{path}.{timestamp}.{request_id}.", "algorithm": "hmac-sha256-hex" } }
   ```
 
@@ -232,9 +232,18 @@ AI 서버는 무상태다. 인증·세션 식별·저장은 백엔드가 한다(
 
   `hmac_enforced`가 `false`면 **서명 없이 모든 요청이 통과하는 상태**다. 노출이 아니다 —
   꺼져 있으면 어차피 아무 요청이나 통과하니 이미 알 수 있는 사실이다.
-- 서버 설정: `MEDIMATE_HMAC_SECRET`, `MEDIMATE_HMAC_HEADER_*`, `MEDIMATE_HMAC_MAX_SKEW_S`.
-  **키가 없으면 기동 로그에 경고를 남긴다**(2026-09-11). 이전에는 조용히 꺼져서 운영이
-  무검증으로 떠 있는 걸 아무도 몰랐다.
+- 서버 설정: `MEDIMATE_HMAC_SECRET`, `MEDIMATE_HMAC_HEADER_*`, `MEDIMATE_HMAC_MAX_SKEW_S`,
+  **`MEDIMATE_REQUIRE_HMAC`**. 키가 없으면 기동 로그에 경고를 남긴다(2026-09-11).
+  이전에는 조용히 꺼져서 운영이 무검증으로 떠 있는 걸 아무도 몰랐다.
+- **`MEDIMATE_REQUIRE_HMAC=1`이면 시크릿 없이 기동하지 않는다**(2026-09-11 추가, 백엔드 요청).
+  `1` `true` `yes` `on`을 켜는 값으로 받는다(대소문자·공백 무관). **기본은 꺼짐** —
+  로컬 개발과 테스트가 시크릿 없이 돌아야 하므로, 운영 env에서 켜는 구성이다.
+  env에 값을 넣는 것은 배포하는 쪽 몫이다.
+
+  `/health`의 **`hmac_required`가 그 플래그를 서버가 실제로 읽었는지** 알려준다.
+  넣었는데 `false`로 보이면 값이 켜는 값이 아니거나 컨테이너가 그 env를 못 받은 것이다.
+  (`hmac_enforced`는 시크릿 유무만 보므로 이 구분을 못 한다 — 2026-09-11에 백엔드가
+  env를 넣고 켠 줄 알았는데 우리 코드에 변수가 없어 아무 일도 안 일어난 적이 있다.)
   **한쪽만 채우면 AI가 전 요청을 거부한다** — 양쪽을 같은 값으로 동시에 채운다
 
 ### 배포 — Dockerfile (저장소 루트)

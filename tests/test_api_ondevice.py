@@ -4,6 +4,7 @@ import json
 import re
 import time
 
+import pytest
 from fastapi.testclient import TestClient
 
 from medimate.api import auth
@@ -300,3 +301,49 @@ def test_hmac_vectors_file_matches_the_implementation():
             v["body"].encode("utf-8"),
         )
         assert got == v["signature"], f"{v['id']} 불일치 — 규격이 바뀌었으면 벡터를 재생성할 것"
+
+
+def test_require_hmac_refuses_to_boot_without_a_secret(monkeypatch):
+    """`MEDIMATE_REQUIRE_HMAC=1`이면 시크릿 없이 기동하지 않는다.
+
+    2026-09-11 백엔드 요청. 시크릿을 빈 채로 배포해 **검증이 꺼진 줄 모르고 몇 시간 돌았고**,
+    무서명 요청을 직접 던져 보기 전까지 몰랐다. 기동 경고만으로는 부족하다 —
+    컨테이너 로그를 매번 보지 않는다.
+    """
+    monkeypatch.setenv("MEDIMATE_REQUIRE_HMAC", "1")
+    monkeypatch.delenv("MEDIMATE_HMAC_SECRET", raising=False)
+    with pytest.raises(RuntimeError, match="MEDIMATE_REQUIRE_HMAC"):
+        create_app()
+
+
+def test_require_hmac_is_off_by_default(monkeypatch):
+    """기본은 끈다 — 로컬 개발과 테스트가 시크릿 없이 돌아야 한다"""
+    for k in ("MEDIMATE_REQUIRE_HMAC", "MEDIMATE_HMAC_SECRET"):
+        monkeypatch.delenv(k, raising=False)
+    app = create_app()
+    body = TestClient(app).get("/health").json()
+    assert body["hmac_required"] is False and body["hmac_enforced"] is False
+
+
+def test_require_hmac_accepts_common_truthy_spellings(monkeypatch):
+    """좁게 받으면 "켰다고 생각했는데 안 켜진" 상태가 생긴다"""
+    monkeypatch.delenv("MEDIMATE_HMAC_SECRET", raising=False)
+    for on in ("1", "true", "TRUE", "yes", "on", " True "):
+        monkeypatch.setenv("MEDIMATE_REQUIRE_HMAC", on)
+        with pytest.raises(RuntimeError):
+            create_app()
+    for off in ("0", "false", "no", "", "  "):
+        monkeypatch.setenv("MEDIMATE_REQUIRE_HMAC", off)
+        create_app()  # 안 막는다
+
+
+def test_health_says_whether_the_require_flag_was_read(monkeypatch):
+    """백엔드가 env를 넣고 켠 줄 알았는데 우리 코드에 변수가 없어 아무 일도 안 일어났다.
+
+    `hmac_enforced`는 시크릿 유무만 보므로 그걸 잡아주지 못했다. **있다고 믿는 보안 장치가
+    없는 게 제일 나쁘다** — 이 필드로 플래그가 실제로 읽혔는지 확인한다.
+    """
+    monkeypatch.setenv("MEDIMATE_REQUIRE_HMAC", "1")
+    monkeypatch.setenv("MEDIMATE_HMAC_SECRET", "s3cret")
+    body = TestClient(create_app()).get("/health").json()
+    assert body["hmac_required"] is True and body["hmac_enforced"] is True
