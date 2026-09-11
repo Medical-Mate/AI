@@ -168,12 +168,24 @@ AI 서버는 무상태다. 인증·세션 식별·저장은 백엔드가 한다(
 
 백엔드가 할 일: 위 필드를 그대로 통과시키기, (선택) request_id 캐시, HMAC 서명.
 
-### 인증 — HMAC (구현됨, 키 없으면 검증 생략)
+### 인증 — HMAC (구현됨, 키 없으면 검증 생략. 규격 확정 2026-09-11 #7)
 - 헤더: `X-Signature`, `X-Timestamp`(epoch 초), `X-Request-Id`. 이름은 환경변수로 바꿀 수 있다
-- 서명: `hex(HMAC_SHA256(secret, f"{timestamp}.{request_id}." + body_bytes))`
-- 허용 시각 폭 ±300초(환경변수). `GET`·`/health`·문서 경로는 예외
+- 서명: `hex(HMAC_SHA256(secret, f"{METHOD}.{path}.{timestamp}.{request_id}." + body_bytes))`
+  - `METHOD`는 **대문자**(`POST`)
+  - `path`는 **쿼리스트링 제외**, **앞 `/` 포함** → `/v1/previsit/turns`.
+    쿼리를 넣으면 인코딩 차이로 깨진다. POST에 쿼리가 붙으면 규격을 다시 정한다
+  - `path`는 **프록시를 지난 뒤의 경로**다. 게이트웨이가 경로를 다시 쓰면 양쪽이 다른 문자열을
+    보게 되고, 그게 서명 불일치의 제일 흔한 원인이다
+  - 구분자는 `.`이고 `request_id` 뒤에도 하나 붙는다. 그 뒤에 **직렬화된 그대로의 본문 바이트**
+    (재직렬화하면 공백·키 순서가 달라져 서명이 틀어진다)
+  - `X-Request-Id`를 안 보내면 그 자리를 **빈 문자열**로 계산한다. 백엔드는 항상 보내기로 했다
+- 허용 시각 폭 ±300초(환경변수)
+- **면제는 경로 화이트리스트뿐이다** — `/health` `/docs` `/openapi.json` `/redoc`.
+  **`GET`도 서명이 필요하다**(2026-09-11 변경). 이전에는 메서드 단위로 GET 전체를 면제해서
+  화이트리스트가 무의미했고, 그 사이 `GET /v1/ontology/search`가 생겼다. GET 본문은 비어 있다
 - 실패 시 401 `{"detail": "hmac: <이유>"}`
-- 서버 설정: `MEDIMATE_HMAC_SECRET`, `MEDIMATE_HMAC_HEADER_*`, `MEDIMATE_HMAC_MAX_SKEW_S`
+- 서버 설정: `MEDIMATE_HMAC_SECRET`, `MEDIMATE_HMAC_HEADER_*`, `MEDIMATE_HMAC_MAX_SKEW_S`.
+  **한쪽만 채우면 AI가 전 요청을 거부한다** — 양쪽을 같은 값으로 동시에 채운다
 
 ### 배포 — Dockerfile (저장소 루트)
 `docker build -t medimate-ai . && docker run -p 8000:8000 --env-file .env medimate-ai`. 모델 없음, 1 vCPU·1GB. 폰이 뽑았든 서버가 뽑았든 백엔드에게는 같은 `state`·`card`다.
