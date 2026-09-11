@@ -106,6 +106,43 @@ class ExtractionMeta(BaseModel):
     prompt_version: str = Field(max_length=40)
 
 
+class PatientProfile(BaseModel):
+    """환자가 앱 온보딩에 적은 복용약·기저질환·알러지. **질문 후보 재료로만 쓰고 버린다.**
+
+    카드에 넣지 않는다 — 축이 아니고, 이 문진에서 환자가 말한 것도 아니다. 정규화·해석도
+    하지 않는다(약 이름을 표준명으로 바꾸는 순간 우리가 만든 값이 된다). 프롬프트에 그대로
+    실리고 응답과 함께 사라진다.
+
+    eval에서 이 셋이 질문 후보의 복용약·기저질환·알러지 카테고리를 3% → 65%로 올렸다.
+    와이어프레임의 3개 중 하나가 약 질문인데, 그 자리가 이 필드 없이는 채워지지 않는다.
+
+    `null` 상태를 따로 두지 않는다 — **필드가 없으면 온보딩을 안 거친 것, `[]`면 적었는데
+    없는 것**이다. 지금은 둘 다 프롬프트에 "없음"으로 가고 그 이상은 만들지 않는다.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    medications: list[str] = Field(default_factory=list, max_length=50)
+    conditions: list[str] = Field(default_factory=list, max_length=50)
+    allergies: list[str] = Field(default_factory=list, max_length=50)
+
+    @field_validator("medications", "conditions", "allergies", mode="after")
+    @classmethod
+    def _drop_blanks(cls, v: list[str]) -> list[str]:
+        """빈 칸·공백만 남은 원소를 버린다.
+
+        앱이 빈 입력칸을 그대로 보내면 프롬프트에 빈 줄이 들어간다.
+        """
+        return [x.strip() for x in v if x and x.strip()]
+
+    def as_prompt_payload(self) -> dict[str, list[str]]:
+        return {
+            "medications": self.medications,
+            "conditions": self.conditions,
+            "allergies": self.allergies,
+        }
+
+
 class TurnRequest(BaseModel):
     """한 턴. 세 가지 조합 중 하나:
     - utterance만 → 서버가 추출
@@ -133,6 +170,25 @@ class TurnRequest(BaseModel):
     # 후보 생성은 카드 값을 외부 LLM으로 보낸다 ② 백엔드 AWS 크레딧이 한정이고 Bedrock이
     # 같은 크레딧에서 나간다. 무조건 도는 구조면 끌 방법이 없다
     question_candidates: bool = False
+
+    # 앱 온보딩의 복용약·기저질환·알러지. **`question_candidates`가 켜진 턴에만 보낼 수 있다.**
+    # 필드를 생략하면 지금까지와 같다(빈 배열). 카드에 저장되지 않는다
+    patient_profile: PatientProfile | None = None
+
+    @model_validator(mode="after")
+    def _profile_only_with_candidates(self) -> TurnRequest:
+        """후보를 안 만드는 턴에 건강정보가 오면 거부한다.
+
+        프롬프트에 들어가는 것이 문제가 아니라 **요청 본문에 실려 오는 것**이 문제다.
+        편의상 매 턴 붙여 보내기 시작하면 20턴짜리 문진에서 건강정보가 20번 오가고,
+        서버 로그·에러 리포트에 남는 표면이 그만큼 늘어난다. 아무도 모르게.
+        규칙으로 부탁하지 않고 구조로 막는다(CLAUDE.md).
+        """
+        if self.patient_profile is not None and not self.question_candidates:
+            raise ValueError(
+                "patient_profile은 question_candidates: true인 턴에만 보낼 수 있습니다"
+            )
+        return self
 
 
 class TurnUsage(BaseModel):
@@ -366,7 +422,7 @@ def create_app(
 
         cands = None
         if body.question_candidates and s.ended and isinstance(s.card, PreVisitCard):
-            cands = _make_question_candidates(s.card, extractor)
+            cands = _make_question_candidates(s.card, extractor, body.patient_profile)
 
         return TurnResponse(
             reply=reply,
@@ -378,7 +434,9 @@ def create_app(
             request_id=body.request_id,
         )
 
-    def _make_question_candidates(card: PreVisitCard, extractor) -> list[dict[str, Any]] | None:
+    def _make_question_candidates(
+        card: PreVisitCard, extractor, profile: PatientProfile | None = None
+    ) -> list[dict[str, Any]] | None:
         """카드로 "의사에게 물어볼 것" 후보를 만든다. **실패해도 카드를 잃지 않는다.**
 
         어떤 이유로든 안 되면 `None`을 돌려준다 — 문답을 다 마친 환자의 카드가 후보 생성
@@ -389,10 +447,10 @@ def create_app(
         복용약·기저질환·알러지, 환자가 덧붙인 말뿐이다. 이름·나이·성별·병원·진료일·ID·
         `request_id`는 카드에 있어도 프롬프트에 안 들어간다(`docs/api-previsit.md` 지키는 선).
 
-        **알려진 한계 — 복용약·기저질환·알러지가 지금은 비어 있다.** `PreVisitCard`에 그 필드가
-        없어서 프롬프트가 항상 "없음"을 본다. eval에서 그 세 카테고리를 3%→65%까지 올린
-        규칙(questions-v8)이 제품에서는 안 걸린다. 앱 온보딩이 그 정보를 갖고 있으니
-        요청으로 받는 필드를 백엔드와 정하면 한 줄로 연결된다(#7).
+        복용약·기저질환·알러지는 **요청의 `patient_profile`에서 온다.** 카드에는 그 자리가 없다 —
+        축이 아니고 이 문진에서 환자가 말한 것도 아니어서, 재료로 쓰고 버린다. 안 보내면
+        빈 값이고, 그러면 eval에서 그 세 카테고리를 3%→65%로 올린 규칙(questions-v8)이
+        제품에서 안 걸린다(2026-09-11 백엔드 합의, #7).
         """
         axes = {
             str(getattr(a, "value", a)): e.value
@@ -401,8 +459,10 @@ def create_app(
         }
         payload = {
             "axes": axes,
-            # 아직 카드에 프로필 자리가 없다(위 한계). 필드가 생기면 여기만 채우면 된다
-            "profile": {"medications": [], "conditions": [], "allergies": []},
+            # 요청에서 온 것. 안 보냈으면 빈 값 — 카드에는 저장하지 않는다
+            "profile": profile.as_prompt_payload()
+            if profile
+            else {"medications": [], "conditions": [], "allergies": []},
             "patient_message": None,  # 전할 말 턴은 없앴다(2026-09-11)
         }
         try:

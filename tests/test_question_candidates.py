@@ -127,3 +127,90 @@ def test_prompt_carries_no_identifiers():
             continue
         assert banned not in user, banned
     assert user.startswith("카드:")
+
+
+# --- patient_profile (2026-09-11 백엔드 합의 #7) ------------------------------
+#
+# 카드에 복용약·기저질환·알러지 자리가 없어서 프롬프트가 항상 "없음"을 봤다. eval에서 그 세
+# 카테고리를 3% → 65%로 올린 규칙(questions-v8)이 제품에서 안 걸리는 상태였다.
+
+
+def _turn(client, state, **extra):
+    return client.post("/v1/previsit/turns", json={"state": state, "utterance": "x 끝", **extra})
+
+
+def _client():
+    ex = Fake()
+    c = TestClient(create_app(lambda: ex))
+    st = c.post("/v1/previsit/sessions", json={"site_node_id": "SUR:042", "side": "left"}).json()[
+        "state"
+    ]
+    return c, ex, st
+
+
+def test_profile_reaches_the_prompt():
+    c, ex, st = _client()
+    r = _turn(
+        c,
+        st,
+        question_candidates=True,
+        patient_profile={"medications": ["혈압약"], "conditions": ["고혈압"], "allergies": []},
+    )
+    assert r.status_code == 200
+    _, user = ex.prompts[0]
+    assert "혈압약" in user and "고혈압" in user
+
+
+def test_profile_is_not_stored_on_the_card():
+    """축이 아니고 이 문진에서 환자가 말한 것도 아니다. 재료로 쓰고 버린다"""
+    c, _, st = _client()
+    # 후보 대본에 안 나오는 값이라야 카드에 샌 것과 구분된다
+    b = _turn(c, st, question_candidates=True, patient_profile={"medications": ["와파린"]}).json()
+    assert "와파린" not in json.dumps(b["card"], ensure_ascii=False)
+    assert "patient_profile" not in b["card"]
+    assert "patient_profile" not in json.dumps(b["state"], ensure_ascii=False)
+
+
+def test_omitting_the_field_is_the_same_as_before():
+    """필드 없음 = 온보딩 안 거침. 빈 배열과 같은 프롬프트가 나간다"""
+    c1, ex1, st1 = _client()
+    _turn(c1, st1, question_candidates=True)
+    c2, ex2, st2 = _client()
+    _turn(c2, st2, question_candidates=True, patient_profile={})
+    assert ex1.prompts[0] == ex2.prompts[0]
+
+
+def test_blank_elements_are_dropped():
+    """앱이 빈 입력칸을 그대로 보내면 프롬프트에 빈 줄이 들어간다"""
+    c, ex, st = _client()
+    _turn(
+        c,
+        st,
+        question_candidates=True,
+        patient_profile={"medications": ["", "  ", " 혈압약 "], "allergies": [""]},
+    )
+    _, user = ex.prompts[0]
+    line = next(ln for ln in user.splitlines() if "복용약" in ln)
+    assert "혈압약" in line and ", ," not in line
+
+
+def test_rejected_when_candidates_are_off():
+    """프롬프트가 아니라 **요청 본문**이 문제다.
+
+    편의상 매 턴 붙여 보내면 20턴짜리 문진에서 건강정보가 20번 오가고, 서버 로그·에러
+    리포트에 남는 표면이 그만큼 늘어난다. 규칙으로 부탁하지 않고 구조로 막는다.
+    """
+    c, ex, st = _client()
+    r = _turn(c, st, patient_profile={"medications": ["혈압약"]})
+    assert r.status_code == 422
+    assert "question_candidates" in json.dumps(r.json(), ensure_ascii=False)
+    assert ex.prompts == []
+
+
+def test_unknown_profile_field_is_rejected():
+    """`extra="forbid"` — 요청에 정의되지 않은 필드가 오면 422 (계약 문서 지키는 선)"""
+    c, _, st = _client()
+    r = _turn(
+        c, st, question_candidates=True, patient_profile={"medications": [], "birth_year": 1990}
+    )
+    assert r.status_code == 422
