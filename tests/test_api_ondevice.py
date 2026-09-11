@@ -277,3 +277,26 @@ def test_hmac_request_id_header_may_be_absent(monkeypatch):
         headers={"Content-Type": "application/json", "X-Signature": sig, "X-Timestamp": ts},
     )
     assert r.status_code == 200
+
+
+def test_hmac_vectors_file_matches_the_implementation():
+    """백엔드가 자기 구현을 대조하는 벡터다. 규격을 바꾸면 여기서 먼저 깨져야 한다.
+
+    안드로이드에 준 88개 추출 벡터와 같은 방식 — 말로 설명하는 것보다 벡터 하나가 확실하다.
+    """
+    import json as _json
+    from pathlib import Path
+
+    f = Path(__file__).resolve().parents[1] / "docs" / "examples" / "hmac-vectors.json"
+    data = _json.loads(f.read_text(encoding="utf-8"))
+    assert len(data["vectors"]) >= 10
+    for v in data["vectors"]:
+        got = auth.sign(
+            data["secret"],
+            v["method"],
+            v["path"],
+            v["timestamp"],
+            v["request_id"],
+            v["body"].encode("utf-8"),
+        )
+        assert got == v["signature"], f"{v['id']} 불일치 — 규격이 바뀌었으면 벡터를 재생성할 것"
