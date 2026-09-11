@@ -166,9 +166,11 @@ def test_v6_tone_cap_is_not_a_quota():
     assert "같은 끝맺음을 한 세트에 두 번 쓰지 않는다" in v6
 
 
-def test_v6_is_the_default_and_v1_to_v5_remain():
-    assert ap.QUESTIONS_VERSION == "questions-v6"
-    for v in range(1, 7):
+def test_latest_is_the_default_and_older_versions_remain():
+    """비교용으로 전 버전을 남긴다 — 프롬프트를 바꿀 때마다 전 모델을 다시 돌리는 게 규칙이라
+    어느 버전이 어느 수치를 냈는지 되짚을 수 있어야 한다"""
+    assert ap.QUESTIONS_VERSION == "questions-v8"
+    for v in range(1, 9):
         assert f"questions-v{v}" in ap.QUESTIONS_PROMPTS
 
 
@@ -266,3 +268,74 @@ def test_ranker_does_not_mutate_input():
     items = [{"text": "a?", "source": "onset"}]
     top_candidates(items, top=1)
     assert items == [{"text": "a?", "source": "onset"}]
+
+
+# --- questions-v7 ----------------------------------------------------------
+
+
+def test_v7_makes_medication_categories_mandatory_without_giving_wording():
+    """v6 실측: 복용약 재료 34장 중 질문 3%, 기저질환·알러지 0%. 허용만 하고 권하지 않았다.
+
+    올리되 **문구 예시는 주지 않는다** — 문자열을 주면 템플릿이 된다(v6 끝맺음 목록이 그랬다).
+    재료만 지목한 전할 말은 생성 100%에 다양성 91%였다.
+    """
+    v7 = ap.questions_system("questions-v7")
+    assert "복용약·기저질환·알러지가 카드에 있으면 그중 하나에서 질문을 만든다" in v7
+    # 약 질문 문구를 예시로 주지 않는다
+    assert "계속 먹어도 되나요" not in v7
+
+
+def test_v7_drops_the_ending_menu_that_became_a_template():
+    v6, v7 = ap.questions_system("questions-v6"), ap.questions_system("questions-v7")
+    assert "축마다 어울리는 끝맺음이 다르다" in v6
+    assert "끝맺음이 다르다" not in v7
+    assert "같은 끝맺음을 한 세트에 두 번 쓰지 않는다" in v7  # 상한은 남긴다
+
+
+def test_v7_has_no_statement_items_and_no_patient_message_source():
+    """4단계 화면이 질문 목록이라 서술문이 안 맞고, 전할 말 턴이 없어져 그 재료도 안 온다"""
+    v7 = ap.questions_system("questions-v7")
+    assert "전부 질문이고 물음표로 끝난다" in v7
+    assert '"general"과 "patient_message"는 쓰지 않는다' in v7
+    assert "conditions" in v7  # 기저질환 source 추가
+
+
+def test_v7_tightens_length_below_the_backend_limit():
+    """백엔드 검증이 40자인데 v6 출력의 6%가 넘었다(최대 67자). 35자로 주고 자르지 말게 한다"""
+    v7 = ap.questions_system("questions-v7")
+    assert "35자" in v7 and "40자" not in v7
+    assert "자르지 말고" in v7
+
+
+def test_v7_enumerates_the_guess_phrasings_that_actually_appeared():
+    """함정 카드에서 6건이 나왔다. `"~일 수도 있나요?" 금지`만으로는 안 막혔다"""
+    v7 = ap.questions_system("questions-v7")
+    for phrase in ("가능성이 있나요", "아닐까 싶어요", "인 것 같은데"):
+        assert phrase in v7
+    assert "같은 원인인가요" in v7  # 정상 질문은 허용임을 밝힌다
+
+
+def test_v8_bans_the_default_idiom_instead_of_capping_it():
+    """상한은 세 번 다 실패했다 — v3 75% · v6 58% · v7 94%(카드 점유).
+
+    v6의 축별 끝맺음 목록은 템플릿을 만들었지만 **동시에 이 관용구를 억눌렀다.**
+    v7이 그 목록을 빼자 기본값으로 돌아갔다. 그래서 금지로 가되 **대안 목록은 주지 않는다.**
+    """
+    v7, v8 = ap.questions_system("questions-v7"), ap.questions_system("questions-v8")
+    assert "쓰더라도 하나까지" in v7  # v7은 상한
+    assert '**"왜 그런가요", "왜 그럴까요"는 쓰지 않는다.**' in v8  # v8은 금지
+    # 가르치는 자리(좋은 질문 예시)에서도 뺐다 — v6 때 "더 지켜봐도"가 세 군데 있었다
+    assert v8.count("왜 그런가요") == 1  # 금지 규칙 안에만 남는다
+    # 대안 끝맺음 목록을 주지 않는다(그게 v6 템플릿화의 원인이었다)
+    assert "축마다 어울리는 끝맺음" not in v8
+
+
+def test_v8_bans_the_word_possibility_and_diagnosis_confirmation():
+    """v7이 "~가능성이 있나요"를 어구로 금지했는데 진짜 위반 4건 중 3건이 그것이었다.
+
+    PC89는 환자가 검색한 병명을 받아 "제 증상이 협착증일 가능성이 있나요?"로 되물었다 —
+    실질은 진단 추측이다.
+    """
+    v8 = ap.questions_system("questions-v8")
+    assert '**"가능성"이라는 말을 아예 쓰지 않는다.**' in v8
+    assert "그게 맞는지 되묻지 않는다" in v8
