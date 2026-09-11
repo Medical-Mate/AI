@@ -14,7 +14,9 @@ from medimate.schema.card import InterviewCard, PreVisitCard
 from medimate.schema.postvisit import PostVisitCard
 
 
-def to_backend_payload(card: InterviewCard) -> dict[str, Any]:
+def to_backend_payload(
+    card: InterviewCard, question_candidates: list[dict[str, Any]] | None = None
+) -> dict[str, Any]:
     """임시 형식. TODO: 백엔드 스키마 확정 후 필드명·구조 맞추기."""
     out: dict[str, Any] = {
         "card_type": _card_type(card),
@@ -39,6 +41,10 @@ def to_backend_payload(card: InterviewCard) -> dict[str, Any]:
         # docs/decisions/2026-09-04-department-guidance.md
         out["department_guidance"] = _department_guidance(card)
         out["title"] = _title(card)
+        # 의사에게 물어볼 것 후보(앱 4단계 화면). **요청이 켜졌고 세션이 끝난 턴에만** 값이 온다.
+        # 만드는 것은 API이고(LLM 호출) 여기는 자리를 낸다 — 이 함수는 순수하게 남긴다.
+        # 최종 목록(환자가 고른 것 + 직접 쓴 것)은 앱·백엔드 몫이다. 우리는 후보만 낸다
+        out["question_candidates"] = question_candidates
     if isinstance(card, PostVisitCard):
         # 넓히기 병기 — 들은 용어에 부위를 붙인 것. 설명이 아니라 위치 표시 (§3)
         out["widening"] = [w.model_dump() for w in card.widening]
