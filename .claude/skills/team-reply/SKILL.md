@@ -12,11 +12,13 @@ description: 백엔드·안드로이드·디자이너의 문의에 답한다. Gi
 
 1. **사실 확인.** 메모리·기억으로 답하지 말고 **코드와 문서에서 확인한다.** 아래 §3의 "확인
    위치"를 그대로 열어 본다. 오늘 기준이 어제와 다를 수 있다
-2. **우리 정의를 가진 것만 답한다.** 나머지는 **담당자를 지목**한다(§4). 우리가 정하면 나중에
+2. **상태 확인 — "있다"가 어디에 있다는 뜻인지 밝힌다.** §1-a
+3. **우리 정의를 가진 것만 답한다.** 나머지는 **담당자를 지목**한다(§4). 우리가 정하면 나중에
    또 바꾼다
-3. **초안을 `notes/`에 쓴다**(gitignore). 파일로 쓰면 사용자가 읽고 고칠 수 있다
-4. **사용자 확인을 받고 게시한다.** 이슈 코멘트는 외부로 나가는 것이라 임의로 올리지 않는다
-5. **게시 후 검증**한다 — 게시본이 초안과 같은지, 한글이 깨지지 않았는지
+4. **근거로 읽은 문서가 틀렸으면 그 자리에서 고친다.** §1-b
+5. **초안을 `notes/`에 쓴다**(gitignore). 파일로 쓰면 사용자가 읽고 고칠 수 있다
+6. **사용자 확인을 받고 게시한다.** 이슈 코멘트는 외부로 나가는 것이라 임의로 올리지 않는다
+7. **게시 후 검증**한다 — 게시본이 초안과 같은지, 한글이 깨지지 않았는지
 
 ```bash
 PYTHONIOENCODING=utf-8 gh issue comment 7 -F notes/<초안>.md
@@ -26,12 +28,60 @@ PYTHONIOENCODING=utf-8 gh api repos/Medical-Mate/AI/issues/comments/<id> --jq '.
 
 윈도우에서 파이썬·gh 출력에 한글을 넣을 때 `PYTHONIOENCODING=utf-8`을 빠뜨리면 깨진다.
 
+### 1-a. 상태 확인 — 브랜치·`main`·배포는 서로 다른 상태다
+
+**"반영했습니다"는 세 가지 뜻이 될 수 있고, 상대는 제일 강한 뜻으로 읽는다.**
+
+| 상태 | 상대가 할 수 있는 것 |
+|---|---|
+| 브랜치에 커밋 | 브랜치를 받아서 읽는 것뿐 |
+| `main`에 병합 | 소스로는 확정. **배포본은 아직 옛것** |
+| 이미지가 다시 구워짐 | 그제야 운영에 붙일 수 있다 |
+
+셋을 뭉개면 상대가 운영에 붙였다가 깨진다(§5). **답에 어느 상태인지 쓴다.** 아직 배포 전이면
+"브랜치에 있고 배포는 안 됐다"고 적고, 배포됐으면 digest를 적는다.
+
+```bash
+git log --oneline -1 origin/main                      # main에 있나
+git cherry origin/main origin/<branch>                # 브랜치에만 있는 패치 (squash 병합이면 '+'가 남으니 아래로 확인)
+git diff origin/<branch> origin/main --stat           # 내용 차이
+PYTHONIOENCODING=utf-8 gh run list --repo Medical-Mate/AI --workflow "Publish image" --limit 3 \
+  --json headSha,status,conclusion --jq '.[] | "\(.headSha[0:7]) \(.status)/\(.conclusion)"'
+```
+
+**이미지는 `main`의 최신 커밋이 아니라 마지막으로 `src/`를 건드린 커밋에서 구워진다.**
+`publish-image.yml`의 `paths-ignore`가 `docs/**` `evals/**` `*.md` `scripts/**`를 건너뛴다.
+문서만 병합한 뒤 "새 이미지가 나갔다"고 말하면 틀린다.
+
+**파일이 "없다"고 단정하기 전에 찾아봐라.** 저장소 밖에 있을 수 있다.
+
+```bash
+find /c/Users/user -maxdepth 4 -name "<파일명>" 2>/dev/null
+ls -la <예상 경로>
+PYTHONIOENCODING=utf-8 gh release list --repo Medical-Mate/AI
+```
+
+### 1-b. 근거로 읽은 문서가 틀렸으면 그 자리에서 고친다
+
+결정은 이슈 코멘트로 오는데 **문서를 따라 고치는 사람이 없다.** 그래서 답하려고 문서를 열면
+낡은 서술이 나온다. 그걸 근거로 답하면 틀린 답이 나가고, 안 고치면 다음 사람이 또 밟는다.
+
+- 문서가 **구현되지 않은 것을 구현된 것처럼** 적고 있으면 고친다. 무엇이 적혀 있었는지와
+  "구현된 적이 없다"를 함께 남겨 같은 오해가 재발하지 않게 한다
+- **"미정"·"결정 대기" 절은 특히 낡는다.** 이슈에서 이미 결정된 것이 그대로 남아 있다.
+  답하면서 열었으면 그때 정리한다
+- 확정된 것과 **합의만 되고 구현이 남은 것**을 같은 칸에 두지 마라. 그게 §1-a의 혼동을 만든다
+- 팀 결정은 `docs/decisions/<날짜>-<주제>.md`로 남긴다. **되돌릴 때 무엇이 바뀌는지도 적는다**
+
 ## 2. 답의 품질을 만드는 것
 
 - **실측을 넣어라.** "길 수 있습니다"가 아니라 "339개 중 20개(6%)가 40자 초과, 최대 67자".
   저장된 eval 결과로 세면 호출 0이다
+- **전한 뒤 상대가 무엇을 할지 생각하라.** 문장 하나가 남의 배포를 움직인다. "바꾸셔도 됩니다"를
+  읽은 백엔드는 **실제로 운영에 붙인다.** 상대가 그 말을 믿고 할 행동을 떠올리면 "브랜치"와
+  "배포"를 뭉개지 않는다
 - **우리 쪽 미비를 먼저 밝혀라.** 상대가 발견하기 전에 말하는 게 싸다(LLM 타임아웃 없음,
-  40자 초과 6%, 문서에 호출 주체 누락 — 전부 우리가 먼저 밝혔다)
+  40자 초과 6%, 문서에 호출 주체 누락, `status` 5값, `/health` 필드 증가 — 전부 우리가 먼저 밝혔다)
 - **틀렸으면 짧게 정정하고 넘어가라.** 사과는 한 줄. 상대가 그 정보로 며칠 기다렸으면 그 사실만 적는다
 - **상대 규칙이 과해 보여도 먼저 우리 출력을 재라.** 대개 우리가 규격을 안 지키고 있다
 
@@ -40,16 +90,31 @@ PYTHONIOENCODING=utf-8 gh api repos/Medical-Mate/AI/issues/comments/<id> --jq '.
 | 항목 | 값 | 확인 위치 |
 |---|---|---|
 | 서버 모델 | `apac.amazon.nova-pro-v1:0` (Bedrock 서울) | `providers.PRICES`, `docs/deploy-requirements.md` |
-| 배포 | Lightsail 1대 + Docker Compose. **운영 가동 중**(백엔드 확인 2026-09-11) | `docs/deploy-requirements.md` |
-| 이미지 | `ghcr.io/medical-mate/ai:latest|main|sha-*` | `.github/workflows/publish-image.yml` |
+| 배포 | Lightsail 1대 + Docker Compose. **운영 가동 중** | `docs/deploy-requirements.md` |
+| 이미지 | `latest` `main` `sha-<전체 커밋해시>` 셋이 같은 digest. **마지막 `src/` 커밋에서 구워진다** | `.github/workflows/publish-image.yml` |
+| 배포된 digest | `sha256:eea8af72…d5a3` — `6f27864`에서 구움 (run `34593222412`) | `gh run list --workflow "Publish image"` |
+| HMAC | `SIGNING_TEMPLATE = "{method}.{path}.{timestamp}.{request_id}."` + body, `hmac-sha256-hex`, ±300초. `path`는 쿼리 제외·앞 `/` 포함. **`main`에 병합·배포 완료** | `api/auth.py` |
+| 서명 면제 | `exempt_paths` 4개(`/health` `/docs` `/openapi.json` `/redoc`)**뿐.** 메서드 면제 없음 — GET도 서명 필요 | `api/auth.py` |
+| `GET /health` | `status` · `hmac_enforced` · `signing{template,algorithm}`. **`signing`은 `sign()`이 쓰는 상수에서 나온다**(손으로 관리하는 버전 번호 없음) | `api/app.py`, `api/auth.py` |
 | 추출 | **온디바이스 확정**(Qwen3-1.7B Q4_0 + `extract-small-v4` + 엔진 가드) | `docs/android-ondevice-handoff.md` |
+| 엔진 빌드 | 릴리즈 `pkg-android-2092353` (65,374,731 bytes). llama.cpp 업스트림 산출물 | `gh release view pkg-android-2092353` |
 | 외부 LLM 자리 | ① 질문 후보 ② 진료 후 메모 폴백. **둘뿐** | `evals/RESULTS.md` |
 | 증상 정리 흐름 | **1 부위 → 2 문답(챗) → 3 통증 강도 → 4 물어볼 것.** "2/4"는 화면 단계 | 피그마 `cG6lz8nwzp75bfAXCnMqxx` 섹션 `D · 증상 문답 4단계` |
-| 문답 턴 | 8축 + 전할 말이 기본 9턴. 부위 사전채움·심각도 제외·전할 말 제거가 반영되면 **6턴** | `dialog/questions.py` `ASK_ORDER`, `docs/api-previsit.md` |
-| HMAC | `method.path.timestamp.request_id.` + body, SHA256 hex, ±300초. `path`는 쿼리 제외·앞 `/` 포함 | `api/auth.py` |
-| 카드 스키마 | **백엔드가 정한다.** 우리 구조 그대로 가기로 회신 옴. `patient_message` 제거, `question_candidates` 추가 | `schema/export.py`, #7 |
-| 진료과 | 부위 속성 기반 **안내**(`department_guidance`, 배열 + `source`). 값 있는 부위 20/34 | `data/ontology/nodes.csv`, `schema/export.py` |
+| 문답 턴 | `ASK_ORDER` 7축, 부위는 인체도 사전채움 → **6턴.** 퍼짐·동반은 **받는다**(빼지 않기로 확정) | `dialog/questions.py` `ASK_ORDER` |
+| 문답 입력 | **전부 자유 입력. 칩(선택지)은 없다** — 구현된 적 없다. 턴 응답은 `reply` 문자열 하나 | `docs/android-ondevice-handoff.md` |
+| 통증 강도 | **NRS 아님. 1~5 서열척도 + 라벨.** `selections`로 `{axis:"severity", value:"3 (꽤 아파요)"}` | `dialog/questions.py`, `api/app.py` `Selection` |
+| 부위 선택 | **한 번에 하나.** 배열 아님. `site_node_id` + `side`. 좌우는 `left_right` 21/34곳만 | `docs/decisions/2026-09-11-single-site.md`, #8 닫힘 |
+| 카드 스키마 | **우리 구조 그대로 확정.** `patient_message` 없음, `title` 있음(결정론 조합) | `schema/export.py`, #7 |
+| `axes.*.status` | **5값**(`not_asked` `filled` `unknown` `skipped` `ambiguous`). `not_asked`가 기본값 | `schema/card.py` `FieldStatus`, `docs/api-previsit.md` |
+| `request_id` | **본문 최상위**, 응답에 되돌린다. 백엔드가 자기 `meta.requestId`를 고치기로 했다 | `api/app.py` |
+| 진료과 | 부위 속성 기반 **안내**(`department_guidance`, 배열 + `source`). 값 있는 부위 20/34, 진료과 13종. **enum 검증 폐기** | `data/ontology/nodes.csv`, `schema/export.py` |
 | 비용 확인 | `uv run python scripts/bedrock_spend.py` — AWS가 센 토큰 기준 | |
+
+**계약은 합의됐고 구현이 남은 것** — 답할 때 "확정"과 섞지 마라.
+
+- `question_candidates` — 종료 턴에만, `[{text, source, rank}]`, **요청 필드로 켠다**
+  (`question_candidates: true`, 기본 `false`). 온디바이스 프로필 옵트인 때문이다
+- `axes.*.source` — `ai_extraction` / `selection` / `patient_edit`. `patient_edit`은 백엔드가 채운다
 
 ## 4. 누가 무엇을 소유하나 — 우리 것이 아니면 지목해라
 
@@ -60,21 +125,39 @@ PYTHONIOENCODING=utf-8 gh api repos/Medical-Mate/AI/issues/comments/<id> --jq '.
 | 온톨로지(부위·별칭·진료과 속성) | **부위 이미지 자산** → 디자이너 |
 | 질문 **후보** 생성 + 순위 | **최종 질문 목록**(고른 것 + 쓴 것) → 앱·백엔드 |
 | `state` 직렬화 규격 | **`state` 보관·세션** → 백엔드 |
-| 모델 파일 URL·해시 | **다운로드·저장·검증 실행** → 앱 |
+| 모델 파일 URL·해시, 엔진 빌드 산출물 | **다운로드·저장·검증 실행, JNI** → 앱 |
 | | **병원 찾기(지도 API)** → 앱·백엔드. AI 몫 아님 |
 | | **동의 문구·온보딩** → 앱·백엔드 |
+| | **운영 env 값**(`MEDIMATE_HMAC_SECRET` 등) → 배포하는 쪽. 우리는 알 필요 없다 |
 
 ## 5. 틀리기 쉬운 것 — 실제로 틀린 것들이다
 
+- **브랜치에 올린 것을 "반영했습니다"로 전하지 마라.** #7에 "반영본 올렸습니다, 실제 구현체로
+  바꾸셔도 됩니다"라고 적었는데 브랜치 얘기였다. 배포 이미지는 `main`에서 구워지니 옛 서명
+  형식이었고, **백엔드가 운영에 붙여 401을 받았다.** 게다가 **벡터 파일도 같은 브랜치에
+  있어서** 벡터 10 pass가 나와도 안 드러났다 — **검증 자료와 구현이 같이 움직이면 서로를
+  확인해 주지 못한다.** 점검 스크립트도 같은 함정이었다(배포를 찌르면서 서명은 로컬 코드로
+  계산). 그래서 `/health`가 서버가 실제로 쓰는 계산식을 내도록 고쳤다
+- **파일이 "없다"고 단정하지 마라.** #35에 "저희 저장소에도 제 로컬에도 빌드 산출물이 없습니다"
+  라고 적었는데 `orca/tools/llama.cpp/pkg-android`에 있었다. 기기 eval을 그 빌드로 돌린 로그까지
+  있었다. **안드로이드가 도커 환경을 찾아다니게 만들었다.** 저장소 밖도 찾아봐라(§1-a)
+- **낡은 문서를 근거로 쓰지 마라.** 인계 문서가 **구현된 적 없는 칩 기능**을 적고 있었고,
+  섹션 제목이 UX 결정을 **닫힌 이슈 #24**로 가리키고 있었고, 계약 문서 "미정" 절 세 항목이
+  **전부 이미 결정된 것**이었다. 셋 다 팀원이 물어봐서 드러났다. 열었으면 고쳐라(§1-b)
 - **`claude-sonnet-5`는 "승인 대기"가 아니다.** 신규 계정 등급 문제라 안 열린다.
   `list-foundation-models`에 뜨는 것과 `InvokeModel`이 되는 것은 **다르다.**
   이걸 "승인 대기"라고 전해서 백엔드가 오지 않을 회신을 기다렸다
 - **"2 / 4"는 대화 턴이 아니라 화면 단계다.** 백엔드도 우리도 턴으로 오독했다
+- **통증 강도를 NRS라고 말하지 마라.** 와이어프레임 `1d`는 1~5 서열척도 + 단계별 라벨이다.
+  우리 주석의 "5단계 슬라이더"를 "NRS로 병기"로 옮기면서 말이 바뀌었고, 백엔드가 시안을
+  읽어 잡아줬다
 - **비용은 토큰 실측으로 계산한다.** 한 모델 토큰수에 다른 모델 단가를 곱하면 안 된다 —
   Nova는 같은 한국어 프롬프트를 Terra의 1.9배 토큰으로 센다. 이 실수로 문서에 2배 틀린
   값이 나갔다. 기록하는 숫자는 **저장된 원본의 `input_tokens`/`output_tokens`**로 다시 계산한다
 - **비율 지표로 규모가 다른 실행을 비교하지 마라.** 분모가 커지면 기계적으로 떨어진다
-- **IAM은 ARN 7개가 필요하다.** `apac` 프로파일이 아시아 6개 리전으로 분산된다
+- **IAM은 ARN 7개가 필요하다.** `apac` 프로파일이 아시아 6개 리전으로 분산된다.
+  계정 ID가 필요한 것은 **inference-profile ARN 하나뿐**이고, 저장소가 public이라
+  문서에는 `<AWS_ACCOUNT_ID>` 플레이스홀더로 둔다
 - **진료과를 "추천"하지 않는다.** 백엔드가 대신 규칙으로 판정하겠다고 해도 권하지 마라 —
   주체가 바뀌어도 원칙 우회다
 - **문서 링크를 커밋 SHA로 고정하면 낡는다.** 요구사항 문서는 `blob/main/...`으로 걸어라
@@ -89,34 +172,38 @@ PYTHONIOENCODING=utf-8 gh api repos/Medical-Mate/AI/issues/comments/<id> --jq '.
   카드에는 그 값이 있어도 프롬프트에는 안 들어간다
 - 타인의 진료기록은 받지 않는다. 단 **환자가 말하는 가족력은 문진 항목이라 받을 수 있다**
   (가족의 병명을 환자 본인에게 적용하는 질문은 금지). 카드 축 추가는 **백로그**
-- 모든 값에 `evidence`(발화 원문)가 붙는다. 근거 없는 값은 만들지 않는다
+- 모든 값에 `evidence`(발화 원문)가 붙는다. 근거 없는 값은 만들지 않는다.
+  단 **환자가 직접 고친 값은 그 자체가 근거다** — 이 규칙은 AI가 근거 없이 만들지 않는다는 뜻이다
 - 카드 완성을 강제하지 않는다. 환자가 언제 끝내도 그 시점 카드가 결과
+- **시크릿을 이슈에 적지 않고, 전달 경로도 만들지 않는다.** 옮기지 않는 비밀은 새지 않는다.
+  AI 컨테이너도 백엔드가 배포하니 양쪽 env를 그쪽이 채우면 된다
 
 ## 7. 지금 미결 (2026-09-11 밤)
 
-**우리가 기다리는 것**
-- `title`을 우리가 만들지(부위+기간 결정론 조합 권함), 백엔드가 만들지
-- `department_guidance`를 그대로 쓸지 (이름·배열·`source` 포함)
-- `question_candidates`에 `rank`를 넣을지
-- Caddy가 경로를 다시 쓰는지 (HMAC `path` 확정에 필요)
-- 퍼짐·동반 축을 문답에서 뺄지 → **디자이너** (카드에 자리 없음은 확인됨)
+**팀 결정 대기 — 비었다.** 부위 여러 개가 마지막이었고 단수로 확정했다(#8 닫힘).
 
 **우리가 할 것** (전부 호출 0)
-- HMAC `method.path` 반영 · GET 면제 화이트리스트로 좁히기
-- `ask_order`에서 심각도 제외 + 전할 말 턴 제거
-- `export.py`: `patient_message` 제거, `question_candidates`(+`rank`) 추가
-- questions-v7: 복용약·기저질환·알러지 생성, v6 끝맺음 목록 제거, **40자 초과 6% 잡기**
+- `export.py`에 `question_candidates`(+`rank`, 요청 필드 opt-in)와 `axes.*.source` 추가.
+  **배포된 뒤에** 백엔드에 알린다
+- `body-map.json` 드리프트 테스트 — 검증 벡터에는 있는데 `body-map.json` 자체에는 없다.
+  벡터만 다시 만들면 백엔드가 저장소에 박아 둔 파일이 조용히 낡는다
 
-**막힌 것**
-- **GitHub Actions 결제 문제로 CI·이미지 발행이 멈췄다.** 조직 Billing & plans.
-  병합은 CI 초록 확인 후가 원칙이라 그때까지 브랜치에 쌓는다
+**상대가 하는 것 — 우리가 기다릴 것은 아니다**
+- 백엔드: 스텁의 `siteCodes` 배열을 단수로 · `MEDIMATE_REQUIRE_HMAC`(시크릿 없으면 기동 실패)을
+  넣을지 판단. 후자는 스텁 운용과 부딪히니 그쪽 판단이다
+- 안드로이드: 엔진 릴리즈로 JNI 붙이기. 회신 대기
+
+**막힌 것 — 없다.** GitHub Actions 결제 문제는 저장소를 public으로 바꿔 해소됐고
+CI·이미지 발행 둘 다 정상이다.
 
 ## 8. 이슈 번호
 
 | | |
 |---|---|
 | #7 | 백엔드(chohyunwoo) — 배포·계약·HMAC·카드 스키마 |
-| #35 | 안드로이드(june0103) — 온디바이스·부위 검색·모델 파일 |
+| #35 | 안드로이드(june0103) — 온디바이스·부위 검색·모델 파일·엔진 빌드 |
 | #14 / #15 | 에픽 챗봇①(진료 전) / 챗봇②(진료 후). UX·디자이너 결정은 여기로 |
 | #18 | 진료과 안내 필드 |
 | #6 | Extractor 프롬프트 축소·캐싱 |
+| #8 | **닫힘** — 부위 여러 개(호소 목록). 단수로 확정 |
+| #24 | **닫힘** — 온디바이스 추출 트랙. UX 이슈가 아니다 |
