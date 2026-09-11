@@ -700,3 +700,73 @@ def test_committed_search_vectors_match_current_behaviour():
         if got != case["expect"]:
             drift.append((case["q"], case["expect"], got))
     assert drift == [], f"{len(drift)}건 어긋남. 첫 건: {drift[0] if drift else ''}"
+
+
+def test_committed_body_map_matches_the_endpoint():
+    """docs/examples/body-map.json이 `GET /v1/ontology/body-map` 응답과 같아야 한다.
+
+    **백엔드와 안드로이드가 각자 저장소에 이 파일을 박아 뒀다.** 백엔드는 `ontology_snapshot`을
+    기동 로그에 찍고, 안드로이드는 165케이스 벡터로 검증한다. 우리가 온톨로지를 고치고 이
+    파일을 안 갱신하면 **두 팀의 사본이 조용히 낡는다** — 검증 벡터에는 스냅샷 고정이
+    있었는데 이 파일에는 없었다.
+
+    고치는 법: `uv run python scripts/gen_body_map.py`
+    """
+    import json
+
+    from fastapi.testclient import TestClient
+
+    from medimate.api.app import create_app
+
+    committed = json.loads(Path("docs/examples/body-map.json").read_text(encoding="utf-8"))
+    live = TestClient(create_app()).get("/v1/ontology/body-map").json()
+
+    assert committed["ontology_snapshot"] == live["ontology_snapshot"], (
+        f"스냅샷 어긋남: 파일 {committed['ontology_snapshot']} / 지금 {live['ontology_snapshot']}. "
+        "`uv run python scripts/gen_body_map.py`로 다시 만들고 함께 커밋할 것"
+    )
+    if committed == live:
+        return
+    # 어디가 다른지 짚어 준다 — 통째로 비교하면 어느 노드인지 못 찾는다
+    ca = {a["id"]: a for a in committed["anchors"]}
+    la = {a["id"]: a for a in live["anchors"]}
+    drift = [f"앵커 id 차이 {set(ca) ^ set(la)}"] if set(ca) ^ set(la) else []
+    for aid in sorted(set(ca) & set(la)):
+        for key in set(ca[aid]) | set(la[aid]):
+            if key != "zones" and ca[aid].get(key) != la[aid].get(key):
+                drift.append(f"{aid}.{key}: 파일={ca[aid].get(key)!r} 지금={la[aid].get(key)!r}")
+        cz = {z["id"]: z for z in ca[aid].get("zones", [])}
+        lz = {z["id"]: z for z in la[aid].get("zones", [])}
+        if set(cz) ^ set(lz):
+            drift.append(f"{aid} 구역 id 차이 {set(cz) ^ set(lz)}")
+        for zid in sorted(set(cz) & set(lz)):
+            for key in set(cz[zid]) | set(lz[zid]):
+                if cz[zid].get(key) != lz[zid].get(key):
+                    drift.append(
+                        f"{zid}.{key}: 파일={cz[zid].get(key)!r} 지금={lz[zid].get(key)!r}"
+                    )
+    for key in ("axes", "image_key_note", "note"):
+        if committed.get(key) != live.get(key):
+            drift.append(f"최상위 {key} 다름")
+    raise AssertionError(
+        f"{len(drift)}건 어긋남. `uv run python scripts/gen_body_map.py`로 다시 만들고 "
+        f"함께 커밋할 것.\n  " + "\n  ".join(drift[:8])
+    )
+
+
+def test_body_map_generator_does_not_alter_the_response():
+    """생성기가 응답에 무언가를 더하면 파일이 엔드포인트와 달라진다.
+
+    실제로 처음에 `note`를 생성기에서 덮어쓰게 짰다가 드리프트가 난 줄 알았다 —
+    파일은 멀쩡했고 생성기가 응답을 바꾸고 있었다. 그 차이는 이 파일을 믿고 박아 둔
+    두 팀에 그대로 간다.
+    """
+    import sys
+
+    sys.path.insert(0, "scripts")
+    from fastapi.testclient import TestClient
+    from gen_body_map import build
+
+    from medimate.api.app import create_app
+
+    assert build() == TestClient(create_app()).get("/v1/ontology/body-map").json()
