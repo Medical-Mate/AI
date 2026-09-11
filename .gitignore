@@ -52,3 +52,6 @@ evals/results/
 # 온디바이스 후보 GGUF (내려받아 쓴다)
 evals/ondevice/models/
 *.gguf
+
+# 개인 메모 (포트폴리오용 소재 등). 저장소에 올리지 않는다
+notes/
