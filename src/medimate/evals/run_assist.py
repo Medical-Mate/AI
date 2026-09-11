@@ -399,7 +399,7 @@ def main() -> None:
         pass
     a = argparse.ArgumentParser()
     a.add_argument("--task", choices=["questions", "todos"], required=True)
-    a.add_argument("--provider", choices=["anthropic", "openai", "google", "local"])
+    a.add_argument("--provider", choices=["anthropic", "openai", "google", "local", "bedrock"])
     a.add_argument("--model")
     a.add_argument(
         "--budget", type=float, default=float(os.environ.get("MEDIMATE_EVAL_BUDGET_USD", "0.50"))

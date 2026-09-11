@@ -29,6 +29,12 @@ PRICES: dict[str, tuple[float, float]] = {
     "gemini-3.5-flash-lite": (0.30, 2.50),
     "gemini-3.6-flash": (1.50, 7.50),
     "gemini-3.1-pro": (2.00, 12.00),
+    # Bedrock 추론 프로파일 ID. 값은 서울(APN2) 요금표를 API로 확인한 것(2026-09-11).
+    # raw 모델 ID는 온디맨드가 안 되므로 프로파일 ID를 그대로 키로 쓴다.
+    "apac.amazon.nova-lite-v1:0": (0.06, 0.24),
+    "apac.amazon.nova-pro-v1:0": (0.80, 3.20),
+    "global.anthropic.claude-haiku-4-5-20251001-v1:0": (1.10, 5.50),
+    "global.anthropic.claude-sonnet-4-6": (3.00, 15.00),
 }
 # 로컬(온디바이스 후보) 모델은 가격표에 없다 → cost 0.
 # model_id는 "local/" + llama-server가 알려주는 이름
@@ -139,7 +145,45 @@ class LLMExtractor:
             return self._google(system, user)
         if self.provider == "local":
             return self._local(system, user)
+        if self.provider == "bedrock":
+            return self._bedrock(system, user)
         raise ValueError(self.provider)
+
+    def _bedrock(self, system: str, user: str) -> tuple[str, int, int]:
+        """Amazon Bedrock — converse API. Claude·Nova를 같은 형식으로 받는다.
+
+        인증은 IAM이다(태스크 역할 또는 ~/.aws). API 키가 없다.
+        model_id는 추론 프로파일 ID를 쓴다: `apac.amazon.nova-pro-v1:0`,
+        `global.anthropic.claude-sonnet-4-6`. raw 모델 ID는 온디맨드가 안 된다.
+        리전은 MEDIMATE_BEDROCK_REGION (기본 ap-northeast-2).
+        """
+        import os
+
+        import boto3
+
+        if self._client is None:
+            self._client = boto3.client(
+                "bedrock-runtime",
+                region_name=os.getenv("MEDIMATE_BEDROCK_REGION", "ap-northeast-2"),
+            )
+        kwargs: dict = {}
+        if self.response_schema is not None:
+            # converse는 response_format이 없다. 스키마는 시스템 프롬프트로 지시한다
+            system = (
+                system
+                + "\n\n반드시 이 JSON 스키마에 맞는 JSON만 출력한다:\n"
+                + json.dumps(self.response_schema, ensure_ascii=False)
+            )
+        r = self._client.converse(
+            modelId=self.model_id,
+            system=[{"text": system}],
+            messages=[{"role": "user", "content": [{"text": user}]}],
+            inferenceConfig={"maxTokens": 8192, "temperature": 0},
+            **kwargs,
+        )
+        text = "".join(b["text"] for b in r["output"]["message"]["content"] if "text" in b)
+        u = r["usage"]
+        return text, u["inputTokens"], u["outputTokens"]
 
     def _anthropic(self, system: str, user: str) -> tuple[str, int, int]:
         import anthropic
