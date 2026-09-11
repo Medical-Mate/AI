@@ -132,10 +132,17 @@ def _site_label(card: PreVisitCard) -> str | None:
 
 
 def _duration(card: PreVisitCard) -> str | None:
-    """시작·경과 축에서 기간만. 앞의 축을 먼저 본다(시작이 기간에 더 가깝다)."""
+    """**시작(onset) 축에서만** 기간을 뽑는다.
+
+    경과(time_course)는 쓰지 않는다(2026-09-11, 백엔드 합의 #7). "심해졌어요"는 기간이 아니고,
+    숫자가 들어 있어도 뜻이 다르다. 카드 100장에서 경과가 기여하는 건 PC31 한 장인데 그게
+    정확히 틀린 예다 — 경과가 "한 번 생기면 **열흘**쯤 있다 아물어요"라 `열흘`이 뽑히지만,
+    그건 **삽화 하나의 지속 기간**이지 발병 후 경과가 아니다. 제목에 붙이면
+    "열흘 전에 시작됐다"로 읽힌다.
+    """
     from medimate.schema.card import Axis, FieldStatus
 
-    for axis in (Axis.ONSET, Axis.TIME_COURSE):
+    for axis in (Axis.ONSET,):
         entry = card.axes.get(axis)
         if not entry or entry.status != FieldStatus.FILLED or not entry.value:
             continue

@@ -79,7 +79,9 @@ def test_all_axes_answered_ends_without_a_message_turn():
 
 
 def test_severity_is_not_asked_in_the_interview():
-    """3단계 슬라이더가 NRS로 주므로 문답에서 묻지 않는다(백엔드 합의 #7).
+    """3단계 슬라이더가 값을 주므로 문답에서 묻지 않는다(백엔드 합의 #7).
+
+    슬라이더는 **NRS가 아니라** 1~5 서열척도 + 라벨이다(`"3 (꽤 아파요)"`). 2026-09-11 정정.
 
     축은 카드에 그대로 있고 채우는 경로만 바뀌었다 — 앱이 `selections`로 보낸다.
     """

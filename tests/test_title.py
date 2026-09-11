@@ -87,3 +87,26 @@ def test_title_is_in_the_previsit_payload_only():
     out = to_backend_payload(card(site="무릎", onset="3일 전"))
     assert out["title"] == "무릎 · 3일"
     assert "evidence" not in str(out["title"])  # 제목에는 근거를 붙이지 않는다
+
+
+def test_time_course_is_not_a_duration_source():
+    """경과 축은 쓰지 않는다(백엔드 합의 #7).
+
+    카드 100장에서 경과가 기여하는 건 PC31 한 장인데 그게 정확히 틀린 예다 —
+    "한 번 생기면 열흘쯤 있다 아물어요"의 `열흘`은 **삽화 하나의 지속 기간**이지
+    발병 후 경과가 아니다. 제목에 붙이면 "열흘 전에 시작됐다"로 읽힌다.
+    """
+    c = card(
+        site="입안",
+        onset="이번 달에 벌써 세 번째예요",
+        time_course="한 번 생기면 열흘쯤 있다 아물어요",
+    )
+    assert _title(c) == "입안"  # 열흘이 붙지 않는다
+
+
+def test_severity_slider_is_not_nrs():
+    """1~5 서열척도 + 단계별 라벨이다. 우리가 오래 NRS로 잘못 알고 있었다(2026-09-11 정정)"""
+    from pathlib import Path
+
+    src = Path(__file__).resolve().parents[1] / "src" / "medimate" / "dialog" / "questions.py"
+    assert "NRS가 아니다" in src.read_text(encoding="utf-8")
