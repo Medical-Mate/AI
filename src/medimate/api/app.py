@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from collections.abc import Callable
@@ -33,12 +34,23 @@ from medimate.dialog.site import normalize_side, resolve_site
 from medimate.dialog.spec import PREVISIT_SPEC
 from medimate.dialog.state import SessionState
 from medimate.dialog.widening import compare_sites, widen_card
+from medimate.llm import assist_prompts as ap
+from medimate.llm.assist_rank import top_candidates
 from medimate.llm.base import Extractor, TurnExtraction
 from medimate.llm.memo_classifier import FixedLabels, LLMMemoClassifier
 from medimate.llm.providers import BudgetExceeded, LLMExtractor
 from medimate.ontology import load_ontology
-from medimate.schema.card import Axis, Provenance, SiteSelectionRecord
+from medimate.schema.card import (
+    Axis,
+    FieldStatus,
+    PreVisitCard,
+    Provenance,
+    SiteSelectionRecord,
+)
 from medimate.schema.export import to_backend_payload
+
+# 앱 4단계 화면이 3개를 보여준다. 생성은 제한하지 않고 가중치로 정렬해 위에서 자른다
+QUESTION_CANDIDATES_TOP = 3
 
 DEFAULT_PROVIDER = "openai"
 DEFAULT_MODEL = "gpt-5.6-terra"  # docs/decisions/2026-09-03-extractor-model.md
@@ -114,6 +126,12 @@ class TurnRequest(BaseModel):
         if self.extraction is not None and not self.utterance.strip():
             raise ValueError("extraction에는 근거 검증용 utterance가 함께 와야 한다")
         return self
+
+    # 종료 턴에 "의사에게 물어볼 것" 후보를 만들지. **기본 false — 안 보내면 안 돈다.**
+    # 옵트인인 이유가 둘이다. ① 온디바이스 프로필은 "발화가 외부로 안 나간다"가 전제인데
+    # 후보 생성은 카드 값을 외부 LLM으로 보낸다 ② 백엔드 AWS 크레딧이 한정이고 Bedrock이
+    # 같은 크레딧에서 나간다. 무조건 도는 구조면 끌 방법이 없다
+    question_candidates: bool = False
 
 
 class TurnUsage(BaseModel):
@@ -341,15 +359,58 @@ def create_app(
                 usage=tu if source == "server" else TurnUsage(),
             )
 
+        cands = None
+        if body.question_candidates and s.ended and isinstance(s.card, PreVisitCard):
+            cands = _make_question_candidates(s.card, extractor)
+
         return TurnResponse(
             reply=reply,
             ended=s.ended,
             end_reason=s.end_reason,
             state=s.to_state(),
-            card=to_backend_payload(s.card),
+            card=to_backend_payload(s.card, question_candidates=cands),
             audit=audit,
             request_id=body.request_id,
         )
+
+    def _make_question_candidates(card: PreVisitCard, extractor) -> list[dict[str, Any]] | None:
+        """카드로 "의사에게 물어볼 것" 후보를 만든다. **실패해도 카드를 잃지 않는다.**
+
+        어떤 이유로든 안 되면 `None`을 돌려준다 — 문답을 다 마친 환자의 카드가 후보 생성
+        실패로 날아가면 안 된다. 우리 원칙이기도 하다: 카드 완성을 강제하지 않고, 환자가
+        언제 끝내도 그 시점 카드가 결과다.
+
+        **프롬프트에 식별자가 들어가지 않는다.** `ap.questions_user()`가 읽는 것은 축 값과
+        복용약·기저질환·알러지, 환자가 덧붙인 말뿐이다. 이름·나이·성별·병원·진료일·ID·
+        `request_id`는 카드에 있어도 프롬프트에 안 들어간다(`docs/api-previsit.md` 지키는 선).
+
+        **알려진 한계 — 복용약·기저질환·알러지가 지금은 비어 있다.** `PreVisitCard`에 그 필드가
+        없어서 프롬프트가 항상 "없음"을 본다. eval에서 그 세 카테고리를 3%→65%까지 올린
+        규칙(questions-v8)이 제품에서는 안 걸린다. 앱 온보딩이 그 정보를 갖고 있으니
+        요청으로 받는 필드를 백엔드와 정하면 한 줄로 연결된다(#7).
+        """
+        axes = {
+            str(getattr(a, "value", a)): e.value
+            for a, e in card.axes.items()
+            if e.value and e.status == FieldStatus.FILLED
+        }
+        payload = {
+            "axes": axes,
+            # 아직 카드에 프로필 자리가 없다(위 한계). 필드가 생기면 여기만 채우면 된다
+            "profile": {"medications": [], "conditions": [], "allergies": []},
+            "patient_message": None,  # 전할 말 턴은 없앴다(2026-09-11)
+        }
+        try:
+            version = ap.QUESTIONS_VERSION
+            text, _, _ = extractor.complete_json(
+                ap.questions_system(version), ap.questions_user(payload), ap.QUESTIONS_SCHEMA
+            )
+            items = ap.parse_items(text)
+        except Exception:  # noqa: BLE001 — 후보가 없어도 카드는 나가야 한다
+            logging.getLogger("medimate.api").warning("질문 후보 생성 실패 — 카드는 그대로 낸다")
+            return None
+        top = top_candidates(items, top=QUESTION_CANDIDATES_TOP)
+        return [{"text": it["text"], "source": it["source"], "rank": it["rank"]} for it in top]
 
     def _memo_classifier(request: Request):
         factory = request.app.state.memo_factory
