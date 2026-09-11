@@ -260,6 +260,12 @@ def create_app(
         return {
             "status": "ok",
             "hmac_enforced": bool(cfg and cfg.secret),
+            # 서버가 `MEDIMATE_REQUIRE_HMAC`을 **실제로 읽었는지**를 낸다. 2026-09-11에
+            # 백엔드가 그 env를 넣고 켠 줄 알았는데 우리 코드에 변수가 없어 아무 일도 안
+            # 일어났고, `hmac_enforced`는 시크릿 유무만 보므로 그걸 잡아주지 못했다.
+            # 값이 `true`면 플래그가 읽혔다는 뜻이다
+            # (켜졌는데 시크릿이 없으면 기동 자체가 안 된다).
+            "hmac_required": bool(cfg and cfg.require),
             "signing": auth.signing_spec(),
         }
 

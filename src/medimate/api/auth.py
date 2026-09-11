@@ -45,10 +45,14 @@ class HmacConfig:
     header_request_id: str = "X-Request-Id"
     max_skew_s: int = 300  # ±5분
     exempt_paths: tuple[str, ...] = ("/health", "/docs", "/openapi.json", "/redoc")
+    # True면 시크릿 없이 **기동하지 않는다**(MEDIMATE_REQUIRE_HMAC). 기본은 끈다 —
+    # 로컬 개발과 테스트가 시크릿 없이 돌아야 한다. 운영 env에서 켜는 구성이다
+    require: bool = False
 
     @classmethod
     def from_env(cls) -> HmacConfig:
         return cls(
+            require=_truthy(os.getenv("MEDIMATE_REQUIRE_HMAC")),
             secret=os.getenv("MEDIMATE_HMAC_SECRET") or None,
             header_signature=os.getenv("MEDIMATE_HMAC_HEADER_SIGNATURE", "X-Signature"),
             header_timestamp=os.getenv("MEDIMATE_HMAC_HEADER_TIMESTAMP", "X-Timestamp"),
@@ -64,6 +68,16 @@ class HmacConfig:
 # 2026-09-11에 정확히 그 사고가 났다 — `main`의 계산식이 옛 형식인데 새 형식 벡터로 대조해
 # 10 pass가 나왔고 운영에서만 401이 났다. **검증 자료와 구현이 같이 움직이면 서로를 확인해
 # 주지 못한다.** 그래서 형식을 바꾸면 `/health` 값이 자동으로 따라가게 묶어 둔다.
+def _truthy(v: str | None) -> bool:
+    """켜는 값을 넓게 받는다 — `1` `true` `yes` `on` (대소문자·공백 무관).
+
+    좁게 받으면 "켰다고 생각했는데 안 켜진" 상태가 생긴다. 2026-09-11에 백엔드가
+    `MEDIMATE_REQUIRE_HMAC`을 env에 넣고 켠 줄 알았는데 **우리 코드에 그 변수가 아예
+    없어서** 아무 일도 안 일어났다. 있다고 믿는 보안 장치가 없는 게 제일 나쁘다.
+    """
+    return (v or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 SIGNING_TEMPLATE = "{method}.{path}.{timestamp}.{request_id}."
 SIGNING_ALGORITHM = "hmac-sha256-hex"
 
@@ -120,6 +134,14 @@ def install(app, cfg: HmacConfig | None = None) -> None:
     """앱에 미들웨어를 붙인다. secret이 없으면 아무것도 하지 않는다(로컬 개발)."""
     cfg = cfg or HmacConfig.from_env()
     app.state.hmac = cfg
+    if cfg.require and not cfg.secret:
+        # 기동을 막는다. 기동 경고만으로는 부족하다 — 컨테이너 로그를 매번 보지 않으니
+        # 검증이 꺼진 채로 몇 시간 도는 일이 실제로 있었다(2026-09-11 백엔드 보고).
+        raise RuntimeError(
+            "MEDIMATE_REQUIRE_HMAC이 켜져 있는데 MEDIMATE_HMAC_SECRET이 비어 있습니다. "
+            "서명 검증 없이 기동하지 않습니다 — 백엔드와 같은 시크릿을 양쪽 env에 채우거나, "
+            "검증 없이 띄우려면 MEDIMATE_REQUIRE_HMAC을 지우세요."
+        )
     if not cfg.secret:
         # **꺼질 때 반드시 남긴다**(2026-09-11). 이전에는 조용히 return해서 운영 컨테이너가
         # 무검증으로 떠 있는데 아무도 몰랐다. `/health`의 `hmac_enforced`도 같은 사실을 낸다 —
