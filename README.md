@@ -53,6 +53,8 @@
 | `GET /v1/ontology/search` | 폼 입력으로 부위 찾기(유의어·한영 오타 복원, LLM 없음) | 〃 |
 | `POST /v1/postvisit/memo` | 진료 후 메모 → 4묶음 카드. `labels`를 주면 LLM 없이 재조립 | [`docs/api-postvisit.md`](./docs/api-postvisit.md) |
 
+배포 사양·요구사항은 [`docs/deploy-requirements.md`](./docs/deploy-requirements.md) (1 vCPU · 512MB, 무상태, GPU 없음).
+
 ---
 
 ## 시작하기
