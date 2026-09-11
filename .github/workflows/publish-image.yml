@@ -1,0 +1,82 @@
+# AI 서버 컨테이너 이미지를 GHCR에 올린다. 배포 대상은 백엔드가 정한다(이슈 #7).
+#
+# GHCR 경로에는 대문자가 못 들어간다. 조직명이 Medical-Mate라 소문자로 낮춰 쓴다.
+# 푸시 권한은 GITHUB_TOKEN이라 별도 키가 없다.
+name: Publish image
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # ghcr.io/medical-mate/ai — 소유자명을 소문자로
+      - name: Resolve image name
+        run: echo "IMAGE=$REGISTRY/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/ai" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha,format=long
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      # 먼저 로컬로만 굽고 띄워본다. 통과한 뒤에 올린다 — 깨진 이미지를 먼저 올리지 않으려고
+      - name: Build (load only)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: ${{ env.IMAGE }}:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test - 컨테이너가 뜨고 /health가 200인가
+        run: |
+          docker run -d --rm --name ai -p 8000:8000             -e MEDIMATE_HMAC_SECRET=ci-smoke ${{ env.IMAGE }}:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1; then
+              echo "health OK (${i}s)"
+              curl -fsS "http://127.0.0.1:8000/v1/ontology/search?q=%EB%AC%B4%EB%A6%8E" | head -c 200; echo
+              docker stop ai; exit 0
+            fi
+            sleep 1
+          done
+          echo "health 실패"; docker logs ai; docker stop ai; exit 1
+
+      # 캐시가 있어 두 번째 빌드는 거의 즉시 끝난다
+      - name: Push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
