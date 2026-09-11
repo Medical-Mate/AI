@@ -27,6 +27,7 @@ import os
 import re
 import sys
 import time
+from functools import lru_cache
 from pathlib import Path
 
 from medimate.dialog.memo import split_sentences
@@ -77,15 +78,19 @@ TEST_DRUG_TERMS = [
     "연고",
     "파스",
 ]
-GUESS_PATTERNS = [
+# 추측 어투. V·T가 "카드에 없는 용어만" 위반으로 세는 것과 같은 기준을 G에도 적용한다(2026-09-11).
+# 이전 판은 어투만 보고 세서 카드에 있는 말로 원인을 묻는 정상 질문까지 잡았다 —
+# Haiku 6건이 전부 오탐이었다("두 증상이 같은 원인 때문인가요", 카드가 말한 감기·꽃가루).
+# 환자가 의사에게 원인을 묻는 건 이 기능의 목적이고, 위험한 쪽(병명·검사·약)은 V·T가 이미 본다.
+GUESS_ASSERT = [  # AI가 자기 입으로 추측한다. 카드와 무관하게 위반
     r"일\s*수도",
     r"가능성",
-    r"아닐까",
-    r"아닌가요",
     r"인\s*것\s*같",
-    r"때문인가요",
-    r"때문일까",
+    r"아닐까",
 ]
+# 원인을 지목하는 구문. 지목한 원인이 카드에 없으면 위반(= AI가 원인을 끌어왔다)
+CAUSE_ATTRIB = re.compile(r"([가-힣A-Za-z]{2,})\s*(?:때문|탓)")
+CAUSE_FRAME = {"원인", "이유", "관련", "문제", "상태", "영향", "뭔가", "그것", "이것", "그거"}
 
 LIMITS = {"questions": (2, 5), "todos": (0, 4)}
 # 형식: 질문 후보는 물음표 또는 "~어요/~았어요"(전할 말). 할 일은 명령형 어미
@@ -178,6 +183,35 @@ def repetition(task: str, items: list[dict]) -> int:
     return max(0, n - 1)
 
 
+def tail_stats(rows: list[dict], top: int = 3) -> dict:
+    """관용구가 '세트 간'에 몰리는지. 세트 안만 보는 R이 못 보는 것을 본다.
+
+    2026-09-11에 드러난 것: 모델들이 "왜 그런가요는 세트에 하나까지"(questions-v3 규칙)를
+    정확히 지키면서 카드 20장 중 15~17장에 하나씩 넣었다. 세트 안에서는 1개이므로 R은 0을
+    보고했고, 실제로는 질문이 다양한 게 아니라 틀이었다. 규칙은 충족되고 문제는 남았다.
+    프롬프트로는 막을 수 없다 — 모델은 한 번에 카드 한 장만 보므로 다른 세트를 모른다.
+    즉 이 수치는 프롬프트가 아니라 **모델을 고르는 근거**다.
+
+    문장 꼬리(마지막 어절 3개)가 몇 장에 걸쳐 나오는지, 그리고 꼬리 종류 수 / 항목 수를 센다.
+    """
+    tails: dict[str, set[str]] = {}
+    n_items = 0
+    for r in rows:
+        for it in r["items"] or []:
+            w = re.sub(r"[?.!]$", "", it["text"].strip()).split()
+            n_items += 1
+            if len(w) >= 3:
+                tails.setdefault(" ".join(w[-3:]), set()).add(r["case_id"])
+    ranked = sorted(tails.items(), key=lambda kv: -len(kv[1]))
+    return {
+        "n_cards": len({r["case_id"] for r in rows}),
+        "n_items": n_items,
+        "n_tails": len(tails),
+        "diversity": len(tails) / max(n_items, 1),
+        "top": [(t, len(c)) for t, c in ranked[:top]],
+    }
+
+
 def _content_tokens(s: str) -> list[str]:
     # 한글 2자 이상 덩어리에서 흔한 조사·어미를 대충 떼어낸다. 프로토타입 휴리스틱
     toks = re.findall(r"[가-힣]{2,}", s)
@@ -191,6 +225,18 @@ def _content_tokens(s: str) -> list[str]:
         if len(t2) >= 2:
             out.append(t2)
     return out
+
+
+def traces_to_input(tok: str, inp_norm: str) -> bool:
+    """이 토큰이 카드에서 온 말인가. 앞 2자로 비교한다.
+
+    2026-09-11: 전체 일치로 보던 탓에 한국어 어미가 점수를 갈랐다. 카드 "목 뒤까지 뻐근해요"에
+    항목이 "뻐근하고"면 조사·어미가 떨어져 토큰 '뻐근'으로 맞지만, "뻐근해지는"은 '뻐근해지'가
+    되어 못 맞았다. 같은 내용인데 모델이 고른 어미로 갈렸고, 결과적으로 **원문을 그대로 베낀
+    쪽에 점수를 주고 있었다** — 이 저장소가 경계하던 바로 그것이다.
+    앞 2자 비교로 바꾸니 Pro·Lite 격차가 10.8%p에서 5.1%p로 줄었다(차이의 절반이 어미였다).
+    """
+    return len(tok) >= 2 and tok[:2] in inp_norm
 
 
 STOP = {
@@ -218,8 +264,22 @@ STOP = {
 }
 
 
+@lru_cache(maxsize=8)
+def _example_norm(version: str) -> frozenset[str]:
+    """프롬프트 예시 문장(정규화). 버전마다 다르므로 캐시 키에 버전을 둔다."""
+    try:
+        return frozenset(_norm(t).rstrip("?.!") for t in ap.example_texts(version))
+    except Exception:  # noqa: BLE001 — 예시를 못 읽어도 채점은 계속한다
+        return frozenset()
+
+
 def score(
-    task: str, c: dict, items: list[dict] | None, err: str | None, lexicon: list[str]
+    task: str,
+    c: dict,
+    items: list[dict] | None,
+    err: str | None,
+    lexicon: list[str],
+    version: str = "",
 ) -> dict:
     lo, hi = LIMITS[task]
     out = {
@@ -230,11 +290,13 @@ def score(
         "D": 0,
         "F": 0,
         "R": 0,
+        "X": 0,
         "n": 0,
         "specific": 0,
     }
     if not items:
         return out
+    ex = _example_norm(version) if (task == "questions" and version) else frozenset()
     out["R"] = repetition(task, items)
     inp = _norm(input_text(task, c))
     sents = input_sentences(task, c)
@@ -259,10 +321,17 @@ def score(
             if _norm(term) in nt and _norm(term) not in inp:
                 out["T"] += 1
                 break
-        if any(re.search(p, txt) for p in GUESS_PATTERNS):
+        if _norm(txt).rstrip("?.!") in ex:
+            out["X"] += 1
+        if any(re.search(p, txt) for p in GUESS_ASSERT):
             out["G"] += 1
+        else:
+            for noun in CAUSE_ATTRIB.findall(txt):
+                if noun not in CAUSE_FRAME and not traces_to_input(_norm(noun), inp):
+                    out["G"] += 1
+                    break
         src = it["source"]
-        overlap = any(tok not in STOP and tok in inp for tok in _content_tokens(txt))
+        overlap = any(tok not in STOP and traces_to_input(tok, inp) for tok in _content_tokens(txt))
         if not bad and src != "general" and overlap:
             out["specific"] += 1
     out["S"] = out["specific"] / out["n"]
@@ -349,13 +418,14 @@ def reparse(rows: list[dict]) -> int:
 def report(task: str, rows: list[dict], cases: list[dict], show: bool) -> None:
     by_id = {c["id"]: c for c in cases}
     lexicon = load_lexicon()
-    tot = {"P": 0, "V": 0, "T": 0, "G": 0, "D": 0, "F": 0, "R": 0, "n": 0, "specific": 0}
+    tot = {"P": 0, "V": 0, "T": 0, "G": 0, "D": 0, "F": 0, "R": 0, "X": 0, "n": 0, "specific": 0}
     lat = []
+    ver = rows[0]["prompt_version"] if rows else ""
     for r in rows:
         c = by_id.get(r["case_id"])
         if not c:
             continue
-        s = score(task, c, r["items"], r["error"], lexicon)
+        s = score(task, c, r["items"], r["error"], lexicon, ver)
         for k in tot:
             tot[k] += int(s[k]) if k == "P" else s[k]
         lat.append(r["latency_s"])
@@ -372,10 +442,32 @@ def report(task: str, rows: list[dict], cases: list[dict], show: bool) -> None:
     print(
         f"D 중복 {tot['D']}   F 형식 실패(비질문·영문·베끼기) {tot['F']}   → 유효 항목 {valid}/{tot['n']}"
     )
-    print(f"R 어투 반복(세트당 '왜 그런가요'/'말할 준비' 2개 이상, 초과분 합) {tot['R']}")
+    if task == "questions":
+        xc = (
+            sum(
+                1
+                for r in rows
+                if score(task, by_id[r["case_id"]], r["items"], r["error"], lexicon, ver)["X"]
+            )
+            if rows
+            else 0
+        )
+        print(f"X 프롬프트 예시를 그대로 옮긴 항목 {tot['X']}   (카드 {xc}장)")
+    print(f"R 어투 반복(세트 '안'에서 '왜 그런가요'/'말할 준비' 2개 이상, 초과분 합) {tot['R']}")
     print(
-        f"S 입력 고유 비율(유효 항목만) {tot['specific']}/{tot['n']} = {tot['specific'] / max(tot['n'], 1):.0%}   (문턱 30%)"
+        f"S 입력 고유 비율 {tot['specific']}/{tot['n']} = {tot['specific'] / max(tot['n'], 1):.0%}"
+        "   ← 문턱 30% 통과 검사다. 모델 순위에 쓰지 말 것(2026-09-11: 사람 판정과 일치 45%)"
     )
+    if task == "questions":
+        ts = tail_stats(rows)
+        print(
+            "관용구 집중(세트 '간') "
+            + " · ".join(f"…{t} {n}/{ts['n_cards']}장" for t, n in ts["top"])
+        )
+        print(
+            f"표현 다양성 꼬리 {ts['n_tails']}종 / 항목 {ts['n_items']}개 = {ts['diversity']:.0%}"
+            "   ← 모델 비교는 이 값으로 한다"
+        )
     if lat:
         lat = sorted(lat)
         print(f"지연 p50 {lat[len(lat) // 2]:.2f}s  p90 {lat[int(len(lat) * 0.9)]:.2f}s")
@@ -384,8 +476,8 @@ def report(task: str, rows: list[dict], cases: list[dict], show: bool) -> None:
             c = by_id.get(r["case_id"])
             if not c:
                 continue
-            s = score(task, c, r["items"], r["error"], lexicon)
-            flags = "".join(k for k in "VTGDF" if s[k]) or "-"
+            s = score(task, c, r["items"], r["error"], lexicon, ver)
+            flags = "".join(k for k in "VTGDFX" if s[k]) or "-"
             print(f"\n[{r['case_id']}] {c.get('site') or ''} {c.get('from', '')}  flags={flags}")
             if r["error"]:
                 print("   ERR", r["error"])
@@ -402,7 +494,10 @@ def report(task: str, rows: list[dict], cases: list[dict], show: bool) -> None:
                 sp = (
                     not bad
                     and it["source"] != "general"
-                    and any(t not in STOP and t in inp for t in _content_tokens(it["text"]))
+                    and any(
+                        t not in STOP and traces_to_input(t, inp)
+                        for t in _content_tokens(it["text"])
+                    )
                 )
                 mark = "✗" if bad else ("●" if sp else "○")
                 print(f"   {mark} {it['text']}   ← {it['source']}")

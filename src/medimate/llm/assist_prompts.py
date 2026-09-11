@@ -15,9 +15,11 @@ v5 (질문만): v4 + 퍼짐·동반이 비면 전할 말 금지(없다는 뜻), 
 
 from __future__ import annotations
 
+import json
+
 from medimate.llm.base import parse_json_text
 
-QUESTIONS_VERSION = "questions-v5"  # 기본. v1~v4는 비교용으로 남긴다
+QUESTIONS_VERSION = "questions-v6"  # 기본. v1~v5는 비교용으로 남긴다
 TODOS_VERSION = "todos-v2"
 
 _AXIS_KO = {
@@ -113,17 +115,71 @@ _Q_SYSTEM_V5 = _Q_SYSTEM_V4.replace(
     1,
 )
 
+# v6 (2026-09-11): 카드 20장 · 4모델 실측과 사람 블라인드 판정에서 드러난 것 세 가지를 고친다.
+#
+# ① "더 지켜봐도 되나요"가 전제 모순이었다. 환자는 이미 진료를 받으러 온 사람인데
+#    "병원에 갈지 말지"를 묻는 질문을 만들고 있었다. 판정에서 두 사람이 독립적으로 지목했다
+#    (PC15·PC16). 그런데 **프롬프트가 세 군데서 그걸 가르치고 있었다** — 좋은 질문 예시,
+#    어투 목록, few-shot 출력. 모델 문제가 아니라 우리 문제였다
+# ② "왜 그런가요는 하나까지"라는 상한이 **쿼터로 읽혔다.** 모델들은 세트 안에서 규칙을
+#    정확히 지키면서(R=0) 카드 20장 중 15~17장에 하나씩 넣었다. 규칙은 충족되고 문제는 남았다.
+#    상한을 "안 써도 된다"로 바꾸고, 축마다 어울리는 끝맺음을 줘서 구조적으로 갈리게 한다
+# ③ few-shot 예시 카드가 eval 카드 PC01과 사실상 같았다. Pro·Lite는 PC01에서 예시 5개를
+#    글자까지 그대로 냈다 — PC01은 측정이 아니라 복사 확인이었다. 예시를 다른 부위·재료로
+#    바꾸고, 예시 안에 "왜 그런가요"·"더 지켜봐도"·전할 말을 넣지 않아 베낄 거리를 줄인다
+#
+# 세트 '간' 표현 다양성은 프롬프트로 못 막는다 — 모델은 한 번에 카드 한 장만 보므로 다른
+# 세트에 자기가 뭘 썼는지 모른다. 그건 채점기(`run_assist.tail_stats`)로 재서
+# **모델을 고르는 근거**로 쓴다.
+_Q_TONE_V5 = '- 어투를 섞는다. "~는 왜 그런가요?"는 한 세트에 **하나까지**. 나머지는 "더 지켜봐도 되나요", "어떻게 해야 하나요", "관련이 있나요", "괜찮은 건가요", "~해도 되나요", "~인지 궁금해요" 중에서 고른다'
+_Q_TONE_V6 = '- 어투를 섞는다. **같은 끝맺음을 한 세트에 두 번 쓰지 않는다.** "~는 왜 그런가요?"는 **안 써도 된다** — 쓰더라도 하나까지. 축마다 어울리는 끝맺음이 다르다: 느낌은 "어떤 상태인가요", 경과는 "언제까지 이러면 다시 와야 하나요", 악화·완화는 "그 동작을 피해야 하나요"·"계속해도 되나요", 동반은 "관련이 있나요", 심각도는 "어느 정도인가요", 복용약은 "계속 먹어도 되나요"'
+
+_Q_V6_EXAMPLE = """예시. 카드:
+부위: 오른쪽 팔꿈치 바깥쪽 / 시작: 열흘쯤 전, 이사하고 나서 / 느낌: 시큰하고 뭘 쥐면 힘이 빠져요 / 심각도: 2 (신경 쓰여요) / 경과: 비슷해요 / 악화·완화: 문고리 돌릴 때, 주전자 들 때 / 퍼짐: (안 답함) / 동반: (안 답함) / 복용약: 없음 / 알러지: 없음
+{"items":[{"text":"뭘 쥐면 힘이 빠지는 건 어떤 상태인가요?","source":"character"},{"text":"문고리 돌릴 때랑 주전자 들 때만 아픈데 그런 동작을 피해야 하나요?","source":"exacerbating"},{"text":"이사하고 나서부터인데 그때 무리한 것과 관련이 있나요?","source":"onset"}]}"""
+
+_Q_SYSTEM_V6 = (
+    _Q_SYSTEM_V5.replace(
+        '"3주째 점점 심해지는데 더 지켜봐도 되나요?"',
+        '"3주째 점점 심해지는데 언제까지 이러면 다시 와야 하나요?"',
+        1,
+    )
+    .replace(_Q_TONE_V5, _Q_TONE_V6, 1)
+    .replace(
+        "\n\n출력은 JSON 하나",
+        '\n- **"더 지켜봐도 되나요", "좀 더 기다려봐도 되나요"류는 만들지 않는다.** 환자는 이미'
+        " 진료를 받으러 온 사람이다. 병원에 갈지 말지를 묻는 질문은 전제가 어긋난다."
+        ' 경과가 궁금하면 "언제까지 이러면 다시 와야 하나요?"로 묻는다' + "\n\n출력은 JSON 하나",
+        1,
+    )
+)
+# few-shot 예시 교체 (③). 앞의 replace들이 본문에만 걸리도록 예시는 마지막에 갈아 끼운다.
+_Q_SYSTEM_V6 = _Q_SYSTEM_V6[: _Q_SYSTEM_V6.rindex("예시. 카드:")] + _Q_V6_EXAMPLE
+
 QUESTIONS_PROMPTS = {
     "questions-v1": _Q_SYSTEM,
     "questions-v2": _Q_SYSTEM_V2,
     "questions-v3": _Q_SYSTEM_V3,
     "questions-v4": _Q_SYSTEM_V4,
     "questions-v5": _Q_SYSTEM_V5,
+    "questions-v6": _Q_SYSTEM_V6,
 }
 
 
 def questions_system(version: str = QUESTIONS_VERSION) -> str:
     return QUESTIONS_PROMPTS[version]
+
+
+def example_texts(version: str = QUESTIONS_VERSION) -> list[str]:
+    """프롬프트 few-shot 예시의 항목 문장들. 채점기가 "예시를 그대로 베꼈나"를 보는 데 쓴다.
+
+    2026-09-11: 베끼기 검사(F)가 카드 입력만 대조하고 프롬프트 예시는 안 봤다. 그래서
+    예시 문장을 무관한 카드에 그대로 붙이는 것이 통과했다(Nova Lite 6장, Terra 2장).
+    프롬프트에서 뽑아 쓰므로 예시를 바꾸면 검사도 따라 바뀐다.
+    """
+    sysp = questions_system(version)
+    i = sysp.rindex('{"items"')
+    return [t["text"] for t in json.loads(sysp[i:])["items"]]
 
 
 def questions_user(card: dict) -> str:
