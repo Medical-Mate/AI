@@ -25,6 +25,7 @@ from typing import Annotated, Any
 from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from medimate.api import auth
 from medimate.dialog.engine import Limits, Session
 from medimate.dialog.guard import GuardConfig
 from medimate.dialog.memo import classify_memo
@@ -227,7 +228,6 @@ def create_app(
         description="무상태 문진 API. 진단·감별을 하지 않는다. 출력에 병명 자리가 없다.",
     )
     app.state.extractor_factory = extractor_factory
-    from medimate.api import auth
 
     auth.install(app)  # MEDIMATE_HMAC_SECRET 없으면 검증 생략
     app.state.limits = Limits()
@@ -237,8 +237,23 @@ def create_app(
     )
 
     @app.get("/health")
-    def health() -> dict[str, str]:
-        return {"status": "ok"}
+    def health(request: Request) -> dict[str, Any]:
+        """상태 + **서버가 실제로 검증하는 서명 규격.**
+
+        `signing`은 `auth.sign()`이 쓰는 템플릿에서 나온다(손으로 관리하는 버전 번호가 아니다).
+        점검 도구가 자기 것과 문자열 비교해 **로컬 코드와 배포본이 갈린 상태**를 잡는다.
+        2026-09-11에 그게 안 잡혀서 벡터 10 pass인데 운영만 401이 났다.
+
+        `hmac_enforced`는 무검증으로 떠 있는 걸 아무도 모르는 상태를 없앤다. 노출이 아니다 —
+        꺼져 있으면 서명 없이 아무 요청이나 통과하니 이미 알 수 있는 사실이고,
+        켜져 있으면 "켜져 있다"는 정보에 값이 없다.
+        """
+        cfg = getattr(request.app.state, "hmac", None)
+        return {
+            "status": "ok",
+            "hmac_enforced": bool(cfg and cfg.secret),
+            "signing": auth.signing_spec(),
+        }
 
     @app.post("/v1/previsit/sessions", response_model=StartResponse)
     def start_session(extractor: Ex, body: StartRequest | None = None) -> StartResponse:

@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 
-import pytest
 from fastapi.testclient import TestClient
 
 from medimate.api.app import create_app
@@ -159,10 +158,51 @@ def test_extractor_parse_failure_is_502_and_state_untouched():
     assert r.status_code == 502
 
 
-@pytest.mark.parametrize("path", ["/health"])
-def test_health(path):
+def test_health_reports_the_signing_spec_the_server_actually_verifies():
+    """`/health`가 서버가 **실제로 검증하는** 계산식을 낸다. 손으로 관리하는 버전이 아니다.
+
+    2026-09-11 사고: `main`의 계산식이 옛 형식인데 새 형식 벡터로 대조해 10 pass가 나왔고
+    운영에서만 401이 났다. 검증 자료와 구현이 같이 움직이면 서로를 확인해 주지 못한다.
+    점검 도구가 이 값을 자기 것과 문자열 비교해서 그 간격을 잡는다.
+    """
+    from medimate.api import auth
+
     client, _ = make_client([])
-    assert client.get(path).json() == {"status": "ok"}
+    body = client.get("/health").json()
+    assert body["status"] == "ok"
+    assert body["signing"] == {
+        "template": auth.SIGNING_TEMPLATE,
+        "algorithm": auth.SIGNING_ALGORITHM,
+    }
+
+
+def test_health_says_whether_hmac_is_enforced():
+    """무검증으로 떠 있는 걸 아무도 모르는 상태를 없앤다.
+
+    노출이 아니다 — 꺼져 있으면 서명 없이 아무 요청이나 통과하니 이미 알 수 있는 사실이고,
+    켜져 있으면 "켜져 있다"는 정보에 값이 없다.
+    """
+    from medimate.api import auth
+
+    client, _ = make_client([])
+    assert client.get("/health").json()["hmac_enforced"] is False  # 테스트는 키 없음
+
+    app = create_app(lambda: ScriptedExtractor([]))
+    auth.install(app, auth.HmacConfig(secret="s3cret"))
+    assert TestClient(app).get("/health").json()["hmac_enforced"] is True
+
+
+def test_signing_template_is_what_sign_uses():
+    """템플릿을 바꾸면 서명도 따라 바뀐다 — 둘이 갈릴 수 없게 묶여 있다"""
+    from medimate.api import auth
+
+    assert auth.SIGNING_TEMPLATE == "{method}.{path}.{timestamp}.{request_id}."
+    head = auth.SIGNING_TEMPLATE.format(method="POST", path="/v1/x", timestamp="1", request_id="r")
+    import hashlib
+    import hmac as _hmac
+
+    want = _hmac.new(b"k", head.encode() + b"{}", hashlib.sha256).hexdigest()
+    assert auth.sign("k", "post", "/v1/x", "1", "r", b"{}") == want  # 메서드는 대문자로
 
 
 def test_preselected_site_fills_axis_and_anchors_opening():
