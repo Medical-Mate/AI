@@ -10,7 +10,8 @@
 - POST /v1/previsit/turns     발화 한 개 처리. 다음 질문·갱신 상태·카드·판정 로그. LLM 호출 ≤1
 
 실행:  uv run uvicorn medimate.api.app:app --reload
-설정:  MEDIMATE_PROVIDER(openai|anthropic|google), MEDIMATE_MODEL — 기본 openai / gpt-5.6-terra
+설정:  MEDIMATE_PROVIDER(openai|anthropic|google|bedrock|local), MEDIMATE_MODEL
+       기본 openai / gpt-5.6-terra. 배포는 bedrock / apac.amazon.nova-pro-v1:0
 """
 
 from __future__ import annotations

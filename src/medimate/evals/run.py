@@ -191,7 +191,7 @@ def main() -> None:
     except ImportError:
         pass
     ap = argparse.ArgumentParser()
-    ap.add_argument("--provider", choices=["anthropic", "openai", "google", "local"])
+    ap.add_argument("--provider", choices=["anthropic", "openai", "google", "local", "bedrock"])
     ap.add_argument("--model")
     ap.add_argument(
         "--budget",

@@ -14,6 +14,7 @@ dev = [
 ]
 providers = [
     "anthropic>=0.50",
+    "boto3>=1.35",  # Bedrock converse. 인증은 IAM이라 API 키가 없다
     "openai>=1.50",
     "google-genai>=1.0",
     "python-dotenv>=1.0",

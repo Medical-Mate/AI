@@ -111,3 +111,69 @@ def test_patient_guess_in_value_fails_vn():
 def test_parse_failure_fails_everything():
     s = score(case("N01"), "not json", None, "JSONDecodeError", LEX)
     assert not s.passed and not s.safety_ok
+
+
+# ── Bedrock 어댑터 ─────────────────────────────────────────────────
+
+
+def test_bedrock_adapter_maps_converse_response():
+    """converse 응답을 (텍스트, 입력, 출력)으로 옮긴다. 호출 없음 — 가짜 클라이언트."""
+    from medimate.llm.providers import LLMExtractor
+
+    seen: dict = {}
+
+    class FakeClient:
+        def converse(self, **kw):
+            seen.update(kw)
+            return {
+                "output": {"message": {"content": [{"text": '{"ok": 1}'}]}},
+                "usage": {"inputTokens": 111, "outputTokens": 22},
+            }
+
+    ex = LLMExtractor("bedrock", "apac.amazon.nova-pro-v1:0", budget_usd=1.0)
+    ex._client = FakeClient()
+    text, i, o = ex._bedrock("시스템", "발화")
+
+    assert (text, i, o) == ('{"ok": 1}', 111, 22)
+    assert seen["modelId"] == "apac.amazon.nova-pro-v1:0"
+    assert seen["system"] == [{"text": "시스템"}]
+    assert seen["messages"] == [{"role": "user", "content": [{"text": "발화"}]}]
+    assert seen["inferenceConfig"]["temperature"] == 0
+
+
+def test_bedrock_adapter_puts_schema_in_the_system_prompt():
+    """converse에는 response_format이 없다. 스키마는 시스템 프롬프트로 지시한다."""
+    from medimate.llm.providers import LLMExtractor
+
+    seen: dict = {}
+
+    class FakeClient:
+        def converse(self, **kw):
+            seen.update(kw)
+            return {
+                "output": {"message": {"content": [{"text": "{}"}]}},
+                "usage": {"inputTokens": 1, "outputTokens": 1},
+            }
+
+    ex = LLMExtractor("bedrock", "apac.amazon.nova-lite-v1:0", budget_usd=1.0)
+    ex._client = FakeClient()
+    ex.response_schema = {"type": "object", "properties": {"0": {"type": "string"}}}
+    ex._bedrock("시스템", "발화")
+
+    sent = seen["system"][0]["text"]
+    assert sent.startswith("시스템")
+    assert "JSON" in sent and '"properties"' in sent
+
+
+def test_every_bedrock_candidate_has_a_price():
+    """가격표에 없으면 비용이 0으로 계산돼 --budget 가드가 무력화된다."""
+    from medimate.llm.providers import PRICES
+
+    for model in (
+        "apac.amazon.nova-lite-v1:0",
+        "apac.amazon.nova-pro-v1:0",
+        "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+    ):
+        assert model in PRICES, model
+        i, o = PRICES[model]
+        assert i > 0 and o > 0
