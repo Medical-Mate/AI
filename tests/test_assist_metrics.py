@@ -203,3 +203,66 @@ def test_tail_stats_exposes_size_independent_numbers():
     assert small["head_items"] == big["head_items"]
     # 반면 다양성 비율은 규모에 따라 움직인다(그래서 비교에 쓰면 안 된다)
     assert small["diversity"] != big["diversity"]
+
+
+# --- 후보 순위: 생성은 제한 없이, 가중치로 정렬해 위에서 자른다 -----------------
+
+
+def test_ranker_lifts_the_weighted_category():
+    from medimate.llm.assist_rank import top_candidates
+
+    items = [
+        {"text": "계단 내려갈 때 아픈 건 왜 그런가요?", "source": "exacerbating"},
+        {"text": "부위가 여기인 게 맞나요?", "source": "site"},
+        {"text": "혈압약 계속 먹어도 되나요?", "source": "medications"},
+    ]
+    top = top_candidates(items, top=2)
+    assert [it["source"] for it in top] == ["medications", "exacerbating"]
+
+
+def test_ranker_keeps_model_order_on_a_tie():
+    """같은 source면 모델이 낸 순서를 유지한다(안정 정렬) — 재현 가능해야 한다"""
+    from medimate.llm.assist_rank import top_candidates
+
+    items = [{"text": f"질문 {i} 입니다?", "source": "associated"} for i in range(3)]
+    assert [it["text"] for it in top_candidates(items, top=3)] == [it["text"] for it in items]
+
+
+def test_ranker_spreads_across_sources():
+    """와이어프레임의 3개도 서로 다른 종류다(① 검사 ② 약 ③ 일반). 감점이라 하드 금지는 아니다"""
+    from medimate.llm.assist_rank import top_candidates
+
+    items = [
+        {"text": "a?", "source": "exacerbating"},
+        {"text": "b?", "source": "exacerbating"},
+        {"text": "c?", "source": "associated"},
+    ]
+    assert [it["source"] for it in top_candidates(items, top=2)] == ["exacerbating", "associated"]
+
+
+def test_ranker_cannot_invent_what_was_not_generated():
+    """랭커의 한계. 복용약 질문이 생성에 없으면 가중치를 아무리 올려도 못 올린다.
+
+    2026-09-11 실측: 복용약 재료가 있는 카드 34장 중 질문이 나온 건 1장. med-heavy(6.0)로
+    올려도 1장이었다. 그래서 프롬프트에서 생성을 만들어야 한다.
+    """
+    from medimate.llm.assist_rank import WEIGHTS, top_candidates
+
+    items = [{"text": "밤에 심해지는 건 왜 그런가요?", "source": "exacerbating"}]
+    heavy = {**WEIGHTS, "medications": 99.0}
+    assert [it["source"] for it in top_candidates(items, top=3, weights=heavy)] == ["exacerbating"]
+
+
+def test_ranker_does_not_pad_to_top():
+    """재료가 적으면 있는 만큼만. 억지로 채우지 않는다(카드 100장 중 7장이 2개였다)"""
+    from medimate.llm.assist_rank import top_candidates
+
+    assert len(top_candidates([{"text": "a?", "source": "onset"}], top=3)) == 1
+
+
+def test_ranker_does_not_mutate_input():
+    from medimate.llm.assist_rank import top_candidates
+
+    items = [{"text": "a?", "source": "onset"}]
+    top_candidates(items, top=1)
+    assert items == [{"text": "a?", "source": "onset"}]
