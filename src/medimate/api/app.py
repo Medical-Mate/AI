@@ -26,6 +26,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from medimate.api import auth
+from medimate.api.state_guard import check_state
 from medimate.dialog.engine import Limits, Session
 from medimate.dialog.guard import GuardConfig
 from medimate.dialog.memo import classify_memo
@@ -297,6 +298,10 @@ def create_app(
 
     @app.post("/v1/previsit/turns", response_model=TurnResponse)
     def process_turn(body: TurnRequest, extractor: Ex) -> TurnResponse:
+        # 엔진이 만들 수 없는 상태는 여기서 끊는다. 스키마는 맞고 내용이 불가능한 것이라 400
+        problems = check_state(body.state)
+        if problems:
+            raise HTTPException(status_code=400, detail="; ".join(problems))
         s = Session.from_state(extractor, body.state, limits=app.state.limits)
         if body.extraction_meta is not None and s.card.provenance is not None:
             # 폰이 뽑았으면 어느 모델·프롬프트였는지 카드에 남긴다
