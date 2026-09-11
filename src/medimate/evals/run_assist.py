@@ -203,12 +203,21 @@ def tail_stats(rows: list[dict], top: int = 3) -> dict:
             if len(w) >= 3:
                 tails.setdefault(" ".join(w[-3:]), set()).add(r["case_id"])
     ranked = sorted(tails.items(), key=lambda kv: -len(kv[1]))
+    n_cards = len({r["case_id"] for r in rows})
+    head = ranked[:top]
     return {
-        "n_cards": len({r["case_id"] for r in rows}),
+        "n_cards": n_cards,
         "n_items": n_items,
         "n_tails": len(tails),
+        # 세트 수가 다른 실행끼리 비교할 수 있는 값 둘. 아래 diversity는 그럴 수 없다
+        "top_share": (len(head[0][1]) / n_cards) if head and n_cards else 0.0,
+        "head_items": sum(len(c) for _, c in head) / max(n_items, 1),
+        # 꼬리 종류 / 항목 수. 항목이 늘면 기계적으로 떨어진다(종류는 포화한다) →
+        # 카드 20장 실행과 100장 실행을 이 값으로 비교하면 안 된다.
+        # 2026-09-11: 실제로 이걸로 v6가 나빠졌다고 잘못 읽었다(54% → 29%). 같은 20장으로
+        # 다시 보니 최다 관용구 점유율은 75% → 50%로 좋아진 것이었다.
         "diversity": len(tails) / max(n_items, 1),
-        "top": [(t, len(c)) for t, c in ranked[:top]],
+        "top": [(t, len(c)) for t, c in head],
     }
 
 
@@ -465,8 +474,12 @@ def report(task: str, rows: list[dict], cases: list[dict], show: bool) -> None:
             + " · ".join(f"…{t} {n}/{ts['n_cards']}장" for t, n in ts["top"])
         )
         print(
-            f"표현 다양성 꼬리 {ts['n_tails']}종 / 항목 {ts['n_items']}개 = {ts['diversity']:.0%}"
-            "   ← 모델 비교는 이 값으로 한다"
+            f"  최다 관용구가 든 카드 {ts['top_share']:.0%}   상위 3개가 차지한 항목 {ts['head_items']:.0%}"
+            "   ← 실행끼리 비교는 이 둘로 한다"
+        )
+        print(
+            f"  (꼬리 {ts['n_tails']}종 / 항목 {ts['n_items']}개 = {ts['diversity']:.0%} — "
+            "항목이 늘면 기계적으로 떨어진다. 카드 수가 다른 실행끼리 비교 금지)"
         )
     if lat:
         lat = sorted(lat)

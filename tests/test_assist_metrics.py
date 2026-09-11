@@ -174,3 +174,32 @@ def test_v6_is_the_default_and_v1_to_v5_remain():
 
 def test_question_count_limits_unchanged():
     assert LIMITS["questions"] == (2, 5)
+
+
+def test_tail_stats_exposes_size_independent_numbers():
+    """다양성 비율은 항목이 늘면 기계적으로 떨어진다 — 그걸로 실행끼리 비교하면 안 된다.
+
+    2026-09-11: v6를 100장으로 돌린 뒤 다양성 54%→29%를 보고 "나빠졌다"고 잘못 읽었다.
+    같은 20장으로 다시 보니 최다 관용구 점유율은 75%→50%로 좋아진 것이었다.
+    앞서 비율-vs-개수 오류를 잡아 놓고 새 지표에서 같은 실수를 했다.
+    """
+
+    def rows(n_cards, items_per_card):
+        return [
+            {
+                "case_id": f"C{i}",
+                "items": [{"text": "이건 왜 그런가요?", "source": "a"}]
+                + [
+                    {"text": f"카드 {i} 항목 {j} 문장입니다", "source": "b"}
+                    for j in range(items_per_card - 1)
+                ],
+            }
+            for i in range(n_cards)
+        ]
+
+    small, big = tail_stats(rows(20, 3)), tail_stats(rows(100, 3))
+    # 관용구는 두 실행 모두 전 카드에 하나씩 — 점유율은 같아야 한다
+    assert small["top_share"] == big["top_share"] == 1.0
+    assert small["head_items"] == big["head_items"]
+    # 반면 다양성 비율은 규모에 따라 움직인다(그래서 비교에 쓰면 안 된다)
+    assert small["diversity"] != big["diversity"]
