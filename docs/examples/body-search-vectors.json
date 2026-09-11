@@ -1,0 +1,2572 @@
+{
+ "schema": "medimate-body-search-vectors/1",
+ "ontology_snapshot": "f848848baea4",
+ "limit": 8,
+ "note": "부위 폼 검색의 기대 결과. 순서까지 일치해야 한다. 앱이 body-map의 label+aliases로 로컬 매칭을 구현할 때 이 벡터로 검증한다. 한/영 자판 오타 복원(qo→배)은 서버 전용이라 벡터에 없다.",
+ "cases": [
+  {
+   "q": "머리",
+   "expect": [
+    {
+     "id": "ANC:001",
+     "matched": "머리",
+     "score": 3
+    },
+    {
+     "id": "SUR:001",
+     "matched": "머리 전체·이마",
+     "score": 2
+    },
+    {
+     "id": "SUR:002",
+     "matched": "머리",
+     "score": 0
+    },
+    {
+     "id": "SUR:003",
+     "matched": "머리",
+     "score": 0
+    },
+    {
+     "id": "SUR:004",
+     "matched": "머리",
+     "score": 0
+    },
+    {
+     "id": "SUR:005",
+     "matched": "머리",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "두부",
+   "expect": [
+    {
+     "id": "ANC:001",
+     "matched": "두부",
+     "score": 3
+    },
+    {
+     "id": "SUR:001",
+     "matched": "두부",
+     "score": 0
+    },
+    {
+     "id": "SUR:002",
+     "matched": "두부",
+     "score": 0
+    },
+    {
+     "id": "SUR:003",
+     "matched": "두부",
+     "score": 0
+    },
+    {
+     "id": "SUR:004",
+     "matched": "두부",
+     "score": 0
+    },
+    {
+     "id": "SUR:005",
+     "matched": "두부",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "머리통",
+   "expect": [
+    {
+     "id": "ANC:001",
+     "matched": "머리통",
+     "score": 3
+    },
+    {
+     "id": "SUR:001",
+     "matched": "머리통",
+     "score": 0
+    },
+    {
+     "id": "SUR:002",
+     "matched": "머리통",
+     "score": 0
+    },
+    {
+     "id": "SUR:003",
+     "matched": "머리통",
+     "score": 0
+    },
+    {
+     "id": "SUR:004",
+     "matched": "머리통",
+     "score": 0
+    },
+    {
+     "id": "SUR:005",
+     "matched": "머리통",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "머리 전체",
+   "expect": [
+    {
+     "id": "ANC:001",
+     "matched": "머리 전체",
+     "score": 3
+    },
+    {
+     "id": "SUR:001",
+     "matched": "머리 전체·이마",
+     "score": 2
+    },
+    {
+     "id": "ANC:010",
+     "matched": "전체",
+     "score": 1
+    },
+    {
+     "id": "SUR:002",
+     "matched": "머리 전체",
+     "score": 0
+    },
+    {
+     "id": "SUR:003",
+     "matched": "머리 전체",
+     "score": 0
+    },
+    {
+     "id": "SUR:004",
+     "matched": "머리 전체",
+     "score": 0
+    },
+    {
+     "id": "SUR:005",
+     "matched": "머리 전체",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "목",
+   "expect": [
+    {
+     "id": "ANC:002",
+     "matched": "목",
+     "score": 3
+    },
+    {
+     "id": "SUR:011",
+     "matched": "목 안(목구멍)",
+     "score": 2
+    },
+    {
+     "id": "SUR:012",
+     "matched": "목 뒤·옆",
+     "score": 2
+    },
+    {
+     "id": "SUR:071",
+     "matched": "손목",
+     "score": 1
+    },
+    {
+     "id": "SUR:101",
+     "matched": "발목",
+     "score": 1
+    }
+   ]
+  },
+  {
+   "q": "가슴",
+   "expect": [
+    {
+     "id": "ANC:003",
+     "matched": "가슴",
+     "score": 3
+    },
+    {
+     "id": "SUR:022",
+     "matched": "가슴 옆(갈비)",
+     "score": 2
+    },
+    {
+     "id": "SUR:021",
+     "matched": "가슴 가운데",
+     "score": 2
+    }
+   ]
+  },
+  {
+   "q": "흉부",
+   "expect": [
+    {
+     "id": "ANC:003",
+     "matched": "흉부",
+     "score": 3
+    },
+    {
+     "id": "SUR:021",
+     "matched": "흉부",
+     "score": 0
+    },
+    {
+     "id": "SUR:022",
+     "matched": "흉부",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "가슴팍",
+   "expect": [
+    {
+     "id": "ANC:003",
+     "matched": "가슴팍",
+     "score": 3
+    },
+    {
+     "id": "SUR:021",
+     "matched": "가슴팍",
+     "score": 0
+    },
+    {
+     "id": "SUR:022",
+     "matched": "가슴팍",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "앞가슴",
+   "expect": [
+    {
+     "id": "ANC:003",
+     "matched": "앞가슴",
+     "score": 3
+    },
+    {
+     "id": "SUR:021",
+     "matched": "앞가슴",
+     "score": 0
+    },
+    {
+     "id": "SUR:022",
+     "matched": "앞가슴",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "배",
+   "expect": [
+    {
+     "id": "ANC:004",
+     "matched": "배",
+     "score": 3
+    },
+    {
+     "id": "SUR:032",
+     "matched": "배 아래쪽",
+     "score": 2
+    },
+    {
+     "id": "SUR:031",
+     "matched": "배 위쪽",
+     "score": 2
+    }
+   ]
+  },
+  {
+   "q": "복부",
+   "expect": [
+    {
+     "id": "ANC:004",
+     "matched": "복부",
+     "score": 3
+    },
+    {
+     "id": "SUR:031",
+     "matched": "상복부",
+     "score": 1
+    },
+    {
+     "id": "SUR:032",
+     "matched": "하복부",
+     "score": 1
+    }
+   ]
+  },
+  {
+   "q": "뱃속",
+   "expect": [
+    {
+     "id": "ANC:004",
+     "matched": "뱃속",
+     "score": 3
+    },
+    {
+     "id": "SUR:031",
+     "matched": "뱃속",
+     "score": 0
+    },
+    {
+     "id": "SUR:032",
+     "matched": "뱃속",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "배 전체",
+   "expect": [
+    {
+     "id": "ANC:004",
+     "matched": "배 전체",
+     "score": 3
+    },
+    {
+     "id": "ANC:010",
+     "matched": "전체",
+     "score": 1
+    },
+    {
+     "id": "SUR:031",
+     "matched": "배 전체",
+     "score": 0
+    },
+    {
+     "id": "SUR:032",
+     "matched": "배 전체",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "배꼽",
+   "expect": [
+    {
+     "id": "ANC:004",
+     "matched": "배꼽",
+     "score": 3
+    },
+    {
+     "id": "SUR:032",
+     "matched": "배꼽 아래",
+     "score": 2
+    },
+    {
+     "id": "SUR:031",
+     "matched": "배꼽",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "팔",
+   "expect": [
+    {
+     "id": "ANC:013",
+     "matched": "팔",
+     "score": 3
+    },
+    {
+     "id": "SUR:065",
+     "matched": "팔 아래쪽",
+     "score": 2
+    },
+    {
+     "id": "SUR:055",
+     "matched": "팔 위쪽",
+     "score": 2
+    },
+    {
+     "id": "SUR:061",
+     "matched": "팔꿈치",
+     "score": 2
+    },
+    {
+     "id": "SUR:051",
+     "matched": "팔",
+     "score": 0
+    },
+    {
+     "id": "SUR:071",
+     "matched": "팔",
+     "score": 0
+    },
+    {
+     "id": "SUR:072",
+     "matched": "팔",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "상지",
+   "expect": [
+    {
+     "id": "ANC:013",
+     "matched": "상지",
+     "score": 3
+    },
+    {
+     "id": "SUR:051",
+     "matched": "상지",
+     "score": 0
+    },
+    {
+     "id": "SUR:055",
+     "matched": "상지",
+     "score": 0
+    },
+    {
+     "id": "SUR:061",
+     "matched": "상지",
+     "score": 0
+    },
+    {
+     "id": "SUR:065",
+     "matched": "상지",
+     "score": 0
+    },
+    {
+     "id": "SUR:071",
+     "matched": "상지",
+     "score": 0
+    },
+    {
+     "id": "SUR:072",
+     "matched": "상지",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "팔 전체",
+   "expect": [
+    {
+     "id": "ANC:013",
+     "matched": "팔 전체",
+     "score": 3
+    },
+    {
+     "id": "ANC:010",
+     "matched": "전체",
+     "score": 1
+    },
+    {
+     "id": "SUR:051",
+     "matched": "팔 전체",
+     "score": 0
+    },
+    {
+     "id": "SUR:055",
+     "matched": "팔 전체",
+     "score": 0
+    },
+    {
+     "id": "SUR:061",
+     "matched": "팔 전체",
+     "score": 0
+    },
+    {
+     "id": "SUR:065",
+     "matched": "팔 전체",
+     "score": 0
+    },
+    {
+     "id": "SUR:071",
+     "matched": "팔 전체",
+     "score": 0
+    },
+    {
+     "id": "SUR:072",
+     "matched": "팔 전체",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "다리",
+   "expect": [
+    {
+     "id": "ANC:014",
+     "matched": "다리",
+     "score": 3
+    },
+    {
+     "id": "SUR:090",
+     "matched": "넓적다리",
+     "score": 1
+    },
+    {
+     "id": "SUR:091",
+     "matched": "다리",
+     "score": 0
+    },
+    {
+     "id": "SUR:097",
+     "matched": "다리",
+     "score": 0
+    },
+    {
+     "id": "SUR:101",
+     "matched": "다리",
+     "score": 0
+    },
+    {
+     "id": "SUR:102",
+     "matched": "다리",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "하지",
+   "expect": [
+    {
+     "id": "ANC:014",
+     "matched": "하지",
+     "score": 3
+    },
+    {
+     "id": "SUR:090",
+     "matched": "하지",
+     "score": 0
+    },
+    {
+     "id": "SUR:091",
+     "matched": "하지",
+     "score": 0
+    },
+    {
+     "id": "SUR:097",
+     "matched": "하지",
+     "score": 0
+    },
+    {
+     "id": "SUR:101",
+     "matched": "하지",
+     "score": 0
+    },
+    {
+     "id": "SUR:102",
+     "matched": "하지",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "다리 전체",
+   "expect": [
+    {
+     "id": "ANC:014",
+     "matched": "다리 전체",
+     "score": 3
+    },
+    {
+     "id": "ANC:010",
+     "matched": "전체",
+     "score": 1
+    },
+    {
+     "id": "SUR:090",
+     "matched": "다리 전체",
+     "score": 0
+    },
+    {
+     "id": "SUR:091",
+     "matched": "다리 전체",
+     "score": 0
+    },
+    {
+     "id": "SUR:097",
+     "matched": "다리 전체",
+     "score": 0
+    },
+    {
+     "id": "SUR:101",
+     "matched": "다리 전체",
+     "score": 0
+    },
+    {
+     "id": "SUR:102",
+     "matched": "다리 전체",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "허리·엉덩이",
+   "expect": [
+    {
+     "id": "ANC:012",
+     "matched": "허리·엉덩이",
+     "score": 3
+    },
+    {
+     "id": "SUR:041",
+     "matched": "허리",
+     "score": 2
+    },
+    {
+     "id": "SUR:081",
+     "matched": "엉덩이",
+     "score": 1
+    },
+    {
+     "id": "SUR:042",
+     "matched": "허리·엉덩이",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "요추",
+   "expect": [
+    {
+     "id": "ANC:012",
+     "matched": "요추",
+     "score": 3
+    },
+    {
+     "id": "SUR:041",
+     "matched": "요추",
+     "score": 0
+    },
+    {
+     "id": "SUR:042",
+     "matched": "요추",
+     "score": 0
+    },
+    {
+     "id": "SUR:081",
+     "matched": "요추",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "등허리",
+   "expect": [
+    {
+     "id": "ANC:012",
+     "matched": "등허리",
+     "score": 3
+    },
+    {
+     "id": "SUR:041",
+     "matched": "허리",
+     "score": 1
+    },
+    {
+     "id": "SUR:042",
+     "matched": "등허리",
+     "score": 0
+    },
+    {
+     "id": "SUR:081",
+     "matched": "등허리",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "전신",
+   "expect": [
+    {
+     "id": "ANC:010",
+     "matched": "전신",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "온몸",
+   "expect": [
+    {
+     "id": "ANC:010",
+     "matched": "온몸",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "몸 전체",
+   "expect": [
+    {
+     "id": "ANC:010",
+     "matched": "몸 전체",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "전체",
+   "expect": [
+    {
+     "id": "ANC:010",
+     "matched": "전체",
+     "score": 3
+    },
+    {
+     "id": "SUR:001",
+     "matched": "머리 전체·이마",
+     "score": 1
+    },
+    {
+     "id": "ANC:001",
+     "matched": "머리 전체",
+     "score": 1
+    },
+    {
+     "id": "ANC:014",
+     "matched": "다리 전체",
+     "score": 1
+    },
+    {
+     "id": "ANC:004",
+     "matched": "배 전체",
+     "score": 1
+    },
+    {
+     "id": "ANC:013",
+     "matched": "팔 전체",
+     "score": 1
+    }
+   ]
+  },
+  {
+   "q": "특정 부위 없음",
+   "expect": [
+    {
+     "id": "ANC:010",
+     "matched": "특정 부위 없음",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "피부",
+   "expect": [
+    {
+     "id": "ANC:011",
+     "matched": "피부",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "살",
+   "expect": [
+    {
+     "id": "ANC:011",
+     "matched": "살",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "피부 표면",
+   "expect": [
+    {
+     "id": "ANC:011",
+     "matched": "피부 표면",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "겉",
+   "expect": [
+    {
+     "id": "ANC:011",
+     "matched": "겉",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "머리 전체·이마",
+   "expect": [
+    {
+     "id": "SUR:001",
+     "matched": "머리 전체·이마",
+     "score": 3
+    },
+    {
+     "id": "ANC:001",
+     "matched": "머리",
+     "score": 2
+    },
+    {
+     "id": "ANC:010",
+     "matched": "전체",
+     "score": 1
+    },
+    {
+     "id": "SUR:002",
+     "matched": "머리",
+     "score": 0
+    },
+    {
+     "id": "SUR:003",
+     "matched": "머리",
+     "score": 0
+    },
+    {
+     "id": "SUR:004",
+     "matched": "머리",
+     "score": 0
+    },
+    {
+     "id": "SUR:005",
+     "matched": "머리",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "이마",
+   "expect": [
+    {
+     "id": "SUR:001",
+     "matched": "이마",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "앞머리",
+   "expect": [
+    {
+     "id": "SUR:001",
+     "matched": "앞머리",
+     "score": 3
+    },
+    {
+     "id": "ANC:001",
+     "matched": "머리",
+     "score": 1
+    }
+   ]
+  },
+  {
+   "q": "뒤통수",
+   "expect": [
+    {
+     "id": "SUR:001",
+     "matched": "뒤통수",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "정수리",
+   "expect": [
+    {
+     "id": "SUR:001",
+     "matched": "정수리",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "옆머리",
+   "expect": [
+    {
+     "id": "SUR:001",
+     "matched": "옆머리",
+     "score": 3
+    },
+    {
+     "id": "ANC:001",
+     "matched": "머리",
+     "score": 1
+    }
+   ]
+  },
+  {
+   "q": "관자놀이",
+   "expect": [
+    {
+     "id": "SUR:001",
+     "matched": "관자놀이",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "눈",
+   "expect": [
+    {
+     "id": "SUR:002",
+     "matched": "눈",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "안구",
+   "expect": [
+    {
+     "id": "SUR:002",
+     "matched": "안구",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "눈알",
+   "expect": [
+    {
+     "id": "SUR:002",
+     "matched": "눈알",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "눈꺼풀",
+   "expect": [
+    {
+     "id": "SUR:002",
+     "matched": "눈꺼풀",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "눈두덩",
+   "expect": [
+    {
+     "id": "SUR:002",
+     "matched": "눈두덩",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "귀",
+   "expect": [
+    {
+     "id": "SUR:003",
+     "matched": "귀",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "귓속",
+   "expect": [
+    {
+     "id": "SUR:003",
+     "matched": "귓속",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "귓바퀴",
+   "expect": [
+    {
+     "id": "SUR:003",
+     "matched": "귓바퀴",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "귀 안",
+   "expect": [
+    {
+     "id": "SUR:003",
+     "matched": "귀 안",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "귀 뒤",
+   "expect": [
+    {
+     "id": "SUR:003",
+     "matched": "귀 뒤",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "코",
+   "expect": [
+    {
+     "id": "SUR:004",
+     "matched": "코",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "콧속",
+   "expect": [
+    {
+     "id": "SUR:004",
+     "matched": "콧속",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "콧등",
+   "expect": [
+    {
+     "id": "SUR:004",
+     "matched": "콧등",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "비강",
+   "expect": [
+    {
+     "id": "SUR:004",
+     "matched": "비강",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "입",
+   "expect": [
+    {
+     "id": "SUR:005",
+     "matched": "입",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "입안",
+   "expect": [
+    {
+     "id": "SUR:005",
+     "matched": "입안",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "구강",
+   "expect": [
+    {
+     "id": "SUR:005",
+     "matched": "구강",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "입술",
+   "expect": [
+    {
+     "id": "SUR:005",
+     "matched": "입술",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "혀",
+   "expect": [
+    {
+     "id": "SUR:005",
+     "matched": "혀",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "잇몸",
+   "expect": [
+    {
+     "id": "SUR:005",
+     "matched": "잇몸",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "치아",
+   "expect": [
+    {
+     "id": "SUR:005",
+     "matched": "치아",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "이빨",
+   "expect": [
+    {
+     "id": "SUR:005",
+     "matched": "이빨",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "목 안(목구멍)",
+   "expect": [
+    {
+     "id": "SUR:011",
+     "matched": "목 안(목구멍)",
+     "score": 3
+    },
+    {
+     "id": "ANC:002",
+     "matched": "목",
+     "score": 2
+    },
+    {
+     "id": "SUR:012",
+     "matched": "목",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "목구멍",
+   "expect": [
+    {
+     "id": "SUR:011",
+     "matched": "목구멍",
+     "score": 3
+    },
+    {
+     "id": "ANC:002",
+     "matched": "목",
+     "score": 2
+    },
+    {
+     "id": "SUR:012",
+     "matched": "목",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "인후",
+   "expect": [
+    {
+     "id": "SUR:011",
+     "matched": "인후",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "편도",
+   "expect": [
+    {
+     "id": "SUR:011",
+     "matched": "편도",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "목 안쪽",
+   "expect": [
+    {
+     "id": "SUR:011",
+     "matched": "목 안쪽",
+     "score": 3
+    },
+    {
+     "id": "ANC:002",
+     "matched": "목",
+     "score": 2
+    },
+    {
+     "id": "SUR:012",
+     "matched": "목",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "목 속",
+   "expect": [
+    {
+     "id": "SUR:011",
+     "matched": "목 속",
+     "score": 3
+    },
+    {
+     "id": "ANC:002",
+     "matched": "목",
+     "score": 2
+    },
+    {
+     "id": "SUR:012",
+     "matched": "목",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "목 뒤·옆",
+   "expect": [
+    {
+     "id": "SUR:012",
+     "matched": "목 뒤·옆",
+     "score": 3
+    },
+    {
+     "id": "ANC:002",
+     "matched": "목",
+     "score": 2
+    },
+    {
+     "id": "SUR:011",
+     "matched": "목",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "뒷목",
+   "expect": [
+    {
+     "id": "SUR:012",
+     "matched": "뒷목",
+     "score": 3
+    },
+    {
+     "id": "ANC:002",
+     "matched": "목",
+     "score": 1
+    }
+   ]
+  },
+  {
+   "q": "목덜미",
+   "expect": [
+    {
+     "id": "SUR:012",
+     "matched": "목덜미",
+     "score": 3
+    },
+    {
+     "id": "ANC:002",
+     "matched": "목",
+     "score": 2
+    },
+    {
+     "id": "SUR:011",
+     "matched": "목",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "옆목",
+   "expect": [
+    {
+     "id": "SUR:012",
+     "matched": "옆목",
+     "score": 3
+    },
+    {
+     "id": "ANC:002",
+     "matched": "목",
+     "score": 1
+    }
+   ]
+  },
+  {
+   "q": "목 옆",
+   "expect": [
+    {
+     "id": "SUR:012",
+     "matched": "목 옆",
+     "score": 3
+    },
+    {
+     "id": "ANC:002",
+     "matched": "목",
+     "score": 2
+    },
+    {
+     "id": "SUR:011",
+     "matched": "목",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "경추",
+   "expect": [
+    {
+     "id": "SUR:012",
+     "matched": "경추",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "목뼈",
+   "expect": [
+    {
+     "id": "SUR:012",
+     "matched": "목뼈",
+     "score": 3
+    },
+    {
+     "id": "ANC:002",
+     "matched": "목",
+     "score": 2
+    },
+    {
+     "id": "SUR:011",
+     "matched": "목",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "가슴 가운데",
+   "expect": [
+    {
+     "id": "SUR:021",
+     "matched": "가슴 가운데",
+     "score": 3
+    },
+    {
+     "id": "ANC:003",
+     "matched": "가슴",
+     "score": 2
+    },
+    {
+     "id": "SUR:022",
+     "matched": "가슴",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "가슴뼈",
+   "expect": [
+    {
+     "id": "SUR:021",
+     "matched": "가슴뼈",
+     "score": 3
+    },
+    {
+     "id": "ANC:003",
+     "matched": "가슴",
+     "score": 2
+    },
+    {
+     "id": "SUR:022",
+     "matched": "가슴",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "흉골",
+   "expect": [
+    {
+     "id": "SUR:021",
+     "matched": "흉골",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "가슴 중앙",
+   "expect": [
+    {
+     "id": "SUR:021",
+     "matched": "가슴 중앙",
+     "score": 3
+    },
+    {
+     "id": "ANC:003",
+     "matched": "가슴",
+     "score": 2
+    },
+    {
+     "id": "SUR:022",
+     "matched": "가슴",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "심장 쪽",
+   "expect": [
+    {
+     "id": "SUR:021",
+     "matched": "심장 쪽",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "가슴 옆(갈비)",
+   "expect": [
+    {
+     "id": "SUR:022",
+     "matched": "가슴 옆(갈비)",
+     "score": 3
+    },
+    {
+     "id": "ANC:003",
+     "matched": "가슴",
+     "score": 2
+    },
+    {
+     "id": "SUR:021",
+     "matched": "가슴",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "갈비뼈",
+   "expect": [
+    {
+     "id": "SUR:022",
+     "matched": "갈비뼈",
+     "score": 3
+    },
+    {
+     "id": "SUR:042",
+     "matched": "갈비뼈 아래 옆",
+     "score": 2
+    }
+   ]
+  },
+  {
+   "q": "늑골",
+   "expect": [
+    {
+     "id": "SUR:022",
+     "matched": "늑골",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "옆가슴",
+   "expect": [
+    {
+     "id": "SUR:022",
+     "matched": "옆가슴",
+     "score": 3
+    },
+    {
+     "id": "ANC:003",
+     "matched": "가슴",
+     "score": 1
+    }
+   ]
+  },
+  {
+   "q": "갈비",
+   "expect": [
+    {
+     "id": "SUR:022",
+     "matched": "갈비",
+     "score": 3
+    },
+    {
+     "id": "SUR:042",
+     "matched": "갈비뼈 아래 옆",
+     "score": 2
+    }
+   ]
+  },
+  {
+   "q": "윗배(명치)",
+   "expect": [
+    {
+     "id": "SUR:031",
+     "matched": "윗배(명치)",
+     "score": 3
+    },
+    {
+     "id": "ANC:004",
+     "matched": "배",
+     "score": 1
+    }
+   ]
+  },
+  {
+   "q": "명치",
+   "expect": [
+    {
+     "id": "SUR:031",
+     "matched": "명치",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "상복부",
+   "expect": [
+    {
+     "id": "SUR:031",
+     "matched": "상복부",
+     "score": 3
+    },
+    {
+     "id": "ANC:004",
+     "matched": "복부",
+     "score": 1
+    }
+   ]
+  },
+  {
+   "q": "윗배",
+   "expect": [
+    {
+     "id": "SUR:031",
+     "matched": "윗배",
+     "score": 3
+    },
+    {
+     "id": "ANC:004",
+     "matched": "배",
+     "score": 1
+    }
+   ]
+  },
+  {
+   "q": "명치끝",
+   "expect": [
+    {
+     "id": "SUR:031",
+     "matched": "명치끝",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "배 위쪽",
+   "expect": [
+    {
+     "id": "SUR:031",
+     "matched": "배 위쪽",
+     "score": 3
+    },
+    {
+     "id": "ANC:004",
+     "matched": "배",
+     "score": 2
+    },
+    {
+     "id": "SUR:032",
+     "matched": "배",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "아랫배",
+   "expect": [
+    {
+     "id": "SUR:032",
+     "matched": "아랫배",
+     "score": 3
+    },
+    {
+     "id": "ANC:004",
+     "matched": "배",
+     "score": 1
+    }
+   ]
+  },
+  {
+   "q": "하복부",
+   "expect": [
+    {
+     "id": "SUR:032",
+     "matched": "하복부",
+     "score": 3
+    },
+    {
+     "id": "ANC:004",
+     "matched": "복부",
+     "score": 1
+    }
+   ]
+  },
+  {
+   "q": "배 아래쪽",
+   "expect": [
+    {
+     "id": "SUR:032",
+     "matched": "배 아래쪽",
+     "score": 3
+    },
+    {
+     "id": "ANC:004",
+     "matched": "배",
+     "score": 2
+    },
+    {
+     "id": "SUR:031",
+     "matched": "배",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "골반",
+   "expect": [
+    {
+     "id": "SUR:032",
+     "matched": "골반",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "배꼽 아래",
+   "expect": [
+    {
+     "id": "SUR:032",
+     "matched": "배꼽 아래",
+     "score": 3
+    },
+    {
+     "id": "ANC:004",
+     "matched": "배",
+     "score": 2
+    },
+    {
+     "id": "SUR:031",
+     "matched": "배",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "허리 가운데",
+   "expect": [
+    {
+     "id": "SUR:041",
+     "matched": "허리 가운데",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "허리",
+   "expect": [
+    {
+     "id": "SUR:041",
+     "matched": "허리",
+     "score": 3
+    },
+    {
+     "id": "ANC:012",
+     "matched": "허리·엉덩이",
+     "score": 2
+    },
+    {
+     "id": "SUR:042",
+     "matched": "허리 옆",
+     "score": 2
+    },
+    {
+     "id": "SUR:081",
+     "matched": "허리·엉덩이",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "허리 중앙",
+   "expect": [
+    {
+     "id": "SUR:041",
+     "matched": "허리 중앙",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "꼬리뼈",
+   "expect": [
+    {
+     "id": "SUR:041",
+     "matched": "꼬리뼈",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "척추 아래",
+   "expect": [
+    {
+     "id": "SUR:041",
+     "matched": "척추 아래",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "등 아래",
+   "expect": [
+    {
+     "id": "SUR:041",
+     "matched": "등 아래",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "허리 옆",
+   "expect": [
+    {
+     "id": "SUR:042",
+     "matched": "허리 옆",
+     "score": 3
+    },
+    {
+     "id": "SUR:041",
+     "matched": "허리",
+     "score": 2
+    }
+   ]
+  },
+  {
+   "q": "옆구리",
+   "expect": [
+    {
+     "id": "SUR:042",
+     "matched": "옆구리",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "옆허리",
+   "expect": [
+    {
+     "id": "SUR:042",
+     "matched": "옆허리",
+     "score": 3
+    },
+    {
+     "id": "SUR:041",
+     "matched": "허리",
+     "score": 1
+    }
+   ]
+  },
+  {
+   "q": "갈비뼈 아래 옆",
+   "expect": [
+    {
+     "id": "SUR:042",
+     "matched": "갈비뼈 아래 옆",
+     "score": 3
+    },
+    {
+     "id": "SUR:022",
+     "matched": "갈비뼈",
+     "score": 2
+    }
+   ]
+  },
+  {
+   "q": "어깨",
+   "expect": [
+    {
+     "id": "SUR:051",
+     "matched": "어깨",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "어깻죽지",
+   "expect": [
+    {
+     "id": "SUR:051",
+     "matched": "어깻죽지",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "견관절",
+   "expect": [
+    {
+     "id": "SUR:051",
+     "matched": "견관절",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "어깨 앞",
+   "expect": [
+    {
+     "id": "SUR:051",
+     "matched": "어깨 앞",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "어깨 뒤",
+   "expect": [
+    {
+     "id": "SUR:051",
+     "matched": "어깨 뒤",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "위팔",
+   "expect": [
+    {
+     "id": "SUR:055",
+     "matched": "위팔",
+     "score": 3
+    },
+    {
+     "id": "ANC:013",
+     "matched": "팔",
+     "score": 1
+    }
+   ]
+  },
+  {
+   "q": "윗팔",
+   "expect": [
+    {
+     "id": "SUR:055",
+     "matched": "윗팔",
+     "score": 3
+    },
+    {
+     "id": "ANC:013",
+     "matched": "팔",
+     "score": 1
+    }
+   ]
+  },
+  {
+   "q": "상완",
+   "expect": [
+    {
+     "id": "SUR:055",
+     "matched": "상완",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "팔 위쪽",
+   "expect": [
+    {
+     "id": "SUR:055",
+     "matched": "팔 위쪽",
+     "score": 3
+    },
+    {
+     "id": "ANC:013",
+     "matched": "팔",
+     "score": 2
+    },
+    {
+     "id": "SUR:051",
+     "matched": "팔",
+     "score": 0
+    },
+    {
+     "id": "SUR:061",
+     "matched": "팔",
+     "score": 0
+    },
+    {
+     "id": "SUR:065",
+     "matched": "팔",
+     "score": 0
+    },
+    {
+     "id": "SUR:071",
+     "matched": "팔",
+     "score": 0
+    },
+    {
+     "id": "SUR:072",
+     "matched": "팔",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "팔꿈치",
+   "expect": [
+    {
+     "id": "SUR:061",
+     "matched": "팔꿈치",
+     "score": 3
+    },
+    {
+     "id": "ANC:013",
+     "matched": "팔",
+     "score": 2
+    },
+    {
+     "id": "SUR:051",
+     "matched": "팔",
+     "score": 0
+    },
+    {
+     "id": "SUR:055",
+     "matched": "팔",
+     "score": 0
+    },
+    {
+     "id": "SUR:065",
+     "matched": "팔",
+     "score": 0
+    },
+    {
+     "id": "SUR:071",
+     "matched": "팔",
+     "score": 0
+    },
+    {
+     "id": "SUR:072",
+     "matched": "팔",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "팔굽",
+   "expect": [
+    {
+     "id": "SUR:061",
+     "matched": "팔굽",
+     "score": 3
+    },
+    {
+     "id": "ANC:013",
+     "matched": "팔",
+     "score": 2
+    },
+    {
+     "id": "SUR:051",
+     "matched": "팔",
+     "score": 0
+    },
+    {
+     "id": "SUR:055",
+     "matched": "팔",
+     "score": 0
+    },
+    {
+     "id": "SUR:065",
+     "matched": "팔",
+     "score": 0
+    },
+    {
+     "id": "SUR:071",
+     "matched": "팔",
+     "score": 0
+    },
+    {
+     "id": "SUR:072",
+     "matched": "팔",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "주관절",
+   "expect": [
+    {
+     "id": "SUR:061",
+     "matched": "주관절",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "아래팔",
+   "expect": [
+    {
+     "id": "SUR:065",
+     "matched": "아래팔",
+     "score": 3
+    },
+    {
+     "id": "ANC:013",
+     "matched": "팔",
+     "score": 1
+    }
+   ]
+  },
+  {
+   "q": "아랫팔",
+   "expect": [
+    {
+     "id": "SUR:065",
+     "matched": "아랫팔",
+     "score": 3
+    },
+    {
+     "id": "ANC:013",
+     "matched": "팔",
+     "score": 1
+    }
+   ]
+  },
+  {
+   "q": "전완",
+   "expect": [
+    {
+     "id": "SUR:065",
+     "matched": "전완",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "팔 아래쪽",
+   "expect": [
+    {
+     "id": "SUR:065",
+     "matched": "팔 아래쪽",
+     "score": 3
+    },
+    {
+     "id": "ANC:013",
+     "matched": "팔",
+     "score": 2
+    },
+    {
+     "id": "SUR:051",
+     "matched": "팔",
+     "score": 0
+    },
+    {
+     "id": "SUR:055",
+     "matched": "팔",
+     "score": 0
+    },
+    {
+     "id": "SUR:061",
+     "matched": "팔",
+     "score": 0
+    },
+    {
+     "id": "SUR:071",
+     "matched": "팔",
+     "score": 0
+    },
+    {
+     "id": "SUR:072",
+     "matched": "팔",
+     "score": 0
+    }
+   ]
+  },
+  {
+   "q": "손목",
+   "expect": [
+    {
+     "id": "SUR:071",
+     "matched": "손목",
+     "score": 3
+    },
+    {
+     "id": "SUR:072",
+     "matched": "손",
+     "score": 2
+    },
+    {
+     "id": "ANC:002",
+     "matched": "목",
+     "score": 1
+    }
+   ]
+  },
+  {
+   "q": "손목 관절",
+   "expect": [
+    {
+     "id": "SUR:071",
+     "matched": "손목 관절",
+     "score": 3
+    },
+    {
+     "id": "SUR:072",
+     "matched": "손",
+     "score": 2
+    },
+    {
+     "id": "ANC:002",
+     "matched": "목",
+     "score": 1
+    }
+   ]
+  },
+  {
+   "q": "손",
+   "expect": [
+    {
+     "id": "SUR:072",
+     "matched": "손",
+     "score": 3
+    },
+    {
+     "id": "SUR:071",
+     "matched": "손목",
+     "score": 2
+    }
+   ]
+  },
+  {
+   "q": "손가락",
+   "expect": [
+    {
+     "id": "SUR:072",
+     "matched": "손가락",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "손바닥",
+   "expect": [
+    {
+     "id": "SUR:072",
+     "matched": "손바닥",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "손등",
+   "expect": [
+    {
+     "id": "SUR:072",
+     "matched": "손등",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "엄지",
+   "expect": [
+    {
+     "id": "SUR:072",
+     "matched": "엄지",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "검지",
+   "expect": [
+    {
+     "id": "SUR:072",
+     "matched": "검지",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "엉덩이",
+   "expect": [
+    {
+     "id": "SUR:081",
+     "matched": "엉덩이",
+     "score": 3
+    },
+    {
+     "id": "ANC:012",
+     "matched": "허리·엉덩이",
+     "score": 1
+    }
+   ]
+  },
+  {
+   "q": "둔부",
+   "expect": [
+    {
+     "id": "SUR:081",
+     "matched": "둔부",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "고관절",
+   "expect": [
+    {
+     "id": "SUR:081",
+     "matched": "고관절",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "엉치",
+   "expect": [
+    {
+     "id": "SUR:081",
+     "matched": "엉치",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "꽁무니",
+   "expect": [
+    {
+     "id": "SUR:081",
+     "matched": "꽁무니",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "허벅지",
+   "expect": [
+    {
+     "id": "SUR:090",
+     "matched": "허벅지",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "대퇴",
+   "expect": [
+    {
+     "id": "SUR:090",
+     "matched": "대퇴",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "넓적다리",
+   "expect": [
+    {
+     "id": "SUR:090",
+     "matched": "넓적다리",
+     "score": 3
+    },
+    {
+     "id": "ANC:014",
+     "matched": "다리",
+     "score": 1
+    }
+   ]
+  },
+  {
+   "q": "허벅다리",
+   "expect": [
+    {
+     "id": "SUR:090",
+     "matched": "허벅다리",
+     "score": 3
+    },
+    {
+     "id": "ANC:014",
+     "matched": "다리",
+     "score": 1
+    }
+   ]
+  },
+  {
+   "q": "무릎",
+   "expect": [
+    {
+     "id": "SUR:091",
+     "matched": "무릎",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "슬관절",
+   "expect": [
+    {
+     "id": "SUR:091",
+     "matched": "슬관절",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "무릎 앞",
+   "expect": [
+    {
+     "id": "SUR:091",
+     "matched": "무릎 앞",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "무릎 뒤",
+   "expect": [
+    {
+     "id": "SUR:091",
+     "matched": "무릎 뒤",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "오금",
+   "expect": [
+    {
+     "id": "SUR:091",
+     "matched": "오금",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "종아리",
+   "expect": [
+    {
+     "id": "SUR:097",
+     "matched": "종아리",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "장딴지",
+   "expect": [
+    {
+     "id": "SUR:097",
+     "matched": "장딴지",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "정강이",
+   "expect": [
+    {
+     "id": "SUR:097",
+     "matched": "정강이",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "정강이뼈",
+   "expect": [
+    {
+     "id": "SUR:097",
+     "matched": "정강이뼈",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "발목",
+   "expect": [
+    {
+     "id": "SUR:101",
+     "matched": "발목",
+     "score": 3
+    },
+    {
+     "id": "SUR:102",
+     "matched": "발",
+     "score": 2
+    },
+    {
+     "id": "ANC:002",
+     "matched": "목",
+     "score": 1
+    }
+   ]
+  },
+  {
+   "q": "발목 관절",
+   "expect": [
+    {
+     "id": "SUR:101",
+     "matched": "발목 관절",
+     "score": 3
+    },
+    {
+     "id": "SUR:102",
+     "matched": "발",
+     "score": 2
+    },
+    {
+     "id": "ANC:002",
+     "matched": "목",
+     "score": 1
+    }
+   ]
+  },
+  {
+   "q": "아킬레스",
+   "expect": [
+    {
+     "id": "SUR:101",
+     "matched": "아킬레스",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "발",
+   "expect": [
+    {
+     "id": "SUR:102",
+     "matched": "발",
+     "score": 3
+    },
+    {
+     "id": "SUR:101",
+     "matched": "발목",
+     "score": 2
+    }
+   ]
+  },
+  {
+   "q": "발가락",
+   "expect": [
+    {
+     "id": "SUR:102",
+     "matched": "발가락",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "발바닥",
+   "expect": [
+    {
+     "id": "SUR:102",
+     "matched": "발바닥",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "발등",
+   "expect": [
+    {
+     "id": "SUR:102",
+     "matched": "발등",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "발뒤꿈치",
+   "expect": [
+    {
+     "id": "SUR:102",
+     "matched": "발뒤꿈치",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "뒤꿈치",
+   "expect": [
+    {
+     "id": "SUR:102",
+     "matched": "뒤꿈치",
+     "score": 3
+    }
+   ]
+  },
+  {
+   "q": "왼쪽 아랫배가 아파요",
+   "expect": [
+    {
+     "id": "SUR:032",
+     "matched": "아랫배",
+     "score": 1
+    },
+    {
+     "id": "ANC:004",
+     "matched": "배",
+     "score": 1
+    }
+   ]
+  },
+  {
+   "q": "아랫배가 아파요",
+   "expect": [
+    {
+     "id": "SUR:032",
+     "matched": "아랫배",
+     "score": 2
+    },
+    {
+     "id": "ANC:004",
+     "matched": "배",
+     "score": 1
+    }
+   ]
+  },
+  {
+   "q": "무릎이 시큰거려요",
+   "expect": [
+    {
+     "id": "SUR:091",
+     "matched": "무릎",
+     "score": 2
+    }
+   ]
+  },
+  {
+   "q": "인대",
+   "expect": []
+  },
+  {
+   "q": "무릅",
+   "expect": []
+  },
+  {
+   "q": "감기",
+   "expect": []
+  },
+  {
+   "q": "zzzz",
+   "expect": []
+  },
+  {
+   "q": "",
+   "expect": []
+  },
+  {
+   "q": "   ",
+   "expect": []
+  }
+ ]
+}

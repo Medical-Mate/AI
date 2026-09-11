@@ -675,3 +675,28 @@ def test_search_results_fit_in_the_default_limit():
         (t, len(onto.search(t, limit=100))) for t in terms if len(onto.search(t, limit=100)) > 8
     ]
     assert over == []
+
+
+def test_committed_search_vectors_match_current_behaviour():
+    """docs/examples/body-search-vectors.json이 현재 동작과 같아야 한다.
+
+    안드로이드가 로컬 포팅을 이 파일로 검증한다. 규칙을 바꾸면
+    `uv run python scripts/gen_body_search_vectors.py`로 다시 만들고 함께 커밋한다.
+    """
+    import json
+
+    path = Path("docs/examples/body-search-vectors.json")
+    committed = json.loads(path.read_text(encoding="utf-8"))
+
+    onto = load_ontology()
+    assert committed["ontology_snapshot"] == onto.snapshot_id
+    limit = committed["limit"]
+    drift = []
+    for case in committed["cases"]:
+        got = [
+            {"id": n.id, "matched": m, "score": s}
+            for n, m, s in onto.search(case["q"], limit=limit)
+        ]
+        if got != case["expect"]:
+            drift.append((case["q"], case["expect"], got))
+    assert drift == [], f"{len(drift)}건 어긋남. 첫 건: {drift[0] if drift else ''}"
