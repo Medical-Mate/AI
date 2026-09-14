@@ -27,6 +27,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from medimate.api import auth
+from medimate.api.budget import BudgetGuarded, DailyBudget
 from medimate.api.state_guard import check_state
 from medimate.dialog.engine import Limits, Session
 from medimate.dialog.guard import GuardConfig
@@ -300,7 +301,8 @@ def get_extractor(request: Request) -> Extractor:
     factory = request.app.state.extractor_factory
     if factory is None:
         factory = request.app.state.extractor_factory = _default_factory()
-    return factory()
+    # 일일 상한은 **실제로 LLM을 부르는 자리**에 붙인다(테스트 대역도 같은 길로 지난다)
+    return BudgetGuarded(factory(), request.app.state.daily_budget)
 
 
 # 모듈 수준에 둔다 — `from __future__ import annotations` 아래에서 FastAPI가 문자열
@@ -319,6 +321,7 @@ def create_app(
     app.state.extractor_factory = extractor_factory
 
     auth.install(app)  # MEDIMATE_HMAC_SECRET 없으면 검증 생략
+    app.state.daily_budget = DailyBudget.from_env()  # 변수 없으면 꺼진 상태
     app.state.limits = Limits()
     app.state.ontology = None  # 첫 요청에 로드. data/ontology CSV, 로드 시 검증
     app.state.memo_factory = (
@@ -348,6 +351,9 @@ def create_app(
             # (켜졌는데 시크릿이 없으면 기동 자체가 안 된다).
             "hmac_required": bool(cfg and cfg.require),
             "signing": auth.signing_spec(),
+            # 우리 가격표 기준 **추정치**다(청구서와 다를 수 있다). 밖에서 보이게 두는 이유는
+            # `hmac_required`와 같다 — "켠 줄 알았는데 안 켜진" 상태를 없앤다. 꺼져 있으면 null
+            "llm_budget": request.app.state.daily_budget.status(),
         }
 
     @app.post("/v1/previsit/sessions", response_model=StartResponse)
@@ -495,7 +501,7 @@ def create_app(
                 return c
 
             factory = request.app.state.memo_factory = make
-        return factory()
+        return BudgetGuarded(factory(), request.app.state.daily_budget)
 
     @app.post("/v1/postvisit/memo", response_model=MemoResponse)
     def postvisit_memo(body: MemoRequest, request: Request) -> MemoResponse:
