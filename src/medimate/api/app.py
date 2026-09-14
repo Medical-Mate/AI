@@ -30,7 +30,7 @@ from medimate.api import auth
 from medimate.api.state_guard import check_state
 from medimate.dialog.engine import Limits, Session
 from medimate.dialog.guard import GuardConfig
-from medimate.dialog.memo import classify_memo
+from medimate.dialog.memo import SPLIT_VERSION, classify_memo
 from medimate.dialog.site import normalize_side, resolve_site
 from medimate.dialog.spec import PREVISIT_SPEC
 from medimate.dialog.state import SessionState
@@ -231,6 +231,10 @@ class MemoRequest(BaseModel):
     previsit_anchor_id: str | None = Field(default=None, max_length=40)  # 진료 전 부위(대조용)
     request_id: str | None = Field(default=None, max_length=128)
 
+    # 앞 응답에서 받은 분리 규칙 이름. **`labels`를 보낼 때 같이 보낸다.**
+    # 다르면 409 — 그 사이 규칙이 바뀌어 번호가 다른 문장을 가리키게 됐다는 뜻이다
+    split_version: str | None = Field(default=None, max_length=40)
+
 
 class MemoResponse(BaseModel):
     card: dict[str, Any]  # 백엔드 형식 카드(card_type=postvisit)
@@ -238,6 +242,8 @@ class MemoResponse(BaseModel):
     labels: dict[str, str]  # 번호 → 라벨(none 포함)
     dropped: list[dict[str, Any]]  # 가드가 무시한 라벨
     source: str  # server | client | none(문장 분리만)
+    # 이 `sentences` 번호를 만든 분리 규칙. 라벨을 되보낼 때 그대로 실어 보낸다
+    split_version: str = SPLIT_VERSION
     usage: TurnUsage
     request_id: str | None = None
 
@@ -494,6 +500,17 @@ def create_app(
     @app.post("/v1/postvisit/memo", response_model=MemoResponse)
     def postvisit_memo(body: MemoRequest, request: Request) -> MemoResponse:
         """메모 → 4묶음 카드. labels가 오면 LLM 없이 조립(폰 분류·1q-2 수정 모두 이 경로)."""
+        # 라벨의 번호는 우리가 나눈 문장의 주소다. 그 사이 분리 규칙이 바뀌었으면 같은 메모가
+        # 다르게 나뉘어 **예전 번호가 다른 문장을 가리킨다.** 200에 카드도 멀쩡해 보이므로
+        # 여기서 끊는다. 다시 분류하면 되는 일이라 4xx이고, 상태 충돌이라 409다
+        if body.split_version is not None and body.split_version != SPLIT_VERSION:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "분리 규칙이 바뀌었습니다. 다시 분류해 주세요 "
+                    f"(보낸 값 {body.split_version}, 서버 {SPLIT_VERSION})"
+                ),
+            )
         if body.labels is not None:
             clf = FixedLabels(body.labels)
             source = "client"
@@ -538,6 +555,7 @@ def create_app(
             labels={str(i): res.labels.get(i, "none") for i in range(len(res.sentences))},
             dropped=res.dropped,
             source=source,
+            split_version=SPLIT_VERSION,
             usage=tu,
             request_id=body.request_id,
         )

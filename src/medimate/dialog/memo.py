@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -82,10 +83,36 @@ class MemoClassifier(Protocol):
 _SPLIT = re.compile(r"(?<=[.!?。])\s+|\n+|\s+·\s+|\s*/\s*")
 
 
+# 분리 규칙의 이름. **규칙을 바꾸면 이 값도 바꾼다.**
+#
+# 왜 필요한가. `sentences`의 번호는 화면 1q-2가 라벨을 가리키는 주소다. 규칙이 바뀌면 같은
+# 메모가 다른 개수·다른 번호로 나뉘는데, 배포 순간 1p와 1q-2 사이에 떠 있던 세션은 **예전
+# 번호로 매긴 `labels`를 새 문장에 붙인다.** 200이 나가고 카드도 멀쩡해 보이는데 내용이
+# 어긋난다. 그래서 값을 실어 보내고 다르면 409로 끊는다(`api/app.py`).
+#
+# 사람이 읽는 이름으로 둔 이유: 이 값이 백엔드 로그와 409 본문에 그대로 찍힌다. 정규식
+# 해시를 쓰면 자동으로 따라 바뀌지만 `a3f1c2`가 로그에 남아도 아무도 못 읽는다. 대신
+# **이름은 그대로 두고 규칙만 고치는 일**을 테스트가 막는다 — 아래 지문이 그 장치다
+# (`tests/test_memo_split_version.py`). 규칙을 고치면 테스트가 깨지고, 그때 둘 다 고치게 된다.
+SPLIT_VERSION = "split-v1"
+
+# `_SPLIT` 패턴 문자열의 지문. 규칙과 이름이 같이 움직이는지 테스트가 이걸로 확인한다.
+# 규칙을 바꿨으면 `SPLIT_VERSION`을 올리고 이 값도 새로 박는다(테스트 실패 메시지가 새 값을 준다)
+SPLIT_RULE_DIGEST = "d3e4b5370d11"
+
+
+def split_rule_digest() -> str:
+    """현재 분리 규칙의 지문. 상수와 비교해 규칙만 바뀐 상태를 잡는다."""
+    return hashlib.sha256(_SPLIT.pattern.encode("utf-8")).hexdigest()[:12]
+
+
 def split_sentences(memo: str) -> list[str]:
     """결정론 문장 분리.
 
     마침표·물음표·느낌표 뒤 공백, 줄바꿈, ' · ', '/' 에서 나눈다. 빈 조각은 버린다.
+
+    **바꿀 때는 `SPLIT_VERSION`도 같이 올린다.** 번호가 곧 라벨의 주소라서, 규칙이 바뀌면
+    이전 번호로 매긴 라벨이 엉뚱한 문장을 가리킨다.
     """
     parts = [p.strip() for p in _SPLIT.split(memo.strip()) if p and p.strip()]
     # 너무 짧은 조각("네", "음")도 문장으로 둔다 — 버리는 건 모델이 아니라 규칙이 정한다
