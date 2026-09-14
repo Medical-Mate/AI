@@ -9,8 +9,15 @@
 2. 근거 필터: evidence가 발화의 부분 문자열(공백 무시)이 아니면 그 갱신을 버린다. 모델이 글자를
    바꿔 쓴 것("찌릿"→"치릿")은 근거가 아니다
 3. 숫자 필터: value의 숫자가 발화에 없으면 버린다. "3일 전이라고 적어"에 3일을 채우는 것을 막는다
+4. 되묻기 필터: 통증 강도를 물었는데 환자가 **숫자 없이 되물으면** 그 축 갱신을 버린다
+5. 글자 없음 필터: 발화에 글자·숫자가 하나도 없으면(이모지·자음·구두점뿐) 갱신을 전부 버린다
 
 버린 것은 전부 `dropped`에 남아 감사 로그(audit)로 나간다.
+
+4·5는 2026-09-14 추가. Nova로 추출을 돌린 88케이스에서 실패 12건이 **전부 환자가 말하지 않은
+값을 축에 넣은 것**이었고, 근거가 원문 그대로라 2·3에 안 걸렸다. 모델이 지어낸 것은 값이 아니라
+"그 발화가 그 축을 채운다"는 판단이다. 프롬프트로도 밀지만 여기서 구조로 막는다 —
+폰 경로도 같은 가드를 타므로 온디바이스에도 같이 듣는다.
 """
 
 from __future__ import annotations
@@ -29,6 +36,12 @@ class GuardConfig:
     )
     evidence_substring: bool = True  # 설계 원칙(근거는 발화 원문). 모든 프로필에서 켠다
     numbers_from_utterance: bool = True  # 같음
+    # 통증 강도를 물었는데 숫자 없이 되묻는 발화("그게 중요해요?")에서 값을 만들지 않는다.
+    # **물음표만으로 막지 않는다** — `"아프긴 한데 한 5점?"`은 물음표로 끝나지만 진짜 답이다.
+    # 숫자가 있으면 통과시킨다
+    no_severity_from_question: bool = True
+    # 글자·숫자가 하나도 없는 발화("ㅠㅠㅠㅠ 😭😭")에서는 어떤 축도 채우지 않는다
+    no_value_from_letterless: bool = True
 
     @classmethod
     def ondevice(cls) -> GuardConfig:
@@ -39,6 +52,10 @@ class GuardConfig:
 class GuardResult:
     extraction: TurnExtraction
     dropped: list[dict] = field(default_factory=list)  # {"axis","reason","value","evidence"}
+
+
+# 한글 음절·영문자·숫자가 하나라도 있는가. 자음만("ㅠㅠ")·이모지·구두점은 글자로 세지 않는다
+_HAS_LETTER = re.compile(r"[가-힣A-Za-z0-9]")
 
 
 def _norm(s: str) -> str:
@@ -56,6 +73,15 @@ def guard_extraction(
     dropped: list[dict] = []
     nu = _norm(utterance)
     utt_nums = set(re.findall(r"\d+", utterance))
+    letterless = cfg.no_value_from_letterless and not _HAS_LETTER.search(utterance)
+    # 되묻기: 강도를 물었는데 물음표로 끝나고 숫자가 하나도 없다
+    asking_back = (
+        cfg.no_severity_from_question
+        and asked_axis is not None
+        and str(getattr(asked_axis, "value", asked_axis)) == "severity"
+        and utterance.rstrip().endswith("?")
+        and not utt_nums
+    )
     # notes는 "축에 안 들어간 환자 말"이다. 발화에 없는 문장(예시 베끼기, 이력 안내문 복사)은 버린다
     notes: list[str] = []
     for n in ext.notes:
@@ -66,7 +92,11 @@ def guard_extraction(
 
     for u in ext.updates:
         reason = None
-        if cfg.only_asked_axis and asked_axis is not None and u.axis != asked_axis:
+        if letterless:
+            reason = "letterless_utterance"
+        elif asking_back and str(getattr(u.axis, "value", u.axis)) == "severity":
+            reason = "severity_from_question"
+        elif cfg.only_asked_axis and asked_axis is not None and u.axis != asked_axis:
             reason = "not_asked_axis"
         elif cfg.evidence_substring and (not u.evidence.strip() or _norm(u.evidence) not in nu):
             reason = "evidence_not_in_utterance"

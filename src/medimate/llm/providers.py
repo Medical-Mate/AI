@@ -11,11 +11,26 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from medimate.llm import prompt as prompt_v3
-from medimate.llm import prompt_small
+from medimate.llm import prompt_small, prompt_v4_nova
 from medimate.llm.base import Turn, TurnExtraction, parse_json_text
 from medimate.schema.card import Axis
 
-PROMPTS = {"v3": prompt_v3, "small": prompt_small}  # 프롬프트 계열. small은 온디바이스 소형 모델용
+# 프롬프트 계열. small은 온디바이스 소형 모델용, v4-nova는 Nova Pro 전용(인젝션·값 창작 방어)
+PROMPTS = {"v3": prompt_v3, "small": prompt_small, "v4-nova": prompt_v4_nova}
+
+# 모델 id → 프롬프트 계열. **여기 없는 모델은 v3**다.
+# Nova에만 v4를 붙이는 이유: v3 88케이스에서 Terra 85 · Sonnet 83 · Nova 76이었고 Nova의
+# 실패가 전부 "값 창작" 계열이었다. v3를 고치면 그 비교 표가 무효가 되고 재실행은 사비다.
+_MODEL_PROMPT = {"apac.amazon.nova-pro-v1:0": "v4-nova"}
+
+
+_AUTO = "auto"
+
+
+def prompt_family_for(model_id: str) -> str:
+    """이 모델이 쓸 프롬프트 계열. 운영이 모델만 바꿔도 프롬프트가 따라간다."""
+    return _MODEL_PROMPT.get(model_id, "v3")
+
 
 # $/1M tokens (input, output). 지출 가드용. 공급자 가격 페이지에서 확인 후 갱신.
 PRICES: dict[str, tuple[float, float]] = {
@@ -100,7 +115,8 @@ class LLMExtractor:
     provider: str
     model_id: str
     budget_usd: float = 0.50  # 모델당 상한. 넘으면 호출 전에 예외
-    prompt_family: str = "v3"  # PROMPTS 키. Terra는 v3, 온디바이스 후보는 small
+    # PROMPTS 키. 기본 `auto`는 모델 id로 고른다(`prompt_family_for`). eval 러너는 명시할 수 있다
+    prompt_family: str = "auto"
     prompt_version: str = ""  # 비우면 계열의 PROMPT_VERSION
     # local 공급자용 요청별 JSON 스키마. None이면 MEDIMATE_LOCAL_JSON_SCHEMA 파일을 쓴다
     response_schema: dict | None = None
@@ -108,6 +124,8 @@ class LLMExtractor:
     _client: object = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
+        if self.prompt_family == _AUTO:
+            self.prompt_family = prompt_family_for(self.model_id)
         if not self.prompt_version:
             self.prompt_version = PROMPTS[self.prompt_family].PROMPT_VERSION
 
