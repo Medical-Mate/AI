@@ -21,8 +21,11 @@ AI 파트의 **만드는 일은 거의 끝났다.** 챗봇①(진료 전 카드)
 - **운영 서버는 Nova Pro로 떠 있다**(`MEDIMATE_MODEL=apac.amazon.nova-pro-v1:0`). 같은 88케이스·같은 가드로
   **Nova 76/88 · Terra 85 · Sonnet 83, 안전 위반 셋 다 0**(2026-09-14, `evals/RESULTS.md` "extract-v3 · Nova Pro").
   실패 12건이 전부 **환자가 말하지 않은 값을 축에 넣은 것**이고 근거가 원문 그대로라 D4 가드에 안 걸린다.
-  **웹 데모는 폰 모델이 없어 이 경로로 매 턴 돈다.** 그대로 갈지 프롬프트·가드를 손댈지는 미정 —
-  프롬프트를 바꾸면 Terra·Sonnet도 다시 돌려야 하고 그건 사비다
+  **웹 데모는 폰 모델이 없어 이 경로로 매 턴 돈다.**
+- **2026-09-14 결정: Nova 전용 프롬프트 `extract-v4-nova` + 엔진 가드 2종.** 같은 88케이스에서
+  **76 → 84**, 안전 위반 0. **J02 인젝션이 0/3 → 3/3.** Terra·Sonnet은 다시 돌리지 않았다 —
+  v4는 Nova 전용이라 v3 세 모델 표와 같은 줄에 놓지 않는다. 입력 토큰이 1.59배라 턴당
+  $0.00275(v3 $0.00185). `evals/RESULTS.md` "extract-v4-nova"
 - 갤럭시 S24 울트라 실측(선풍기 있었음): CPU 첫 턴 15초·발열로 죽음 / **NPU 첫 턴 1.7초·턴당 3.4초·안정 → NPU 채택**
 - API: 무상태. `POST /v1/previsit/sessions`(profile server|ondevice), `POST /v1/previsit/turns`(utterance 또는 extraction, selections, request_id), `GET /v1/ontology/body-map`. HMAC 인증, Dockerfile 있음
 - 계약: `docs/api-previsit.md`. 결과 수치: `evals/RESULTS.md`
