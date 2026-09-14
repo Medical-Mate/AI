@@ -53,6 +53,22 @@
 | `GET /v1/ontology/search` | 폼 입력으로 부위 찾기(유의어·한영 오타 복원, LLM 없음) | 〃 |
 | `POST /v1/postvisit/memo` | 진료 후 메모 → 4묶음 카드. `labels`를 주면 LLM 없이 재조립 | [`docs/api-postvisit.md`](./docs/api-postvisit.md) |
 
+**요청이 실제로 어떻게 생겼는지는 [`docs/examples/demo-session.json`](./docs/examples/demo-session.json)을 보면 된다** —
+완주 세션 하나의 요청·응답 전문이다(실제 API를 태워 저장한 것이고, 드리프트는 테스트가 잡는다).
+웹 데모가 서버 없이 화면을 그릴 때 쓰는 폴백이기도 하다.
+
+| 화면 입력 | 어디에 실나 | 어느 턴에 |
+|---|---|---|
+| 인체도 부위 | `POST /sessions`의 `site_node_id` + `side` | 세션 시작 |
+| 자유 발화·칩 직접 입력 | 턴의 `utterance` | 매 턴 |
+| **통증 강도 슬라이더(1d)** | 턴의 `selections: [{axis: "severity", value: "3 (꽤 아파요)"}]` | **아무 턴이나. 단 `ended` 전에** |
+| 온보딩 프로필 | 턴의 `patient_profile` | **마지막 턴에만**(`question_candidates: true`와 같이) |
+
+`severity`는 **문답으로 묻지 않는 축이다.** NRS를 말로 물으면 환자가 숫자를 지어내고 그 값은
+근거가 없어서, 화면에서 고른 값만 받는다(`evidence`가 `[선택] …`이 되고 `source`는 `selection`).
+`selections`를 안 보내면 카드의 심각도는 끝까지 빈다. `ended`인 턴은 카드를 바꾸지 않으므로
+**종료 전에 보내야 한다.**
+
 배포 사양·요구사항은 [`docs/deploy-requirements.md`](./docs/deploy-requirements.md) (1 vCPU · 512MB, 무상태, GPU 없음).
 
 ---
