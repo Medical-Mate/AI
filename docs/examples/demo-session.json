@@ -2042,7 +2042,7 @@
           "axes": {
             "findings": {
               "status": "filled",
-              "value": "위염 초기라고 하셨어요.",
+              "value": "위염 초기",
               "evidence": [
                 "위염 초기라고 하셨어요."
               ],
@@ -2050,7 +2050,7 @@
             },
             "tests": {
               "status": "filled",
-              "value": "혈액검사 했고 결과는 다음에 알려준대요.",
+              "value": "혈액검사 했고 결과는 다음에 알려준다",
               "evidence": [
                 "혈액검사 했고 결과는 다음에 알려준대요."
               ],
@@ -2058,7 +2058,7 @@
             },
             "medication_instructions": {
               "status": "filled",
-              "value": "약은 2주분이고 커피랑 매운 거 줄이래요.",
+              "value": "약은 2주분이고 커피랑 매운 거 줄이기",
               "evidence": [
                 "약은 2주분이고 커피랑 매운 거 줄이래요."
               ],
@@ -2066,7 +2066,7 @@
             },
             "follow_up": {
               "status": "filled",
-              "value": "2주 뒤에 다시 오라고 하셨어요.",
+              "value": "2주 뒤 (9월 26일 전후)",
               "evidence": [
                 "2주 뒤에 다시 오라고 하셨어요."
               ],
@@ -2110,7 +2110,7 @@
         },
         "dropped": [],
         "source": "server",
-        "split_version": "split-v2",
+        "split_version": "split-v3",
         "usage": {
           "input_tokens": 0,
           "output_tokens": 0,

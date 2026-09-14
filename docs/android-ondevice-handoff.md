@@ -89,7 +89,7 @@ API 필드 정의: `docs/api-previsit.md` "온디바이스 프로필 — 예정"
 | 모델·엔진·추론 설정 | 위 표와 동일 (Qwen3-1.7B-Q4_0, NPU, temperature 0 · seed 42 · reasoning off) | 추가 다운로드 없음 |
 | 프롬프트 | `memo-small-v4` — `evals/ondevice/prompt-memo-small-v4.system.txt` | 시스템 프롬프트 전문(약 1,000토큰). 사용자 메시지 형식은 벡터의 `user` |
 | 스키마 | `evals/ondevice/memo_labels.schema.json` | **번호 키 객체** `{"0":라벨,"1":라벨,…}`. 파일은 N=4 예시이고, **요청마다 문장 수 N에 맞춰 키 "0"…"N-1"을 전부 required로 생성**해 `response_format`으로 넘긴다. 라벨 enum 5개: findings / tests / medication_instructions / follow_up / none |
-| 테스트 벡터 | `evals/ondevice/vectors-memo-qwen3-1.7b-q4_0-memo-small-v4.jsonl` (33) | 각 줄: `system`, `user`, `sentences`, `settings`, `expected_output`(PC 원문), `expected_labels`(사람 정답), `pc_latency_s`. PC 라벨 정확도 **118/127 = 92.9%**(2026-09-14, `split-v2`로 30→33개. 이전 107/115 = 93.0%) |
+| 테스트 벡터 | `evals/ondevice/vectors-memo-qwen3-1.7b-q4_0-memo-small-v4.jsonl` (34) | 각 줄: `system`, `user`, `sentences`, `settings`, `expected_output`(PC 원문), `expected_labels`(사람 정답), `pc_latency_s`. PC 라벨 정확도 **123/132 = 93.2%**(2026-09-14, `split-v3`. PM24 추가로 34개) |
 
 흐름 (`docs/api-postvisit.md`):
 

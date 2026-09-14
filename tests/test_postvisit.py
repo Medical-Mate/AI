@@ -53,8 +53,9 @@ def test_classify_memo_buckets_sentences_verbatim_and_keeps_unsorted():
     )
     c = res.card
     assert c.memo == memo and c.clinic == "서울OO병원 내과"
-    assert c.axes[PostAxis.FINDINGS].value == "위염 초기라고 하셨어요."
-    assert c.axes[PostAxis.FINDINGS].evidence == ["위염 초기라고 하셨어요."]  # 원문 그대로
+    # value는 어미를 정리한 줄, evidence는 **문장 원문 그대로**(2026-09-14 ㉡)
+    assert c.axes[PostAxis.FINDINGS].value == "위염 초기"
+    assert c.axes[PostAxis.FINDINGS].evidence == ["위염 초기라고 하셨어요."]
     assert c.axes[PostAxis.TESTS].status == FieldStatus.FILLED
     assert c.unsorted == ["병원이 붐볐다."]  # 버리지 않는다
     assert c.follow_up_date is not None
@@ -72,7 +73,9 @@ def test_classify_memo_guards_bad_indices_and_marks_missing_buckets_unknown():
             return MemoLabels.model_validate({"labels": ["findings", "none", "tests"]})
 
     res = classify_memo("감기래요. 해열제 먹으래요.", Bad())
-    assert res.card.axes[PostAxis.FINDINGS].value == "감기래요."
+    # 규칙에 없는 어미는 그대로 둔다. 끝 구두점만 뗀다
+    assert res.card.axes[PostAxis.FINDINGS].value == "감기래요"
+    assert res.card.axes[PostAxis.FINDINGS].evidence == ["감기래요."]
     assert res.card.axes[PostAxis.TESTS].status == FieldStatus.UNKNOWN  # 메모에 없었다
     assert [d["reason"] for d in res.dropped] == ["extra_label"]
     assert res.card.unsorted == ["해열제 먹으래요."]  # none 라벨 문장은 unsorted
