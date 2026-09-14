@@ -205,6 +205,47 @@ def _topics(text: str) -> set[str]:
     return {name for name, words in _TOPIC.items() if any(w in low for w in words)}
 
 
+# 띄어쓰기 경계. **동사 없이 명사만 나열하는 메모**가 실제로 온다(2026-09-14).
+#   "3일치 약처방 4일후 재방문"   → 연결어미도 구두점도 없다. 한 문장으로 가면 약 처방이 묻힌다
+#   "혈압약 처방 2주 후 재검"      → 같은 모양
+# 연결어미 규칙은 `-고`·`-며`를 요구하므로 이런 전보문을 못 나눈다.
+#
+# **주제 검사만으로는 모자랐다.** 띄어쓰기는 한 문장에 수십 개라 자리가 훨씬 많고, 34벡터
+# 회귀에서 6개가 깨졌다 — `"짜게 먹지" / "말라고 하셨어요"`, `"갑상선 수치가" / "약간 높다고"`
+# 처럼 **술어 한가운데**서 잘렸다. 그래서 세 조건을 더 건다.
+#
+#   1. 앞 조각이 조사·연결어미로 끝나지 않는다 — `~는`·`~가`·`~을`·`~지`로 끝나면 뒤에 술어가
+#      온다는 뜻이다. 거기서 자르면 문장이 부서진다
+#   2. 양쪽이 **낱말 두 개 이상**이다 — `"예약함."` 같은 한 낱말 조각은 라벨을 받아도 뜻이 없다
+#   3. 양쪽이 공백 빼고 **4자 이상**이다 — `"다음 주"`(3자)·`"예약함"`(3자)에서 잘리는 것을 막는다.
+#
+# 셋을 걸고 34벡터를 다시 돌려 회귀 0을 확인했다.
+_SPACE = re.compile(r"\s+")
+# 이 글자로 끝나면 뒤에 술어가 온다. 조사와 연결어미의 마지막 글자다
+_DANGLING = tuple("은는이가을를에의로와과도만지고며서면")
+_MIN_TOKENS = 2
+_MIN_CHARS = 4  # 공백 제외. 5로 올리면 "약 3일분 | 2주 뒤 다시 오세요"가 한 칸 밀린다
+
+
+def _substantial(part: str) -> bool:
+    return len(part.split()) >= _MIN_TOKENS and len(part.replace(" ", "")) >= _MIN_CHARS
+
+
+def _split_at_space(sentence: str) -> list[str]:
+    """띄어쓰기에서 나눈다. 연결어미 규칙과 같은 주제 조건 + 위 셋."""
+    for m in _SPACE.finditer(sentence):
+        head, tail = sentence[: m.start()], sentence[m.end() :]
+        if not _substantial(head) or not _substantial(tail):
+            continue
+        if head.rstrip("·,.。!?").endswith(_DANGLING):
+            continue
+        ht, tt = _topics(head), _topics(tail)
+        if not ht or not tt or ht & tt:
+            continue
+        return [head.strip()] + _split_at_space(tail.strip())
+    return [sentence]
+
+
 def _split_clauses(sentence: str) -> list[str]:
     """한 문장을 연결어미에서 나눈다. **주제가 갈릴 때만.**
 
@@ -227,7 +268,8 @@ def _split_clauses(sentence: str) -> list[str]:
             continue
         # 뒤쪽도 다시 본다 — 한 문장에 세 주제가 오는 일이 있다
         return [head_full.strip()] + _split_clauses(tail.strip())
-    return [sentence]
+    # 연결어미가 없으면 띄어쓰기 경계를 본다(명사만 나열한 메모)
+    return _split_at_space(sentence)
 
 
 # 분리 규칙의 이름. **규칙을 바꾸면 이 값도 바꾼다.**
@@ -241,11 +283,11 @@ def _split_clauses(sentence: str) -> list[str]:
 # 해시를 쓰면 자동으로 따라 바뀌지만 `a3f1c2`가 로그에 남아도 아무도 못 읽는다. 대신
 # **이름은 그대로 두고 규칙만 고치는 일**을 테스트가 막는다 — 아래 지문이 그 장치다
 # (`tests/test_memo_split_version.py`). 규칙을 고치면 테스트가 깨지고, 그때 둘 다 고치게 된다.
-SPLIT_VERSION = "split-v3"
+SPLIT_VERSION = "split-v4"
 
 # 분리 규칙 전체의 지문. 규칙과 이름이 같이 움직이는지 테스트가 이걸로 확인한다.
 # 규칙을 바꿨으면 `SPLIT_VERSION`을 올리고 이 값도 새로 박는다(테스트 실패 메시지가 새 값을 준다)
-SPLIT_RULE_DIGEST = "5ea1e998aec8"
+SPLIT_RULE_DIGEST = "63baa8a1d49c"
 
 
 def split_rule_digest() -> str:
@@ -253,11 +295,18 @@ def split_rule_digest() -> str:
 
     **문장 경계를 바꿀 수 있는 것을 전부 넣는다.** 정규식만 해싱하면 주제 사전에 단어를
     하나 더한 날 번호가 안 움직인다 — 그때 나뉘는 문장이 달라지는데 409가 안 난다.
+
+    2026-09-14에 실제로 그랬다. 띄어쓰기 규칙(`_SPACE`·`_DANGLING`·최소 크기)을 새로 넣었는데
+    이 목록에 안 더해서 **지문이 그대로였다.** 이 함수가 막으라고 있는 사고가 이 함수에 났다.
+    규칙 재료를 새로 만들면 여기에도 넣는다.
     """
     material = [
         _SPLIT.pattern,
         _CLAUSE.pattern,
+        _SPACE.pattern,
         repr(_QUOTATIVE),
+        repr(_DANGLING),
+        repr((_MIN_TOKENS, _MIN_CHARS)),
         repr(sorted((k, tuple(sorted(v))) for k, v in _TOPIC.items())),
     ]
     return hashlib.sha256("\x1f".join(material).encode("utf-8")).hexdigest()[:12]
@@ -485,18 +534,6 @@ def tidy_value(text: str) -> str:
     return _TRAILING.sub("", s).strip() or s
 
 
-def _follow_up_line(fu: FollowUpDate) -> str:
-    """`{메모에서 뽑은 말} ({M월 D일}[ 전후])`.
-
-    생성이 아니라 **조합**이다. 앞은 메모에 있던 말이고 뒤는 진료일에서 계산한 날짜다.
-    `approximate`면 "전후"를 붙인다 — "2주 뒤"는 날짜를 특정하지 않는 말이라,
-    안 붙이면 카드가 9월 26일로 못박은 것처럼 읽힌다.
-    """
-    d = date.fromisoformat(fu.date)
-    stamp = f"{d.month}월 {d.day}일" + (" 전후" if fu.approximate else "")
-    return f"{fu.text} ({stamp})"
-
-
 @dataclass
 class MemoResult:
     card: PostVisitCard
@@ -565,8 +602,15 @@ def classify_memo(
             fu = followup_date(s, visit_date, prev_text=sentences[i - 1] if i else None)
             if fu:
                 card.follow_up_date = fu
-                # 재방문 줄은 **우리 필드끼리 조합한다** — 새 문장을 만드는 것이 아니다.
-                # `text`는 메모에서 뽑은 말, 날짜는 결정론 계산. 둘 다 이미 카드에 있는 값이다.
-                card.axes[PostAxis.FOLLOW_UP].value = _follow_up_line(fu)
+                # **`value`에는 날짜를 넣지 않는다.**
+                #
+                # 2026-09-14에 여기서 `"{text} ({M월 D일} 전후)"`를 조합해 넣었다가 화면에
+                # 날짜가 두 번 찍혔다("재방문 4일후 (2026년 9월 21일) (2026년 9월 21일)").
+                # `follow_up_date`가 이미 같은 날짜를 들고 있었고, 조합할 수 있는 자리가 둘이
+                # 되니 양쪽이 다 그렸다.
+                #
+                # 층을 되돌린다. `value`는 다른 축과 같게 **메모에서 온 말**만 담고,
+                # 날짜의 주인은 `follow_up_date` 하나다. 화면 문장은 앱이 한 번만 만든다 —
+                # 우리가 계산한 값을 환자 말 옆에 끼워 넣는 순간 그 줄의 주인이 둘이 된다.
                 break
     return MemoResult(card, sentences, labels, dropped)

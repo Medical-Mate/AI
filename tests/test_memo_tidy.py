@@ -160,7 +160,63 @@ def test_the_screen_memo_produces_a_readable_card():
 
     assert ax[PostAxis.FINDINGS].value == "위염 초기"  # 예전에는 줄 자체가 없었다
     assert ax[PostAxis.MEDICATION_INSTRUCTIONS].value == "2주 약 먹고 · 커피랑 매운 거 줄이기"
-    assert ax[PostAxis.FOLLOW_UP].value == "2주 (9월 26일 전후)"
+    # **`value`에 날짜를 넣지 않는다.** 날짜의 주인은 `follow_up_date` 하나다
+    assert ax[PostAxis.FOLLOW_UP].value == "다시 오기"
+    assert "9월" not in ax[PostAxis.FOLLOW_UP].value
     assert res.card.follow_up_date.date == "2026-09-26"  # 예전에는 null이었다
     # evidence는 원문 그대로 — 다듬은 것은 value뿐이다
     assert ax[PostAxis.FINDINGS].evidence == ["위염 초기라고 하셨고"]
+
+
+# --- 날짜의 주인은 하나다 (2026-09-14) --------------------------------------
+
+
+def test_the_date_appears_in_one_place_only():
+    """화면에 날짜가 두 번 찍혔다 — `"재방문 4일후 (2026년 9월 21일) (2026년 9월 21일)"`.
+
+    `value`에 `"{말} ({M월 D일} 전후)"`를 조합해 넣었는데 `follow_up_date`가 이미 같은 날짜를
+    들고 있었다. **조합할 수 있는 자리가 둘이 되면 양쪽이 다 그린다.** 층을 되돌린다 —
+    `value`는 다른 축과 같게 메모에서 온 말만 담는다.
+    """
+    res = classify_memo(
+        "3일치 약처방 4일후 재방문", Fixed(["medication_instructions", "follow_up"]), visit_date=V
+    )
+    from medimate.schema.postvisit import PostAxis
+
+    value = res.card.axes[PostAxis.FOLLOW_UP].value
+    assert value and "월" not in value and "(" not in value
+    assert res.card.follow_up_date.date == "2026-09-16"  # 날짜는 여기만(V + 4일)
+
+
+# --- 띄어쓰기만 있는 전보문 -------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "memo,expected",
+    [
+        # 실제 입력. 연결어미도 구두점도 없다 — 한 문장으로 가면 약 처방이 재방문에 묻힌다
+        ("3일치 약처방 4일후 재방문", ["3일치 약처방", "4일후 재방문"]),
+        ("약 3일분 2주 뒤 다시 오세요", ["약 3일분", "2주 뒤 다시 오세요"]),
+    ],
+)
+def test_telegraphic_memo_splits(memo, expected):
+    assert split_sentences(memo) == expected
+
+
+@pytest.mark.parametrize(
+    "memo",
+    [
+        # 술어 한가운데서 자르면 문장이 부서진다 — 조사·연결어미로 끝나면 자르지 않는다
+        "짜게 먹지 말라고 하셨어요.",
+        "갑상선 수치가 약간 높다고.",
+        "위내시경은 다다음주 월요일 아침으로 잡았다.",
+        "다음 주 화요일에 MRI 찍기로 했어요",
+        # 한 낱말·짧은 조각만 남는 자리
+        "10월 2일 시야검사 예약함.",
+        "엑스레이는 이상 없음.",
+        # 주제가 한쪽뿐이면 안 자른다
+        "혈압약 처방 2주 후 재검",
+    ],
+)
+def test_telegraphic_memo_does_not_over_split(memo):
+    assert split_sentences(memo) == [memo]
