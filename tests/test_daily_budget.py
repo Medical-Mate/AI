@@ -72,7 +72,31 @@ def test_health_shows_the_cap_and_what_was_spent(monkeypatch):
     c, _ = _client("5.0", monkeypatch)
     b = c.get("/health").json()["llm_budget"]
     assert b["cap_usd"] == 5.0 and b["spent_today_usd"] == 0.0
-    assert b["resets_at"].endswith("+00:00")  # UTC 자정
+    assert b["resets_at"].endswith("T00:00:00+09:00")  # 기본은 KST 자정
+
+
+def test_the_day_boundary_is_seoul_midnight_by_default(monkeypatch):
+    """**UTC 자정은 KST 오전 9시다.** 데모 날 오후에 상한이 차면 다음 날 아침까지 안 풀린다.
+
+    상한은 새는 것을 막는 장치이지 하루를 날리는 장치가 아니다.
+    """
+    monkeypatch.delenv("MEDIMATE_BUDGET_RESET_TZ", raising=False)
+    c, _ = _client("5.0", monkeypatch)
+    assert c.get("/health").json()["llm_budget"]["resets_at"].endswith("T00:00:00+09:00")
+
+
+def test_the_timezone_can_be_changed(monkeypatch):
+    monkeypatch.setenv("MEDIMATE_BUDGET_RESET_TZ", "UTC")
+    c, _ = _client("5.0", monkeypatch)
+    assert c.get("/health").json()["llm_budget"]["resets_at"].endswith("T00:00:00+00:00")
+
+
+def test_a_bad_timezone_is_not_silently_utc(monkeypatch):
+    """오타로 조용히 UTC가 되면 리셋 시각이 9시간 어긋난다"""
+    monkeypatch.setenv("MEDIMATE_BUDGET_RESET_TZ", "Asia/Seoul_오타")
+    monkeypatch.setenv(ENV_CAP, "5.0")
+    with pytest.raises(ValueError, match="MEDIMATE_BUDGET_RESET_TZ"):
+        DailyBudget.from_env().status()
 
 
 def test_a_bad_value_is_not_silently_off(monkeypatch):

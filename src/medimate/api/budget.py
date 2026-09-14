@@ -22,12 +22,29 @@ from __future__ import annotations
 import os
 import threading
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from medimate.llm.providers import BudgetExceeded
 
 ENV_CAP = "MEDIMATE_DAILY_BUDGET_USD"
+ENV_TZ = "MEDIMATE_BUDGET_RESET_TZ"
+
+# 하루의 경계를 어느 시간대로 볼 것인가. **기본이 UTC가 아니다.**
+# UTC 자정은 KST 오전 9시다 — 데모 날 오후에 상한이 차면 **다음 날 아침까지 안 풀린다.**
+# 상한은 새는 것을 막는 장치이지 하루를 날리는 장치가 아니므로, 사람이 쓰는 시간대에 맞춘다.
+DEFAULT_TZ = "Asia/Seoul"
+
+
+def _tz() -> ZoneInfo:
+    name = (os.getenv(ENV_TZ) or "").strip() or DEFAULT_TZ
+    try:
+        return ZoneInfo(name)
+    except Exception:  # noqa: BLE001 — 오타로 조용히 UTC가 되면 리셋 시각이 9시간 어긋난다
+        raise ValueError(
+            f"{ENV_TZ}={name!r} — 알 수 없는 시간대입니다(예: Asia/Seoul, UTC)"
+        ) from None
 
 
 class DailyBudgetExceeded(BudgetExceeded):
@@ -39,21 +56,22 @@ class DailyBudgetExceeded(BudgetExceeded):
     """
 
 
-def _utc_today() -> date:
-    return datetime.now(UTC).date()
+def _today() -> date:
+    return datetime.now(_tz()).date()
 
 
-def _next_utc_midnight() -> str:
-    tomorrow = _utc_today() + timedelta(days=1)
-    return datetime.combine(tomorrow, time.min, tzinfo=UTC).isoformat()
+def _next_midnight() -> str:
+    """다음 리셋 시각. **그 시간대의 오프셋이 붙은 ISO**로 낸다 — 백엔드가 눈으로 읽는 값이다."""
+    tomorrow = _today() + timedelta(days=1)
+    return datetime.combine(tomorrow, time.min, tzinfo=_tz()).isoformat()
 
 
 @dataclass
 class DailyBudget:
-    """UTC 자정 기준 당일 누적. `cap_usd`가 None이면 꺼진 상태."""
+    """리셋 시간대(기본 `Asia/Seoul`) 자정 기준 당일 누적. `cap_usd`가 None이면 꺼진 상태."""
 
     cap_usd: float | None = None
-    _day: date = field(default_factory=_utc_today)
+    _day: date = field(default_factory=_today)
     _spent: float = 0.0
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
@@ -77,7 +95,7 @@ class DailyBudget:
 
     def _roll(self) -> None:
         """날이 바뀌었으면 0으로. 호출자가 락을 잡고 있어야 한다."""
-        today = _utc_today()
+        today = _today()
         if today != self._day:
             self._day, self._spent = today, 0.0
 
@@ -90,7 +108,7 @@ class DailyBudget:
             if self._spent >= self.cap_usd:  # type: ignore[operator]
                 raise DailyBudgetExceeded(
                     f"일일 LLM 예산 소진(${self._spent:.4f} / ${self.cap_usd}), "
-                    f"{_next_utc_midnight()}에 초기화"
+                    f"{_next_midnight()}에 초기화"
                 )
 
     def record(self, cost_usd: float) -> None:
@@ -110,7 +128,7 @@ class DailyBudget:
             return {
                 "cap_usd": self.cap_usd,
                 "spent_today_usd": round(self._spent, 6),
-                "resets_at": _next_utc_midnight(),
+                "resets_at": _next_midnight(),
             }
 
 
