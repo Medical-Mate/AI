@@ -24,6 +24,8 @@ from datetime import date
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from medimate.api import auth
@@ -260,6 +262,29 @@ class TurnResponse(BaseModel):
 
 
 # --- 앱 -----------------------------------------------------------------
+def _install_validation_handler(app: FastAPI) -> None:
+    """422 본문에서 **요청 값을 벗긴다.** `loc`·`msg`·`type`만 남긴다.
+
+    pydantic 기본 핸들러는 `detail[].input`에 문제가 된 값을 그대로 넣는다. 그래서 잘못된
+    요청 하나가 `patient_profile`(복용약·기저질환·알러지)이나 `state`(환자 발화 원문)를
+    **응답에 실어 되돌려준다.**
+
+    백엔드는 `detail`을 밖으로 안 내보내지만, 웹이 우리를 직접 부르는 구성(CORS)이 되면
+    그 본문이 **브라우저 콘솔과 에러 리포트에 남는다.** 409 `detail`에 메모를 안 넣기로 한 것과
+    같은 자리다 — 진단에 필요한 것은 "어느 필드가 왜 틀렸나"이지 그 값이 아니다.
+
+    `loc`은 남긴다. 백엔드가 그걸로 어느 필드인지 본다.
+    """
+
+    @app.exception_handler(RequestValidationError)
+    def _handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+        safe = [
+            {"loc": list(e.get("loc", [])), "msg": e.get("msg", ""), "type": e.get("type", "")}
+            for e in exc.errors()
+        ]
+        return JSONResponse(status_code=422, content={"detail": safe})
+
+
 CORS_ENV = "MEDIMATE_CORS_ORIGINS"
 
 
@@ -353,6 +378,7 @@ def create_app(
     )
     app.state.extractor_factory = extractor_factory
 
+    _install_validation_handler(app)
     auth.install(app)  # MEDIMATE_HMAC_SECRET 없으면 검증 생략
     app.state.daily_budget = DailyBudget.from_env()  # 변수 없으면 꺼진 상태
     app.state.cors_origins = _install_cors(app)
