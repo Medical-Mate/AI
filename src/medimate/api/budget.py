@@ -8,9 +8,10 @@ API는 요청마다 새 인스턴스를 만든다(`app._default_factory`). 그�
 **끄는 것이 기본이다.** `MEDIMATE_DAILY_BUDGET_USD`가 없으면 아무 일도 하지 않는다 —
 로컬·테스트·eval 러너가 이 파일 때문에 달라지면 안 된다. 운영 env에서만 켠다.
 
-**한계를 알고 둔다.** 카운터는 메모리에 있어 **컨테이너를 재시작하면 0이 된다.** 재시작해도
-남는 저장은 지금 만들지 않는다 — 우리 쪽 상한은 "실수로 새는 것"을 막는 장치이고, 진짜 상한은
-클라우드 쪽 예산 알림이다. 둘이 같은 층에 있으면 하나가 죽었을 때 둘 다 죽는다.
+**영속화는 선택이다.** 기본은 메모리라 **컨테이너를 재시작하면 0이 된다.**
+`MEDIMATE_BUDGET_STATE_FILE`에 경로를 줄 때만 날짜와 누적액을 파일에 남긴다. 저장 실패로
+문진을 끊지는 않고 메모리 카운터를 계속 쓰되 `/health`의 `persisted`를 false로 내려 운영자가
+상한이 재배포를 견디지 못하는 상태를 볼 수 있게 한다. 진짜 상한은 별도 AWS 예산 알림이다.
 
 그리고 여기서 세는 것은 **우리 가격표 기준 추정치**다(`providers.PRICES`). 청구서와 다를 수
 있으므로 `/health`의 `llm_budget`으로 그대로 내보인다 — 켠 줄 알았는데 안 켜진 상태,
@@ -19,15 +20,41 @@ API는 요청마다 새 인스턴스를 만든다(`app._default_factory`). 그�
 
 from __future__ import annotations
 
+import json
+import logging
+import math
 import os
+import tempfile
 import threading
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta
+from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from medimate.llm.providers import BudgetExceeded
 
 ENV_CAP = "MEDIMATE_DAILY_BUDGET_USD"
+ENV_STATE_FILE = "MEDIMATE_BUDGET_STATE_FILE"
+ENV_TZ = "MEDIMATE_BUDGET_RESET_TZ"
+STATE_VERSION = 1
+
+logger = logging.getLogger(__name__)
+
+# 하루의 경계를 어느 시간대로 볼 것인가. **기본이 UTC가 아니다.**
+# UTC 자정은 KST 오전 9시다 — 데모 날 오후에 상한이 차면 **다음 날 아침까지 안 풀린다.**
+# 상한은 새는 것을 막는 장치이지 하루를 날리는 장치가 아니므로, 사람이 쓰는 시간대에 맞춘다.
+DEFAULT_TZ = "Asia/Seoul"
+
+
+def _tz() -> ZoneInfo:
+    name = (os.getenv(ENV_TZ) or "").strip() or DEFAULT_TZ
+    try:
+        return ZoneInfo(name)
+    except Exception:  # noqa: BLE001 — 오타로 조용히 UTC가 되면 리셋 시각이 9시간 어긋난다
+        raise ValueError(
+            f"{ENV_TZ}={name!r} — 알 수 없는 시간대입니다(예: Asia/Seoul, UTC)"
+        ) from None
 
 
 class DailyBudgetExceeded(BudgetExceeded):
@@ -39,22 +66,28 @@ class DailyBudgetExceeded(BudgetExceeded):
     """
 
 
-def _utc_today() -> date:
-    return datetime.now(UTC).date()
+def _today() -> date:
+    return datetime.now(_tz()).date()
 
 
-def _next_utc_midnight() -> str:
-    tomorrow = _utc_today() + timedelta(days=1)
-    return datetime.combine(tomorrow, time.min, tzinfo=UTC).isoformat()
+def _next_midnight() -> str:
+    """다음 리셋 시각. **그 시간대의 오프셋이 붙은 ISO**로 낸다 — 백엔드가 눈으로 읽는 값이다."""
+    tomorrow = _today() + timedelta(days=1)
+    return datetime.combine(tomorrow, time.min, tzinfo=_tz()).isoformat()
 
 
 @dataclass
 class DailyBudget:
-    """UTC 자정 기준 당일 누적. `cap_usd`가 None이면 꺼진 상태."""
+    """리셋 시간대(기본 `Asia/Seoul`) 자정 기준 당일 누적. `cap_usd`가 None이면 꺼진 상태."""
 
     cap_usd: float | None = None
-    _day: date = field(default_factory=_utc_today)
+    state_file: Path | None = None
+    _day: date = field(default_factory=_today)
     _spent: float = 0.0
+    _persisted: bool = False
+    # 마지막으로 로그에 남긴 쓰기 상태. None이면 아직 한 번도 안 남겼다는 뜻이라
+    # 첫 결과는 성공이든 실패든 한 줄 남는다. 그 뒤로는 **바뀔 때만** 남긴다.
+    _logged_persist_ok: bool | None = None
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
     @classmethod
@@ -69,7 +102,10 @@ class DailyBudget:
             raise ValueError(f"{ENV_CAP}={raw!r} — 숫자여야 합니다(예: 5.0)") from None
         if cap <= 0:
             raise ValueError(f"{ENV_CAP}={raw!r} — 0보다 커야 합니다. 끄려면 변수를 비우세요")
-        return cls(cap_usd=cap)
+        state_path = (os.getenv(ENV_STATE_FILE) or "").strip()
+        budget = cls(cap_usd=cap, state_file=Path(state_path) if state_path else None)
+        budget._restore()
+        return budget
 
     @property
     def enabled(self) -> bool:
@@ -77,9 +113,91 @@ class DailyBudget:
 
     def _roll(self) -> None:
         """날이 바뀌었으면 0으로. 호출자가 락을 잡고 있어야 한다."""
-        today = _utc_today()
+        today = _today()
         if today != self._day:
             self._day, self._spent = today, 0.0
+            self._persist()
+
+    def _restore(self) -> None:
+        """선택한 상태 파일을 읽는다. 깨진 파일·권한 오류는 상한 자체를 끄지 않는다."""
+        if self.state_file is None:
+            return
+        with self._lock:
+            try:
+                raw = json.loads(self.state_file.read_text(encoding="utf-8"))
+                if not isinstance(raw, dict) or raw.get("version") != STATE_VERSION:
+                    raise ValueError("지원하지 않는 상태 파일 형식")
+                saved_day = date.fromisoformat(str(raw["day"]))
+                saved_spent = float(raw["spent_usd"])
+                if not math.isfinite(saved_spent) or saved_spent < 0:
+                    raise ValueError("spent_usd는 0 이상의 유한한 숫자여야 함")
+            except FileNotFoundError:
+                # 첫 기동에는 오늘 0원 상태를 만들어, 볼륨 쓰기 가능 여부도 바로 드러낸다.
+                self._persist()
+                return
+            except (OSError, KeyError, TypeError, ValueError) as exc:
+                self._persisted = False
+                logger.warning("예산 상태 파일을 읽지 못해 메모리 카운터로 계속합니다: %s", exc)
+                return
+
+            today = _today()
+            if saved_day == today:
+                self._day, self._spent = saved_day, saved_spent
+                self._persisted = True
+            else:
+                self._day, self._spent = today, 0.0
+                self._persist()
+
+    def _log_write_state(self, ok: bool, exc: OSError | None = None) -> None:
+        """쓰기 상태가 **바뀔 때만** 로그에 남긴다.
+
+        볼륨이 안 잡힌 채 배포되면 쓰기는 LLM 호출마다 일어난다. 매번 경고를 내면
+        심사 4주짜리 공개 데모의 로그가 이 한 줄로 덮이고 정작 봐야 할 것이 묻힌다.
+        지금 파일이 살아 있는지는 `/health`의 `persisted`가 들고 있으니 로그가 되풀이할 일이 아니다.
+        다만 **첫 실패는 반드시 남긴다** — 조용히 실패하는 쪽이 더 나쁘다.
+        """
+        if self._logged_persist_ok is ok:
+            return
+        if ok:
+            if self._logged_persist_ok is not None:  # 실패하다 복구된 경우에만
+                logger.warning("예산 상태 파일을 다시 쓸 수 있습니다: %s", self.state_file)
+        else:
+            logger.warning("예산 상태 파일을 쓰지 못해 메모리 카운터로 계속합니다: %s", exc)
+        self._logged_persist_ok = ok
+
+    def _persist(self) -> None:
+        """현재 상태를 원자적으로 교체한다. 실패해도 LLM 요청은 계속 처리한다."""
+        if self.state_file is None:
+            self._persisted = False
+            return
+
+        temp_path: Path | None = None
+        payload = {"version": STATE_VERSION, "day": self._day.isoformat(), "spent_usd": self._spent}
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=self.state_file.parent,
+                prefix=f".{self.state_file.name}.",
+                suffix=".tmp",
+                delete=False,
+            ) as temp:
+                json.dump(payload, temp, ensure_ascii=False, separators=(",", ":"))
+                temp.flush()
+                os.fsync(temp.fileno())
+                temp_path = Path(temp.name)
+            os.replace(temp_path, self.state_file)
+            self._persisted = True
+            self._log_write_state(True)
+        except OSError as exc:
+            self._persisted = False
+            self._log_write_state(False, exc)
+        finally:
+            if temp_path is not None:
+                try:
+                    temp_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
 
     def check(self) -> None:
         """LLM을 부르기 **직전에** 부른다. 상한에 닿았으면 올린다."""
@@ -90,7 +208,7 @@ class DailyBudget:
             if self._spent >= self.cap_usd:  # type: ignore[operator]
                 raise DailyBudgetExceeded(
                     f"일일 LLM 예산 소진(${self._spent:.4f} / ${self.cap_usd}), "
-                    f"{_next_utc_midnight()}에 초기화"
+                    f"{_next_midnight()}에 초기화"
                 )
 
     def record(self, cost_usd: float) -> None:
@@ -100,6 +218,7 @@ class DailyBudget:
         with self._lock:
             self._roll()
             self._spent += cost_usd
+            self._persist()
 
     def status(self) -> dict[str, Any] | None:
         """`/health`용. 꺼져 있으면 None."""
@@ -110,7 +229,8 @@ class DailyBudget:
             return {
                 "cap_usd": self.cap_usd,
                 "spent_today_usd": round(self._spent, 6),
-                "resets_at": _next_utc_midnight(),
+                "resets_at": _next_midnight(),
+                "persisted": self._persisted,
             }
 
 

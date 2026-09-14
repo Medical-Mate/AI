@@ -5,12 +5,19 @@
 """
 
 import json
+import logging
 
 import pytest
 from fastapi.testclient import TestClient
 
 from medimate.api.app import create_app
-from medimate.api.budget import ENV_CAP, BudgetGuarded, DailyBudget, DailyBudgetExceeded
+from medimate.api.budget import (
+    ENV_CAP,
+    ENV_STATE_FILE,
+    BudgetGuarded,
+    DailyBudget,
+    DailyBudgetExceeded,
+)
 from medimate.llm import AxisUpdate, TurnExtraction
 from medimate.schema import Axis, FieldStatus
 from tests.fakes import ScriptedExtractor
@@ -45,11 +52,15 @@ class Fake(ScriptedExtractor):
         return super().extract(*a, **kw)
 
 
-def _client(cap: str | None, monkeypatch):
+def _client(cap: str | None, monkeypatch, state_file=None):
     if cap is None:
         monkeypatch.delenv(ENV_CAP, raising=False)
     else:
         monkeypatch.setenv(ENV_CAP, cap)
+    if state_file is None:
+        monkeypatch.delenv(ENV_STATE_FILE, raising=False)
+    else:
+        monkeypatch.setenv(ENV_STATE_FILE, str(state_file))
     ex = Fake()
     return TestClient(create_app(lambda: ex)), ex
 
@@ -72,7 +83,109 @@ def test_health_shows_the_cap_and_what_was_spent(monkeypatch):
     c, _ = _client("5.0", monkeypatch)
     b = c.get("/health").json()["llm_budget"]
     assert b["cap_usd"] == 5.0 and b["spent_today_usd"] == 0.0
-    assert b["resets_at"].endswith("+00:00")  # UTC 자정
+    assert b["resets_at"].endswith("T00:00:00+09:00")  # 기본은 KST 자정
+    assert b["persisted"] is False  # 파일 경로를 주지 않으면 지금처럼 메모리
+
+
+def test_state_file_survives_a_new_app_process(tmp_path, monkeypatch):
+    """배포가 새 프로세스를 띄워도 같은 날짜의 누적액을 다시 읽는다."""
+    state_file = tmp_path / "budget.json"
+    c, _ = _client("5.0", monkeypatch, state_file)
+    c.app.state.daily_budget.record(0.75)
+    assert c.get("/health").json()["llm_budget"]["persisted"] is True
+
+    restarted, _ = _client("5.0", monkeypatch, state_file)
+    restored = restarted.get("/health").json()["llm_budget"]
+    assert restored["spent_today_usd"] == pytest.approx(0.75)
+    assert restored["persisted"] is True
+
+
+def test_state_write_failure_does_not_stop_the_questionnaire(tmp_path, monkeypatch):
+    """볼륨 권한이 깨져도 메모리 상한은 남고 문진 요청은 파일 I/O 때문에 죽지 않는다."""
+    state_file = tmp_path / "a-directory-not-a-file"
+    state_file.mkdir()
+    c, _ = _client("5.0", monkeypatch, state_file)
+
+    c.app.state.daily_budget.record(0.25)  # 예외가 밖으로 나오지 않는다
+    status = c.get("/health").json()["llm_budget"]
+    assert status["spent_today_usd"] == pytest.approx(0.25)
+    assert status["persisted"] is False
+
+
+def test_a_broken_volume_warns_once_not_every_call(tmp_path, monkeypatch, caplog):
+    """볼륨이 안 잡힌 채 배포되면 쓰기는 **LLM 호출마다** 일어난다.
+
+    매번 경고를 내면 심사 4주짜리 공개 데모의 로그가 그 한 줄로 덮여 정작 봐야 할 것이 묻힌다.
+    그렇다고 지우면 조용한 실패가 된다 — **첫 실패는 남기고 되풀이하지 않는다.**
+    지금 파일이 살아 있는지는 `/health`의 `persisted`가 들고 있다.
+    """
+    state_file = tmp_path / "a-directory-not-a-file"
+    state_file.mkdir()
+    c, _ = _client("5.0", monkeypatch, state_file)
+
+    with caplog.at_level(logging.WARNING, logger="medimate.api.budget"):
+        for _ in range(5):
+            c.app.state.daily_budget.record(0.01)
+
+    failed = [
+        r
+        for r in caplog.records
+        if r.name == "medimate.api.budget" and "쓰지 못해" in r.getMessage()
+    ]
+    assert len(failed) == 1, f"호출 5회에 경고 {len(failed)}줄 — 한 줄이어야 한다"
+    assert c.get("/health").json()["llm_budget"]["persisted"] is False
+
+
+def test_recovery_is_worth_one_line(tmp_path, monkeypatch, caplog):
+    """실패하다 다시 쓸 수 있게 되면 그때 한 줄. 운영자가 볼륨을 고친 것을 로그로 확인한다."""
+    good = tmp_path / "state.json"
+    c, _ = _client("5.0", monkeypatch, good)
+    budget = c.app.state.daily_budget
+
+    def budget_logs() -> list[str]:
+        # 예산 로거만 본다 — HMAC 기동 경고 같은 다른 로거가 섞이면 이 테스트가 흔들린다
+        return [r.getMessage() for r in caplog.records if r.name == "medimate.api.budget"]
+
+    with caplog.at_level(logging.WARNING, logger="medimate.api.budget"):
+        budget.record(0.01)  # 정상 — 조용해야 한다
+        assert not budget_logs()
+
+        budget.state_file = tmp_path / "gone" / "state.json"  # 볼륨이 빠졌다
+        for _ in range(3):
+            budget.record(0.01)
+
+        budget.state_file = good  # 운영자가 고쳤다
+        for _ in range(3):
+            budget.record(0.01)
+
+    messages = budget_logs()
+    assert sum("쓰지 못해" in m for m in messages) == 1
+    assert sum("다시 쓸 수 있습니다" in m for m in messages) == 1
+    assert budget.status()["persisted"] is True
+
+
+def test_the_day_boundary_is_seoul_midnight_by_default(monkeypatch):
+    """**UTC 자정은 KST 오전 9시다.** 데모 날 오후에 상한이 차면 다음 날 아침까지 안 풀린다.
+
+    상한은 새는 것을 막는 장치이지 하루를 날리는 장치가 아니다.
+    """
+    monkeypatch.delenv("MEDIMATE_BUDGET_RESET_TZ", raising=False)
+    c, _ = _client("5.0", monkeypatch)
+    assert c.get("/health").json()["llm_budget"]["resets_at"].endswith("T00:00:00+09:00")
+
+
+def test_the_timezone_can_be_changed(monkeypatch):
+    monkeypatch.setenv("MEDIMATE_BUDGET_RESET_TZ", "UTC")
+    c, _ = _client("5.0", monkeypatch)
+    assert c.get("/health").json()["llm_budget"]["resets_at"].endswith("T00:00:00+00:00")
+
+
+def test_a_bad_timezone_is_not_silently_utc(monkeypatch):
+    """오타로 조용히 UTC가 되면 리셋 시각이 9시간 어긋난다"""
+    monkeypatch.setenv("MEDIMATE_BUDGET_RESET_TZ", "Asia/Seoul_오타")
+    monkeypatch.setenv(ENV_CAP, "5.0")
+    with pytest.raises(ValueError, match="MEDIMATE_BUDGET_RESET_TZ"):
+        DailyBudget.from_env().status()
 
 
 def test_a_bad_value_is_not_silently_off(monkeypatch):
