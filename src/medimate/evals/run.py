@@ -92,13 +92,27 @@ def _call_with_retry(extractor, utterance, axis, history=(), max_wait: float = 6
 
 
 def run(extractor, cases, out_path: Path) -> list[dict]:
-    """결과 파일이 있으면 이어서 실행한다(같은 case_id/rep는 건너뜀). 호출을 아낀다."""
+    """결과 파일이 있으면 이어서 실행한다(같은 case_id/rep는 건너뜀). 호출을 아낀다.
+
+    **이어받기 전에 프롬프트 버전을 본다.** 파일 이름은 모델로만 정해지므로, 프롬프트를 바꾸고
+    같은 모델로 돌리면 예전 프롬프트의 결과를 그대로 이어받는다 — 호출이 0회 나가고 점수는
+    예전 것과 같은데 아무 표시가 없다. 2026-09-14에 v4를 돌렸다고 생각하며 v3 결과를 봤다.
+    """
     out_path.parent.mkdir(parents=True, exist_ok=True)
     rows = []
     if out_path.exists():
         rows = [json.loads(ln) for ln in out_path.read_text(encoding="utf-8").splitlines() if ln]
+        stale = {r.get("prompt_version") for r in rows} - {extractor.prompt_version}
+        if stale:
+            raise SystemExit(
+                f"!! {out_path}에 다른 프롬프트의 결과가 있습니다: "
+                f"{', '.join(sorted(map(str, stale)))}\n"
+                f"   지금 돌리려는 것은 {extractor.prompt_version}입니다. "
+                "섞이면 점수를 읽을 수 없습니다.\n"
+                "   --out 으로 다른 파일에 쓰거나, 기존 파일을 옮기세요."
+            )
         if rows:
-            print(f"이어서 실행: {len(rows)}건 저장됨")
+            print(f"이어서 실행: {len(rows)}건 저장됨 ({extractor.prompt_version})")
     done = {(r["case_id"], r["rep"]) for r in rows}
     with out_path.open("a", encoding="utf-8") as f:
         for c in cases:
@@ -217,6 +231,7 @@ def main() -> None:
         help="프롬프트 계열. auto는 모델 id로 고른다(providers.prompt_family_for)",
     )
     ap.add_argument("--limit", type=int, help="앞에서 N케이스만 (기기 실측처럼 속도만 볼 때)")
+    ap.add_argument("--out", type=Path, help="결과 파일 경로. 기본은 evals/results/<model>.jsonl")
     ap.add_argument(
         "--cases",
         help="케이스 id만 골라 돌린다(쉼표 구분: J02,A01). 실패 몇 건만 다시 볼 때 — 전체를 "
@@ -261,7 +276,9 @@ def main() -> None:
     if not a.yes and input("진행? [y/N] ").strip().lower() != "y":
         return
     ex = LLMExtractor(a.provider, a.model, budget_usd=a.budget, prompt_family=a.prompt)
-    rows = run(ex, cases, RESULTS / f"{safe_model_name(a.model)}.jsonl")
+    out = a.out or RESULTS / f"{safe_model_name(a.model)}.jsonl"
+    print(f"결과 파일: {out}  (프롬프트 {ex.prompt_version})")
+    rows = run(ex, cases, out)
     report(rows, cases)
     print(f"\n실제 비용 ${ex.usage.cost_usd(a.model):.3f}")
 
