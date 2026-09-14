@@ -1462,7 +1462,341 @@
           "end_reason": null
         },
         "utterance": "아침에 좀 뻣뻣해요",
-        "request_id": "demo-5",
+        "request_id": "demo-5"
+      },
+      "response": {
+        "reply": "말씀해 주신 내용을 정리해서 진료 때 보실 수 있게 준비했어요.",
+        "ended": true,
+        "end_reason": "complete",
+        "state": {
+          "spec": "previsit",
+          "profile": "server",
+          "card": {
+            "chief_complaint": "2주 전쯤 등산 다음 날부터 시큰하고 가끔 찌릿해요",
+            "axes": {
+              "site": {
+                "status": "filled",
+                "value": "왼쪽 무릎",
+                "evidence": [
+                  "[부위 선택] 왼쪽 무릎"
+                ]
+              },
+              "onset": {
+                "status": "filled",
+                "value": "2주 전부터요, 등산 다음 날부터",
+                "evidence": [
+                  "2주 전쯤 등산 다음 날부터 시큰하고 가끔 찌릿해요"
+                ]
+              },
+              "character": {
+                "status": "filled",
+                "value": "시큰하고 가끔 찌릿해요",
+                "evidence": [
+                  "2주 전쯤 등산 다음 날부터 시큰하고 가끔 찌릿해요"
+                ]
+              },
+              "radiation": {
+                "status": "filled",
+                "value": "옆으로 퍼지지 않음",
+                "evidence": [
+                  "옆으로 퍼지진 않아요"
+                ]
+              },
+              "associated": {
+                "status": "filled",
+                "value": "아침에 좀 뻣뻣해요",
+                "evidence": [
+                  "아침에 좀 뻣뻣해요"
+                ]
+              },
+              "time_course": {
+                "status": "filled",
+                "value": "처음보다 조금 심해진 것 같아요",
+                "evidence": [
+                  "처음보다 조금 심해진 것 같아요"
+                ]
+              },
+              "exacerbating_relieving": {
+                "status": "filled",
+                "value": "계단 내려갈 때, 오래 앉았다 일어날 때",
+                "evidence": [
+                  "계단 내려갈 때, 오래 앉았다 일어날 때요"
+                ]
+              },
+              "severity": {
+                "status": "not_asked",
+                "value": null,
+                "evidence": []
+              }
+            },
+            "red_flags": [],
+            "patient_notes": [],
+            "patient_message": null,
+            "provenance": {
+              "prompt_version": "demo-fixture",
+              "model_id": "demo/stored",
+              "ontology_snapshot": "f848848baea4"
+            },
+            "site_selection": {
+              "node_id": "SUR:091",
+              "anchor_id": "ANC:014",
+              "side": "left",
+              "label": "왼쪽 무릎",
+              "departments": [
+                "정형외과"
+              ],
+              "departments_source": "팀 결정 2026-09-04, 의료인 자문 확인 전",
+              "ontology_snapshot": "f848848baea4"
+            }
+          },
+          "asked_axis": null,
+          "clarified": [],
+          "history": [
+            [
+              "그 불편함이 다른 곳으로 퍼지기도 하나요?",
+              "옆으로 퍼지진 않아요"
+            ],
+            [
+              "같이 나타나는 다른 증상이 있나요?",
+              "아침에 좀 뻣뻣해요"
+            ]
+          ],
+          "turn": 5,
+          "message_asked": false,
+          "session_tokens": 0,
+          "ended": true,
+          "end_reason": "complete"
+        },
+        "card": {
+          "card_type": "previsit",
+          "chief_complaint": "2주 전쯤 등산 다음 날부터 시큰하고 가끔 찌릿해요",
+          "axes": {
+            "site": {
+              "status": "filled",
+              "value": "왼쪽 무릎",
+              "evidence": [
+                "[부위 선택] 왼쪽 무릎"
+              ],
+              "source": "selection"
+            },
+            "onset": {
+              "status": "filled",
+              "value": "2주 전부터요, 등산 다음 날부터",
+              "evidence": [
+                "2주 전쯤 등산 다음 날부터 시큰하고 가끔 찌릿해요"
+              ],
+              "source": "ai_extraction"
+            },
+            "character": {
+              "status": "filled",
+              "value": "시큰하고 가끔 찌릿해요",
+              "evidence": [
+                "2주 전쯤 등산 다음 날부터 시큰하고 가끔 찌릿해요"
+              ],
+              "source": "ai_extraction"
+            },
+            "radiation": {
+              "status": "filled",
+              "value": "옆으로 퍼지지 않음",
+              "evidence": [
+                "옆으로 퍼지진 않아요"
+              ],
+              "source": "ai_extraction"
+            },
+            "associated": {
+              "status": "filled",
+              "value": "아침에 좀 뻣뻣해요",
+              "evidence": [
+                "아침에 좀 뻣뻣해요"
+              ],
+              "source": "ai_extraction"
+            },
+            "time_course": {
+              "status": "filled",
+              "value": "처음보다 조금 심해진 것 같아요",
+              "evidence": [
+                "처음보다 조금 심해진 것 같아요"
+              ],
+              "source": "ai_extraction"
+            },
+            "exacerbating_relieving": {
+              "status": "filled",
+              "value": "계단 내려갈 때, 오래 앉았다 일어날 때",
+              "evidence": [
+                "계단 내려갈 때, 오래 앉았다 일어날 때요"
+              ],
+              "source": "ai_extraction"
+            },
+            "severity": {
+              "status": "not_asked",
+              "value": null,
+              "evidence": [],
+              "source": null
+            }
+          },
+          "red_flags": [],
+          "patient_notes": [],
+          "minimally_complete": true,
+          "completeness": 0.875,
+          "provenance": {
+            "prompt_version": "demo-fixture",
+            "model_id": "demo/stored",
+            "ontology_snapshot": "f848848baea4"
+          },
+          "department_guidance": {
+            "site_label": "왼쪽 무릎",
+            "departments": [
+              "정형외과"
+            ],
+            "source": "팀 결정 2026-09-04, 의료인 자문 확인 전",
+            "note": "접수 시 확인해 주세요"
+          },
+          "title": "왼쪽 무릎 · 2주",
+          "question_candidates": null
+        },
+        "audit": {
+          "turn": 5,
+          "asked_axis": "associated",
+          "utterance": "아침에 좀 뻣뻣해요",
+          "extraction": {
+            "chief_complaint": null,
+            "updates": [
+              {
+                "axis": "associated",
+                "status": "filled",
+                "value": "아침에 좀 뻣뻣해요",
+                "evidence": "아침에 좀 뻣뻣해요"
+              }
+            ],
+            "notes": [],
+            "wants_to_stop": false
+          },
+          "raw_extraction": {
+            "chief_complaint": null,
+            "updates": [
+              {
+                "axis": "associated",
+                "status": "filled",
+                "value": "아침에 좀 뻣뻣해요",
+                "evidence": "아침에 좀 뻣뻣해요"
+              }
+            ],
+            "notes": [],
+            "wants_to_stop": false
+          },
+          "dropped": [],
+          "source": "server",
+          "usage": {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cost_usd": 0.0
+          }
+        },
+        "request_id": "demo-5"
+      }
+    },
+    {
+      "step": "after_end_slider_and_candidates",
+      "request": {
+        "state": {
+          "spec": "previsit",
+          "profile": "server",
+          "card": {
+            "chief_complaint": "2주 전쯤 등산 다음 날부터 시큰하고 가끔 찌릿해요",
+            "axes": {
+              "site": {
+                "status": "filled",
+                "value": "왼쪽 무릎",
+                "evidence": [
+                  "[부위 선택] 왼쪽 무릎"
+                ]
+              },
+              "onset": {
+                "status": "filled",
+                "value": "2주 전부터요, 등산 다음 날부터",
+                "evidence": [
+                  "2주 전쯤 등산 다음 날부터 시큰하고 가끔 찌릿해요"
+                ]
+              },
+              "character": {
+                "status": "filled",
+                "value": "시큰하고 가끔 찌릿해요",
+                "evidence": [
+                  "2주 전쯤 등산 다음 날부터 시큰하고 가끔 찌릿해요"
+                ]
+              },
+              "radiation": {
+                "status": "filled",
+                "value": "옆으로 퍼지지 않음",
+                "evidence": [
+                  "옆으로 퍼지진 않아요"
+                ]
+              },
+              "associated": {
+                "status": "filled",
+                "value": "아침에 좀 뻣뻣해요",
+                "evidence": [
+                  "아침에 좀 뻣뻣해요"
+                ]
+              },
+              "time_course": {
+                "status": "filled",
+                "value": "처음보다 조금 심해진 것 같아요",
+                "evidence": [
+                  "처음보다 조금 심해진 것 같아요"
+                ]
+              },
+              "exacerbating_relieving": {
+                "status": "filled",
+                "value": "계단 내려갈 때, 오래 앉았다 일어날 때",
+                "evidence": [
+                  "계단 내려갈 때, 오래 앉았다 일어날 때요"
+                ]
+              },
+              "severity": {
+                "status": "not_asked",
+                "value": null,
+                "evidence": []
+              }
+            },
+            "red_flags": [],
+            "patient_notes": [],
+            "patient_message": null,
+            "provenance": {
+              "prompt_version": "demo-fixture",
+              "model_id": "demo/stored",
+              "ontology_snapshot": "f848848baea4"
+            },
+            "site_selection": {
+              "node_id": "SUR:091",
+              "anchor_id": "ANC:014",
+              "side": "left",
+              "label": "왼쪽 무릎",
+              "departments": [
+                "정형외과"
+              ],
+              "departments_source": "팀 결정 2026-09-04, 의료인 자문 확인 전",
+              "ontology_snapshot": "f848848baea4"
+            }
+          },
+          "asked_axis": null,
+          "clarified": [],
+          "history": [
+            [
+              "그 불편함이 다른 곳으로 퍼지기도 하나요?",
+              "옆으로 퍼지진 않아요"
+            ],
+            [
+              "같이 나타나는 다른 증상이 있나요?",
+              "아침에 좀 뻣뻣해요"
+            ]
+          ],
+          "turn": 5,
+          "message_asked": false,
+          "session_tokens": 0,
+          "ended": true,
+          "end_reason": "complete"
+        },
         "selections": [
           {
             "axis": "severity",
@@ -1476,7 +1810,8 @@
           ],
           "conditions": [],
           "allergies": []
-        }
+        },
+        "request_id": "demo-after"
       },
       "response": {
         "reply": "말씀해 주신 내용을 정리해서 진료 때 보실 수 있게 준비했어요.",
@@ -1688,45 +2023,8 @@
             }
           ]
         },
-        "audit": {
-          "turn": 5,
-          "asked_axis": "associated",
-          "utterance": "아침에 좀 뻣뻣해요",
-          "extraction": {
-            "chief_complaint": null,
-            "updates": [
-              {
-                "axis": "associated",
-                "status": "filled",
-                "value": "아침에 좀 뻣뻣해요",
-                "evidence": "아침에 좀 뻣뻣해요"
-              }
-            ],
-            "notes": [],
-            "wants_to_stop": false
-          },
-          "raw_extraction": {
-            "chief_complaint": null,
-            "updates": [
-              {
-                "axis": "associated",
-                "status": "filled",
-                "value": "아침에 좀 뻣뻣해요",
-                "evidence": "아침에 좀 뻣뻣해요"
-              }
-            ],
-            "notes": [],
-            "wants_to_stop": false
-          },
-          "dropped": [],
-          "source": "server",
-          "usage": {
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "cost_usd": 0.0
-          }
-        },
-        "request_id": "demo-5"
+        "audit": null,
+        "request_id": "demo-after"
       }
     },
     {

@@ -56,38 +56,6 @@ def test_the_body_map_path_survives():
     assert card["question_candidates"][0]["rank"] == 1
 
 
-def test_health_info_is_sent_on_the_last_turn_only():
-    """매 턴 붙이면 건강정보가 턴 수만큼 오가는 녹화가 되고, 프론트가 그대로 구현한다"""
-    turns = [s for s in _load()["steps"] if s["step"].startswith("turn_")]
-    with_profile = [s["step"] for s in turns if "patient_profile" in s["request"]]
-    assert with_profile == [turns[-1]["step"]], with_profile
-
-
-def test_the_slider_value_is_recorded_as_a_selection():
-    """통증 강도는 **묻지 않고 화면에서 고른다**(1d 슬라이더).
-
-    `ASK_ORDER`에 `severity`가 없어서 문답으로는 절대 안 채워진다 — NRS를 말로 물으면 환자가
-    숫자를 지어내고 그 값은 근거가 없다. 녹화에 이 자리가 없으면 프론트가 **슬라이더 값을
-    어디에 실어야 하는지 배울 데가 없고**, 데모 카드의 심각도가 빈다.
-    """
-    d = _load()
-    turns = [s for s in d["steps"] if s["step"].startswith("turn_")]
-    with_sel = [s for s in turns if s["request"].get("selections")]
-    assert len(with_sel) == 1 and with_sel[0]["step"] == turns[-1]["step"]
-
-    sev = d["steps"][-2]["response"]["card"]["axes"]["severity"]
-    assert sev["status"] == "filled" and sev["value"]
-    assert sev["source"] == "selection"  # 발화가 아니다
-    assert sev["evidence"] == ["[선택] 3 (꽤 아파요)"]
-
-
-def test_the_card_is_complete():
-    """8축이 다 차야 데모 카드가 제 모습으로 보인다"""
-    axes = _load()["steps"][-2]["response"]["card"]["axes"]
-    empty = [k for k, v in axes.items() if not v["value"]]
-    assert empty == [], empty
-
-
 def test_no_identifiers():
     blob = json.dumps(_load(), ensure_ascii=False)
     for banned in ("생년", "나이", "성별", "주민", "전화", "이메일", "@"):

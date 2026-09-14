@@ -61,7 +61,9 @@ AI 서버는 무상태다. 메모 하나를 받아 **4묶음 카드**로 돌려�
 - `card.axes.*.value`는 그 묶음 문장들을 ` · `로 이은 **원문**, `evidence`는 문장 목록. AI가 고쳐 쓴 말이 없다
 - 묶음에 문장이 없으면 `status: unknown`(메모에 그 얘기가 없었다)
 - `unsorted`: 어느 묶음에도 안 들어간 문장. **버리지 않는다.** 1q 화면 하단에 "분류되지 않은 메모"로
-- `follow_up_date`: 결정론 계산. `approximate: true`면 "전후"로 표시. 못 읽으면 `null`(앱 달력에서 직접)
+- `follow_up_date`: 결정론 계산. `approximate: true`면 "전후"로 표시. 못 읽으면 `null`(앱 달력에서 직접).
+  **`classify: false`(문장 분리만)로 부르면 라벨이 없으므로 `follow_up_date`는 항상 `null`이다** —
+  폰이 분류한 뒤 `labels`와 함께 다시 부르면 그때 채워진다
 - `widening`: 소견 문장의 해부 용어에 부위 병기(설명 아님). `site_comparison`: 진료 전 부위와 같은가(판정 아님)
 ### `split_version` — 문장 번호가 가리키는 것이 바뀌지 않게
 
