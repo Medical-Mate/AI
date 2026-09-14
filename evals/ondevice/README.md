@@ -94,3 +94,23 @@ GGUF 파일(정확한 양자화 이름), 프롬프트 파일(버전), `turn_extr
 ## 노트북 폴백
 
 같은 `llama-server`를 핫스팟 LAN에 띄우고 앱이 `MEDIMATE_LOCAL_BASE_URL`만 바꾸면 심사장 오프라인 데모가 된다. 제품 기본 경로는 아니다(온디바이스의 장점이 없고 Terra보다 품질이 낮다).
+
+## 안드로이드 대조용 산출물 (2026-09-14, 이슈 #35 #77)
+
+앱이 `llama_chat_apply_template`·손으로 옮긴 GBNF로 돌린 결과를 서버 경로와 대조하기 위한 파일들.
+
+| 파일 | 무엇 | 어떻게 만들었나 |
+|---|---|---|
+| `turn_extraction.small.gbnf` | 진료 전 추출 스키마의 GBNF | llama.cpp 업스트림 `examples/json_schema_to_grammar.py` ← `turn_extraction.small.schema.json` |
+| `qwen3-1.7b.chat_template.jinja` | 모델 안의 채팅 템플릿 원문 | `Qwen3-1.7B-Q4_0.gguf`(sha256 `c876f159…81c5`)의 `tokenizer.chat_template`을 gguf-py로 추출 |
+| `rendered/A01-0.*.txt` | 벡터 A01#0을 렌더한 전문 두 벌 | 위 템플릿을 jinja2(`trim_blocks`·`lstrip_blocks`)로 렌더. `enable_thinking=false`는 끝에 `<think>
+
+</think>
+
+`만 더 붙는다. **`llama-server` 로그 캡처가 아니다** — 같은 템플릿의 재렌더다 |
+| `device-runs/2026-09-13-s24u-npu.jsonl` | 앱이 폰(S24U, HTP0)에서 낸 88건 raw, case id 포함 | 이슈 #35 코멘트를 결과 형식으로 옮김. 모델·프롬프트·설정은 벡터와 동일 |
+| `device-runs/…raw.report.txt` · `…guard.report.txt` | 그 88건을 `score.py`로 채점한 결과 (가드 없이 / 온디바이스 가드) | `uv run python -m medimate.evals.run --report <jsonl> --prompt small [--guard ondevice]` |
+
+같은 채점기로 PC 실행(`evals/results/local/Qwen3-1.7B-Q4_0-small4b.jsonl`)과 나란히 보면:
+PC 61/88·위반 0, 폰 60/88·위반 0 (둘 다 가드 적용). raw는 PC 59/3, 폰 58/2.
+"축·상태가 다른" 7건 중 5건(A01×2·NG02·NG03·PD02)은 폰 쪽이 채점기 기준에 맞는다.
