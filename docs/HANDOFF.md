@@ -18,6 +18,11 @@ AI 파트의 **만드는 일은 거의 끝났다.** 챗봇①(진료 전 카드)
 ### 챗봇① 진료 전 브리핑 카드 — 완료
 - 흐름: 인체도 부위 선택 → 축별 질문 → (칩 또는 직접 입력) → 8축 카드 + 진료과 안내 + 의사에게 전하는 말
 - 서버 추출 모델 **Terra**(85/88, 위반 0). 온디바이스 **Qwen3-1.7B Q4_0 + 프롬프트 small-v4 + 엔진 가드**(61/88, 위반 0)
+- **운영 서버는 Nova Pro로 떠 있다**(`MEDIMATE_MODEL=apac.amazon.nova-pro-v1:0`). 같은 88케이스·같은 가드로
+  **Nova 76/88 · Terra 85 · Sonnet 83, 안전 위반 셋 다 0**(2026-09-14, `evals/RESULTS.md` "extract-v3 · Nova Pro").
+  실패 12건이 전부 **환자가 말하지 않은 값을 축에 넣은 것**이고 근거가 원문 그대로라 D4 가드에 안 걸린다.
+  **웹 데모는 폰 모델이 없어 이 경로로 매 턴 돈다.** 그대로 갈지 프롬프트·가드를 손댈지는 미정 —
+  프롬프트를 바꾸면 Terra·Sonnet도 다시 돌려야 하고 그건 사비다
 - 갤럭시 S24 울트라 실측(선풍기 있었음): CPU 첫 턴 15초·발열로 죽음 / **NPU 첫 턴 1.7초·턴당 3.4초·안정 → NPU 채택**
 - API: 무상태. `POST /v1/previsit/sessions`(profile server|ondevice), `POST /v1/previsit/turns`(utterance 또는 extraction, selections, request_id), `GET /v1/ontology/body-map`. HMAC 인증, Dockerfile 있음
 - 계약: `docs/api-previsit.md`. 결과 수치: `evals/RESULTS.md`
