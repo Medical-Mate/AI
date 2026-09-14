@@ -6,7 +6,8 @@
    findings / tests / medication_instructions / follow_up / none
    (다축 추출이 아니라 단일 선택이라 소형 모델도 안정적이고,
    값이 문장 원문이라 근거 검증이 자동 통과)
-3. 카드의 각 묶음에 그 문장들을 **원문 그대로** 넣는다. none은 unsorted로 보존한다
+3. 카드의 각 묶음에 넣는다 — `value`는 어미를 정리한 줄, `evidence`는 **문장 원문 그대로**.
+   none은 unsorted로 보존한다 (진료 전 카드가 이미 이 구조다)
 4. 재방문 날짜는 진료일 기준 결정론 계산(followup_date). LLM 무관
 
 가드: 라벨 인덱스가 범위 밖이거나 중복이면 무시. 문장은 우리가 나눈 것이라 모델이 바꿀 수 없다.
@@ -80,7 +81,22 @@ class MemoClassifier(Protocol):
     def classify(self, sentences: Sequence[str]) -> MemoLabels: ...
 
 
-_SPLIT = re.compile(r"(?<=[.!?。])\s+|\n+|\s+·\s+|\s*/\s*")
+# 문장 경계. **공백이 없어도 자른다** — 실제 사용자는 `하셨음.피검사는`처럼 붙여 쓴다
+# (2026-09-14, 앱 화면 메모에서 확인). 예전 규칙은 `[.!?] 뒤 공백`만 봐서 통째로 한 조각이 됐고,
+# 그러면 라벨이 문장당 하나라 한쪽 주제가 통째로 사라진다.
+#
+# 마침표에만 조건이 붙는다. 숫자·영문 사이의 점은 문장 끝이 아니다.
+#   `2.5mg`       앞이 숫자      → 자르지 않는다
+#   `example.com` 뒤가 영문자    → 자르지 않는다
+#   `하셨음.피검사`  앞뒤가 한글    → 자른다
+# `!`·`?`·`。`는 그런 충돌이 없어 조건 없이 자른다.
+_SPLIT = re.compile(
+    r"(?<=[!?。])\s*"
+    r"|(?<=\.)(?<![A-Za-z0-9]\.)(?![A-Za-z0-9])\s*"
+    r"|\n+"
+    r"|\s+·\s+"
+    r"|\s*/\s*"
+)
 
 
 # ── 연결절 분리 (2026-09-14, #78) ──────────────────────────────────────────
@@ -174,10 +190,13 @@ _TOPIC = {
     ),
 }
 
-# 자를 수 있는 자리 — 연결어미 `-고`·`-며` 뒤. 쉼표가 붙어도 같다.
+# 자를 수 있는 자리 — 연결어미 `-고`·`-며` 뒤.
 # `-라고/-다고/-자고/-냐고`는 인용이라 제외한다("오라고 하셨고"에서 앞쪽 `오라고`를 자르면
 # "다시 오라고" + "하셨고 …"가 되어 술어가 잘린다). "그리고"도 같은 이유로 제외.
-_CLAUSE = re.compile(r"(?<=[가-힣])(고|며),?\s+")
+#
+# **쉼표가 있으면 공백이 없어도 자른다** — `하셨고,2주`가 실제 입력이다(앱 화면 메모).
+# 쉼표가 없으면 공백을 요구한다. 요구하지 않으면 `그리고`·`사고`·`먹고` 같은 낱말 안에서 잘린다.
+_CLAUSE = re.compile(r"(?<=[가-힣])(고|며)(?:,\s*|\s+)")
 _QUOTATIVE = ("라고", "다고", "자고", "냐고", "리고", "으라고")
 
 
@@ -222,11 +241,11 @@ def _split_clauses(sentence: str) -> list[str]:
 # 해시를 쓰면 자동으로 따라 바뀌지만 `a3f1c2`가 로그에 남아도 아무도 못 읽는다. 대신
 # **이름은 그대로 두고 규칙만 고치는 일**을 테스트가 막는다 — 아래 지문이 그 장치다
 # (`tests/test_memo_split_version.py`). 규칙을 고치면 테스트가 깨지고, 그때 둘 다 고치게 된다.
-SPLIT_VERSION = "split-v2"
+SPLIT_VERSION = "split-v3"
 
 # 분리 규칙 전체의 지문. 규칙과 이름이 같이 움직이는지 테스트가 이걸로 확인한다.
 # 규칙을 바꿨으면 `SPLIT_VERSION`을 올리고 이 값도 새로 박는다(테스트 실패 메시지가 새 값을 준다)
-SPLIT_RULE_DIGEST = "3882206e6d2e"
+SPLIT_RULE_DIGEST = "5ea1e998aec8"
 
 
 def split_rule_digest() -> str:
@@ -281,8 +300,35 @@ _REL = [
 _ABS = re.compile(r"(\d{1,2})\s*월\s*(\d{1,2})\s*일")
 _NEXT_MONTH_DAY = re.compile(r"다음\s*달\s*(\d{1,2})\s*일")
 
+# ── 재방문 기간을 뒤에 오는 말 없이 읽는 자리 (2026-09-14, 앱 화면 메모) ────────────
+#
+# `_REL`은 `2주 뒤`처럼 **기간 + 뒤/후/있다가/지나서**만 본다. 그런데 실제 메모는
+# "2주 약 먹고 다시 오라고 했어요"였고 재방문 날짜가 `null`이었다. 환자는 "뒤"를 안 쓴다.
+#
+# **기간만 보고 잡으면 안 된다.** "2주 약 먹고"의 2주는 약 기간이지 재방문 시점이 아닐 수 있다.
+# 그래서 **같은 절에 다시 온다는 말이 있을 때만** 기간을 재방문으로 읽는다.
+_RETURN_WORDS = ("다시 오", "다시 와", "재방문", "경과 보", "보자", "오라고", "오세요", "뵙")
+_BARE_DURATION = re.compile(r"(\d+)\s*(주일|개월|주|일|달|년)")
+_UNIT_DAYS = {"주": 7, "주일": 7, "일": 1, "개월": 30, "달": 30, "년": 365}
 
-def followup_date(text: str, visit_date: date) -> FollowUpDate | None:
+# 앞 절에서 기간을 끌어올 수 있는 조건. 여기만 추론이 들어가므로 `basis`에 남긴다.
+# 약·기간 말만 있는 절이어야 한다 — 소견이나 검사 절의 숫자를 끌어오면 엉뚱한 날짜가 된다.
+_MED_ONLY = ("약", "복용", "먹", "드시", "처방", "바르", "주사")
+
+
+def _has_return_word(text: str) -> bool:
+    return any(w in text for w in _RETURN_WORDS)
+
+
+def _bare_duration(text: str) -> tuple[str, timedelta] | None:
+    m = _BARE_DURATION.search(text)
+    if not m:
+        return None
+    days = _UNIT_DAYS[m.group(2)] * int(m.group(1))
+    return m.group(0), timedelta(days=days)
+
+
+def followup_date(text: str, visit_date: date, prev_text: str | None = None) -> FollowUpDate | None:
     """재방문 문장에서 날짜를 결정론으로. 못 읽으면 None(앱이 달력에서 직접 고른다)."""
     m = _ABS.search(text)
     if m:
@@ -317,7 +363,138 @@ def followup_date(text: str, visit_date: date) -> FollowUpDate | None:
                 approximate=True,
                 basis=f"visit_date {visit_date.isoformat()} + {delta.days}d",
             )
+
+    # 뒤에 오는 말 없이 기간만 있는 경우 — **같은 절에 다시 온다는 말이 있을 때만**
+    if _has_return_word(text):
+        found = _bare_duration(text)
+        if found:
+            raw, delta = found
+            return FollowUpDate(
+                text=raw,
+                date=(visit_date + delta).isoformat(),
+                approximate=True,
+                basis=f"visit_date {visit_date.isoformat()} + {delta.days}d",
+            )
+
+        # 이 절에는 기간이 없다. **앞 절이 약·기간만 말하고 있으면** 그 기간을 쓴다
+        # ("2주 약 먹고" / "다시 오라고 했어요"로 갈린 경우). 여기가 유일한 추론이라
+        # 근거를 `basis`에 남긴다 — 카드를 읽는 사람이 어디서 온 날짜인지 알아야 한다.
+        if prev_text:
+            found = _bare_duration(prev_text)
+            if found and any(w in prev_text for w in _MED_ONLY):
+                raw, delta = found
+                return FollowUpDate(
+                    text=raw,
+                    date=(visit_date + delta).isoformat(),
+                    approximate=True,
+                    basis=(
+                        f"앞 절 '{prev_text.strip()}'의 기간을 씀 · "
+                        f"visit_date {visit_date.isoformat()} + {delta.days}d"
+                    ),
+                )
     return None
+
+
+# ── 카드 값 다듬기 (2026-09-14, ㉡) ────────────────────────────────────────
+#
+# 진료 전 카드는 이미 `value`=정리한 한 줄 / `evidence`=발화 원문이다. 진료 후만 문장을 그대로
+# 이어 붙여서 카드가 메모를 잘라 놓은 것처럼 보였다. **`value`만 다듬고 `evidence`는 원문 그대로
+# 남긴다** — 원문이 사라지면 우리가 보증하는 "환자가 한 말"이 사라진다.
+#
+# **경계가 이 규칙표의 전부다.** 여기는 인용의 어미를 떼는 자리이지 다시 쓰는 자리가 아니다.
+#   하지 않는다 — 동의어 치환(`피검사`→`혈액검사`), 없던 말 추가(`시행`·`처방`),
+#                 요약, 순서 바꾸기, 숫자·단위·약 이름 손대기
+#   모르는 어미는 **그대로 둔다.** 어색하게 남는 쪽이 없는 말을 넣는 쪽보다 낫다
+# CLAUDE.md의 "설명문을 생성하지 않고 인용한다"가 여기서 지켜지는 방식이다.
+#
+# 결정론이라 폰·서버가 같은 값을 낸다. LLM을 부르지 않는다.
+
+# **인용과 명령을 가른다.** 둘 다 `라고`로 끝나는데 처리가 반대다.
+#   위염 초기라고 하셨고   인용(명사+이라고) → 꼬리를 뗀다      → 위염 초기
+#   커피 줄이라고         명령(동사+(으)라고) → 명사형          → 커피 줄이기
+# 형태만으로는 못 가른다(`초기라고`·`줄이라고`가 같은 모양이다). 그래서 **동사 어간을 목록으로**
+# 둔다 — 닫힌 부류이고, 목록에 없으면 인용으로 보아 떼기만 한다(모르면 덜 건드리는 쪽).
+_VERB_STEMS = (
+    "먹",
+    "드시",
+    "드세",
+    "바르",
+    "줄이",
+    "피하",
+    "끊",
+    "들",
+    "오",
+    "가",
+    "쓰",
+    "하",
+    "쉬",
+    "있",
+    "자",
+    "말",
+    "붙이",
+    "씻",
+    "마시",
+    "받",
+    "보",
+    # `먹`보다 길어야 먼저 걸린다(아래 정렬이 그 일을 한다). 없으면 "물 자주 먹이라고"가
+    # 인용으로 잡혀 `먹`만 남는다 — 어간을 잘라먹는 쪽이라 제일 나쁘다
+    "먹이",
+)
+# 긴 어간부터 본다 — `먹이`가 `먹`보다 먼저 걸려야 한다
+_STEM_ALT = "|".join(sorted(_VERB_STEMS, key=len, reverse=True))
+
+# 뒤에 붙는 보고 어미. 있어도 되고 없어도 된다("줄이라고." / "줄이라고 하셨어요." / "…라고 함")
+_SAID = r"(?:\s*(?:하[셨했]\S*|했어요|하더라\S*|합니다|한답니다|하심|함))?[\s.。!?]*$"
+
+
+def _to_noun(m: re.Match[str]) -> str:
+    """동사 어간 + 기. 역참조 문자열 대신 함수로 둔다."""
+    return m.group(1) + "기"
+
+
+_RULES: list[tuple[re.Pattern[str], object]] = [
+    # ~지 말라고 → ~지 않기 (금지). `말`이 어간 목록에 있어 아래 규칙보다 먼저 와야 한다
+    (re.compile(r"지\s*말라고" + _SAID), "지 않기"),
+    # 동사 + (으)라고 / (으)래요 → 명사형
+    (re.compile(rf"({_STEM_ALT})으?라고" + _SAID), _to_noun),
+    (re.compile(rf"({_STEM_ALT})으?래요" + _SAID), _to_noun),
+    # 명사 + (이)라고 → 인용. 꼬리만 뗀다
+    (re.compile(r"이?라고" + _SAID), ""),
+    # 평서 인용은 어미를 되살린다. 떼기만 하면 어간이 맨몸으로 남는다(`괜찮다고` → `괜찮`)
+    (re.compile(r"다고" + _SAID), "다"),
+    (re.compile(r"대요" + _SAID), "다"),
+    (re.compile(r"자고" + _SAID), "자"),
+    # 인용 없이 명사형 어미(`했음`·`갔음`)만 붙은 것은 **건드리지 않는다.**
+    # 떼면 "오늘은 스케일링만 했음" → "…했"으로 어간이 맨몸으로 남는다. 어색하게 남는 쪽이
+    # 잘라먹는 쪽보다 낫다 — 모르는 어미는 그대로 둔다는 원칙이 이 자리다.
+]
+_TRAILING = re.compile(r"[\s·,.。!?]+$")
+
+
+def tidy_value(text: str) -> str:
+    """카드 `value`용으로 어미를 정리한다. **원문(`evidence`)은 건드리지 않는다.**
+
+    규칙에 없는 모양은 그대로 돌려준다. 결과가 비면 원문을 쓴다 — 다듬다가 값을 없애는 것이
+    제일 나쁘다.
+    """
+    s = text.strip()
+    for rx, repl in _RULES:
+        new = rx.sub(repl, s)
+        if new != s:
+            return _TRAILING.sub("", new).strip() or s
+    return _TRAILING.sub("", s).strip() or s
+
+
+def _follow_up_line(fu: FollowUpDate) -> str:
+    """`{메모에서 뽑은 말} ({M월 D일}[ 전후])`.
+
+    생성이 아니라 **조합**이다. 앞은 메모에 있던 말이고 뒤는 진료일에서 계산한 날짜다.
+    `approximate`면 "전후"를 붙인다 — "2주 뒤"는 날짜를 특정하지 않는 말이라,
+    안 붙이면 카드가 9월 26일로 못박은 것처럼 읽힌다.
+    """
+    d = date.fromisoformat(fu.date)
+    stamp = f"{d.month}월 {d.day}일" + (" 전후" if fu.approximate else "")
+    return f"{fu.text} ({stamp})"
 
 
 @dataclass
@@ -368,7 +545,9 @@ def classify_memo(
         entry: AxisEntry = card.axes[axis]
         if sents:
             entry.status = FieldStatus.FILLED
-            entry.value = " · ".join(sents)  # 원문을 잇기만 한다. 고치지 않는다
+            # `value`는 어미를 정리한 줄, `evidence`는 **문장 원문 그대로**.
+            # 진료 전 카드가 이미 이 구조다. 원문이 사라지면 우리가 보증하는 것이 사라진다
+            entry.value = " · ".join(tidy_value(s) for s in sents)
             entry.evidence = list(sents)
         else:
             entry.status = FieldStatus.UNKNOWN  # 메모에 그 묶음 얘기가 없었다
@@ -377,9 +556,17 @@ def classify_memo(
     card.unsorted = unsorted
 
     if buckets[PostAxis.FOLLOW_UP] and visit_date:
-        for s in buckets[PostAxis.FOLLOW_UP]:
-            fu = followup_date(s, visit_date)
+        # **앞 절을 같이 넘긴다.** "2주 약 먹고 / 다시 오라고 했어요"처럼 기간과 재방문 말이
+        # 다른 조각으로 갈리는 일이 있다(우리 분리기가 그렇게 나눈다 — 서로 다른 묶음이니 맞다).
+        # 재방문 절만 보면 기간이 없어 날짜가 `null`이 된다.
+        for i, s in enumerate(sentences):
+            if labels.get(i) != PostAxis.FOLLOW_UP.value:
+                continue
+            fu = followup_date(s, visit_date, prev_text=sentences[i - 1] if i else None)
             if fu:
                 card.follow_up_date = fu
+                # 재방문 줄은 **우리 필드끼리 조합한다** — 새 문장을 만드는 것이 아니다.
+                # `text`는 메모에서 뽑은 말, 날짜는 결정론 계산. 둘 다 이미 카드에 있는 값이다.
+                card.axes[PostAxis.FOLLOW_UP].value = _follow_up_line(fu)
                 break
     return MemoResult(card, sentences, labels, dropped)

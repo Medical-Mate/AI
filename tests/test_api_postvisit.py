@@ -47,8 +47,9 @@ def test_memo_server_classification_builds_card_and_followup_date():
     assert len(b["sentences"]) == 5 and b["labels"]["4"] == "none"
     card = b["card"]
     assert card["card_type"] == "postvisit"
-    assert card["axes"]["findings"]["value"] == "위염 초기라고 하셨어요."
-    assert card["axes"]["findings"]["evidence"] == ["위염 초기라고 하셨어요."]  # 원문 그대로
+    # value는 어미를 정리한 줄, evidence는 **문장 원문 그대로**(2026-09-14 ㉡)
+    assert card["axes"]["findings"]["value"] == "위염 초기"
+    assert card["axes"]["findings"]["evidence"] == ["위염 초기라고 하셨어요."]
     assert card["unsorted"] == ["병원이 붐볐다."]
     assert card["follow_up_date"]["date"] == "2026-09-26"
     assert card["clinic"] == "서울OO병원 내과" and card["memo"] == MEMO
