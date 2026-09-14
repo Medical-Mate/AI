@@ -260,6 +260,39 @@ class TurnResponse(BaseModel):
 
 
 # --- 앱 -----------------------------------------------------------------
+CORS_ENV = "MEDIMATE_CORS_ORIGINS"
+
+
+def _install_cors(app: FastAPI) -> list[str]:
+    """`MEDIMATE_CORS_ORIGINS`가 있을 때만 미들웨어를 붙인다. 없으면 아무것도 안 한다.
+
+    웹 데모가 브라우저에서 우리를 **직접** 부를 때만 필요하다. 백엔드가 프록시하면 요청이
+    서버에서 오므로 CORS는 개입하지 않는다. 아직 안 정해졌으니 env 하나로 켤 수 있게만 둔다.
+
+    **`*`는 받지 않는다.** 브라우저에는 HMAC 시크릿을 둘 수 없어서 CORS를 여는 순간 그 출처가
+    사실상 유일한 문지기가 된다. `*`면 문지기가 없는 것과 같다.
+    """
+    raw = (os.getenv(CORS_ENV) or "").strip()
+    if not raw:
+        return []
+    origins = [o.strip() for o in raw.split(",") if o.strip()]
+    if "*" in origins:
+        raise ValueError(
+            f"{CORS_ENV}에 '*'는 쓸 수 없습니다 — 브라우저에 HMAC 시크릿을 둘 수 없어"
+            " 출처 목록이 유일한 문지기입니다. 도메인을 적어 주세요"
+        )
+    from fastapi.middleware.cors import CORSMiddleware
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=origins,
+        allow_credentials=False,  # 쿠키를 안 쓴다. 켜면 `*` 금지와 같은 이유로 위험만 는다
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Content-Type", "X-Signature", "X-Timestamp", "X-Request-Id"],
+    )
+    return origins
+
+
 def _default_factory() -> ExtractorFactory:
     """요청마다 새 LLMExtractor(usage는 요청 단위), SDK 클라이언트는 공유."""
     try:
@@ -322,6 +355,7 @@ def create_app(
 
     auth.install(app)  # MEDIMATE_HMAC_SECRET 없으면 검증 생략
     app.state.daily_budget = DailyBudget.from_env()  # 변수 없으면 꺼진 상태
+    app.state.cors_origins = _install_cors(app)
     app.state.limits = Limits()
     app.state.ontology = None  # 첫 요청에 로드. data/ontology CSV, 로드 시 검증
     app.state.memo_factory = (
@@ -354,6 +388,7 @@ def create_app(
             # 우리 가격표 기준 **추정치**다(청구서와 다를 수 있다). 밖에서 보이게 두는 이유는
             # `hmac_required`와 같다 — "켠 줄 알았는데 안 켜진" 상태를 없앤다. 꺼져 있으면 null
             "llm_budget": request.app.state.daily_budget.status(),
+            "cors_origins": len(request.app.state.cors_origins) or None,
         }
 
     @app.post("/v1/previsit/sessions", response_model=StartResponse)
