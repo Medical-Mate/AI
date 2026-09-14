@@ -277,6 +277,18 @@ def example_texts(version: str = QUESTIONS_VERSION) -> list[str]:
     return [t["text"] for t in json.loads(sysp[i:])["items"]]
 
 
+# 빈 목록을 뭐라고 적을 것인가. **"없음"이 아니다.**
+#
+# 앱 온보딩에 "없어요" 버튼이 없어서 빈 답이 전부 미확인으로 저장된다(2026-09-14, 안드로이드
+# 확인). 그래서 `[]`는 "없다"가 아니라 **"안 물어봤다"**이고, 필드 생략도 같다.
+#
+# 알러지에서 이 둘은 다른 값이다 — "없음"이면 처방이 그대로 나가고 "모름"이면 확인이 필요하다.
+# 프롬프트에 "없음"이라고 적으면 모델은 확인된 사실로 읽는다. 축의 `(안 답함)`과 같은 자리다.
+#
+# 앱이 "없어요"를 받게 되면 그때 값에 상태를 얹는다(`api-postvisit.md`가 아니라 진료 전 계약).
+PROFILE_UNKNOWN = "(확인 안 됨)"
+
+
 def questions_user(card: dict) -> str:
     axes = card.get("axes", {})
     lines = []
@@ -284,9 +296,8 @@ def questions_user(card: dict) -> str:
         v = axes.get(k)
         lines.append(f"{ko}: {v if v else '(안 답함)'}")
     prof = card.get("profile", {})
-    lines.append(f"복용약: {', '.join(prof.get('medications') or []) or '없음'}")
-    lines.append(f"기저질환: {', '.join(prof.get('conditions') or []) or '없음'}")
-    lines.append(f"알러지: {', '.join(prof.get('allergies') or []) or '없음'}")
+    for key, ko in (("medications", "복용약"), ("conditions", "기저질환"), ("allergies", "알러지")):
+        lines.append(f"{ko}: {', '.join(prof.get(key) or []) or PROFILE_UNKNOWN}")
     if card.get("patient_message"):
         lines.append(f"환자가 덧붙인 말: {card['patient_message']}")
     return "카드:\n" + "\n".join(lines) + "\n\n의사에게 물어볼 것 후보. JSON:"

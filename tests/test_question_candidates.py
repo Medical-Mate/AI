@@ -214,3 +214,29 @@ def test_unknown_profile_field_is_rejected():
         c, st, question_candidates=True, patient_profile={"medications": [], "birth_year": 1990}
     )
     assert r.status_code == 422
+
+
+def test_empty_profile_renders_as_unknown_not_none():
+    """앱에 "없어요" 버튼이 없어서 빈 답이 전부 미확인으로 저장된다(2026-09-14 안드로이드 확인).
+
+    알러지에서 "없음"과 "모름"은 처방이 달라지는 값이다 — 프롬프트에 "없음"이라고 적으면
+    모델이 확인된 사실로 읽는다. 축의 `(안 답함)`과 같은 자리다.
+    """
+    from medimate.llm.assist_prompts import PROFILE_UNKNOWN, questions_user
+
+    for prof in ({}, {"medications": [], "conditions": [], "allergies": []}):
+        user = questions_user({"axes": {"site": "무릎"}, "profile": prof})
+        for ko in ("복용약", "기저질환", "알러지"):
+            assert f"{ko}: {PROFILE_UNKNOWN}" in user, (ko, prof)
+        assert "없음" not in user.split("복용약")[1]
+
+
+def test_a_filled_profile_still_renders_the_values():
+    from medimate.llm.assist_prompts import PROFILE_UNKNOWN, questions_user
+
+    user = questions_user(
+        {"axes": {}, "profile": {"medications": ["혈압약", "아스피린"], "allergies": ["페니실린"]}}
+    )
+    assert "복용약: 혈압약, 아스피린" in user
+    assert "알러지: 페니실린" in user
+    assert f"기저질환: {PROFILE_UNKNOWN}" in user  # 안 온 것만 미확인
