@@ -32,6 +32,40 @@ class Axis(StrEnum):
     SEVERITY = "severity"  # 심각도
 
 
+# 카드 화면에 찍히는 축 이름. **여기가 유일한 출처다.**
+#
+# 2026-09-14까지 우리는 부위 라벨(`body-map`의 `label`: "무릎"·"옆구리")은 주면서 축 라벨은
+# 주지 않았다. 그래서 앱이 8개를 혼자 지었고, 백엔드·웹·앱이 서로 다른 말을 쓸 여지가 있었다.
+# 실제로 카드 화면에 `"심해질 때, 나아질 때"`(9자)·`"같이있는 증상"`(6자)이 들어가 레이아웃이
+# 깨졌다. 그 비대칭이 이 상수가 생긴 이유다.
+#
+# **한글 4자 이내를 지킨다.** 카드가 라벨 열을 한 줄로 잡기 때문이고, 테스트가 그 상한을 지킨다.
+# 공백과 가운뎃점(`·`)은 세지 않는다 — 한글 음절보다 훨씬 좁아서 같은 한 칸으로 치면 실제보다
+# 길게 잡힌다. 길어져야 할 이유가 생기면 라벨이 아니라 화면 설계를 먼저 본다.
+#
+# 이 값을 응답에 싣지는 않는다 — 화면 문자열은 앱의 것이고, 계약에 필드를 하나 더 만들면
+# 백엔드가 통과시킬 것이 늘어난다. 계약 문서의 표가 이 상수를 그대로 옮긴 것이고,
+# 나중에 실어 보내기로 하면 그때 한 줄이면 된다.
+AXIS_LABEL_KO: dict[Axis, str] = {
+    Axis.SITE: "부위",
+    Axis.ONSET: "시작",
+    Axis.CHARACTER: "느낌",
+    Axis.RADIATION: "퍼짐",
+    Axis.ASSOCIATED: "동반 증상",
+    Axis.TIME_COURSE: "경과",
+    # 질문은 악화만 묻지만(`dialog/questions.py`) 환자가 말한 완화도 이 축에 담기므로
+    # 라벨은 둘 다 남긴다. 담을 자리를 없앤 것이 아니다
+    Axis.EXACERBATING_RELIEVING: "악화·완화",
+    Axis.SEVERITY: "아픈 정도",
+}
+AXIS_LABEL_MAX = 4  # 한글 음절 수. 공백·가운뎃점 제외
+
+
+def axis_label_len(label: str) -> int:
+    """라벨의 한글 음절 수. 공백·가운뎃점은 폭이 좁아 세지 않는다."""
+    return sum(1 for c in label if "가" <= c <= "힣")
+
+
 class FieldStatus(StrEnum):
     NOT_ASKED = "not_asked"  # 아직 묻지 않았다
     FILLED = "filled"  # 환자가 답했고 값이 있다
