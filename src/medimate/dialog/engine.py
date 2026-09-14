@@ -188,7 +188,15 @@ class Session:
           와도
           한 턴으로 처리해 다음 질문을 정한다
         """
+        # **끝난 뒤에도 선택은 받는다.** 와이어프레임 순서가 2 문답 → 3 통증 슬라이더라,
+        # 문답이 `complete`로 닫힌 **뒤에** 슬라이더 값이 온다. 여기서 막으면 통증 강도가
+        # 카드에 영원히 안 들어간다 — `severity`는 묻지 않는 축이라 문답으로 채울 길도 없다.
+        #
+        # 선택 반영은 결정론이고 LLM을 부르지 않으므로 끝난 세션에서도 안전하다.
+        # 발화는 여전히 무시한다(LLM 호출 0). 상태도 바꾸지 않는다 — `end_reason`은 그대로다.
         if self.ended:
+            for axis, value in selections:
+                self.prefill(axis, value)
             return self.spec.closing
         self._ensure_started()
 

@@ -131,7 +131,7 @@ class StoredMemoClassifier:
         )
 
 
-def build(last_turn: int = 0) -> dict:
+def build() -> dict:
     ex = StoredExtractor()
     client = TestClient(create_app(lambda: ex, memo_factory=lambda: StoredMemoClassifier()))
     steps = []
@@ -142,29 +142,33 @@ def build(last_turn: int = 0) -> dict:
     steps.append({"step": "session_start", "request": start_body, "response": r.json()})
     state = r.json()["state"]
 
-    # 서버가 이번 턴에 무엇을 물었는지 보고 답한다. 세션이 끝나면 멈춘다 —
-    # 끝난 뒤에 한 턴 더 보내면 `audit`이 `null`인 빈 턴이 녹화된다.
-    #
-    # **후보 요청과 프로필은 마지막 턴에만 붙인다.** 매 턴 붙이면 건강정보가 턴 수만큼 오가는
-    # 녹화가 되고, 프론트가 그걸 보고 그대로 구현한다. `last_turn`은 한 번 돌려 본 길이다
-    # (몇 턴에 끝나는지는 엔진이 정하므로 밖에서 셀 수 없다).
+    # 서버가 이번 턴에 무엇을 물었는지 보고 답한다. 세션이 끝나면 멈춘다.
     i = 0
     while not steps[-1]["response"].get("ended", False):
         i += 1
         asked = Axis(state["asked_axis"]) if state.get("asked_axis") else None
         body = {"state": state, "utterance": ex.answer_for(asked), "request_id": f"demo-{i}"}
-        if i == last_turn:
-            # 실제 흐름이 3단계 슬라이더 → 4단계 후보라 이 순서가 맞다.
-            # `ended` 뒤 턴은 카드를 안 바꾸므로 여기서 같이 실어야 녹화에 남는다
-            body["selections"] = [SEVERITY_SELECTION]
-            body["question_candidates"] = True
-            body["patient_profile"] = PROFILE
         r = client.post("/v1/previsit/turns", json=body)
         r.raise_for_status()
         steps.append({"step": f"turn_{i}", "request": body, "response": r.json()})
         state = r.json()["state"]
         if i > 20:  # 엔진 상한과 같다. 무한 루프 방지
             raise RuntimeError("세션이 끝나지 않았다")
+
+    # **문답이 끝난 뒤에 슬라이더와 후보 요청이 온다.** 와이어프레임 순서가
+    # 2 문답 → 3 통증 슬라이더 → 4 물어볼 것이고, **실제 클라이언트는 어느 턴이 마지막인지
+    # 모른다.** 앞서 이걸 마지막 문답 턴에 실어 녹화했더니 `ended` 뒤 selections가 버려지는
+    # 버그를 못 잡았다 — 녹화기만 미래를 알고 있었던 셈이다.
+    body = {
+        "state": state,
+        "selections": [SEVERITY_SELECTION],
+        "question_candidates": True,
+        "patient_profile": PROFILE,
+        "request_id": "demo-after",
+    }
+    r = client.post("/v1/previsit/turns", json=body)
+    r.raise_for_status()
+    steps.append({"step": "after_end_slider_and_candidates", "request": body, "response": r.json()})
 
     memo_body = {
         "memo": MEMO,
@@ -191,10 +195,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true", help="쓰지 않고 드리프트만 확인")
     args = ap.parse_args()
-    # 1패스로 몇 턴에 끝나는지 보고, 2패스에서 마지막 턴에만 후보 요청을 붙인다
-    probe = build()
-    last_turn = sum(1 for s in probe["steps"] if s["step"].startswith("turn_"))
-    fresh = build(last_turn=last_turn)
+    fresh = build()
     text = json.dumps(fresh, ensure_ascii=False, indent=2) + "\n"
     if args.check:
         if not OUT.exists():
