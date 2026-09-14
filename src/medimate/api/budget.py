@@ -85,6 +85,9 @@ class DailyBudget:
     _day: date = field(default_factory=_today)
     _spent: float = 0.0
     _persisted: bool = False
+    # 마지막으로 로그에 남긴 쓰기 상태. None이면 아직 한 번도 안 남겼다는 뜻이라
+    # 첫 결과는 성공이든 실패든 한 줄 남는다. 그 뒤로는 **바뀔 때만** 남긴다.
+    _logged_persist_ok: bool | None = None
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
     @classmethod
@@ -145,6 +148,23 @@ class DailyBudget:
                 self._day, self._spent = today, 0.0
                 self._persist()
 
+    def _log_write_state(self, ok: bool, exc: OSError | None = None) -> None:
+        """쓰기 상태가 **바뀔 때만** 로그에 남긴다.
+
+        볼륨이 안 잡힌 채 배포되면 쓰기는 LLM 호출마다 일어난다. 매번 경고를 내면
+        심사 4주짜리 공개 데모의 로그가 이 한 줄로 덮이고 정작 봐야 할 것이 묻힌다.
+        지금 파일이 살아 있는지는 `/health`의 `persisted`가 들고 있으니 로그가 되풀이할 일이 아니다.
+        다만 **첫 실패는 반드시 남긴다** — 조용히 실패하는 쪽이 더 나쁘다.
+        """
+        if self._logged_persist_ok is ok:
+            return
+        if ok:
+            if self._logged_persist_ok is not None:  # 실패하다 복구된 경우에만
+                logger.warning("예산 상태 파일을 다시 쓸 수 있습니다: %s", self.state_file)
+        else:
+            logger.warning("예산 상태 파일을 쓰지 못해 메모리 카운터로 계속합니다: %s", exc)
+        self._logged_persist_ok = ok
+
     def _persist(self) -> None:
         """현재 상태를 원자적으로 교체한다. 실패해도 LLM 요청은 계속 처리한다."""
         if self.state_file is None:
@@ -168,9 +188,10 @@ class DailyBudget:
                 temp_path = Path(temp.name)
             os.replace(temp_path, self.state_file)
             self._persisted = True
+            self._log_write_state(True)
         except OSError as exc:
             self._persisted = False
-            logger.warning("예산 상태 파일을 쓰지 못해 메모리 카운터로 계속합니다: %s", exc)
+            self._log_write_state(False, exc)
         finally:
             if temp_path is not None:
                 try:
