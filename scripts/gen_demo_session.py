@@ -60,6 +60,12 @@ ANSWERS = {
 }
 PROFILE = {"medications": ["진통제(가끔)"], "conditions": [], "allergies": []}
 
+# 통증 강도는 **묻지 않고 화면에서 고른다**(1d 슬라이더). `ASK_ORDER`에 `severity`가 없는 이유다 —
+# NRS를 말로 물으면 환자가 숫자를 지어내고, 그 값은 근거가 없다.
+# 슬라이더 값은 발화가 아니라 `selections`로 오고 evidence에 `[선택]`이 붙는다.
+# 녹화에 이 자리가 없으면 프론트가 **슬라이더 값을 어디에 실어야 하는지 모른다.**
+SEVERITY_SELECTION = {"axis": "severity", "value": "3 (꽤 아파요)"}
+
 # 질문 후보 — 저장된 형식 그대로. 랭커가 정렬해 위에서 3개를 자른다
 CANDIDATES = json.dumps(
     {
@@ -148,6 +154,9 @@ def build(last_turn: int = 0) -> dict:
         asked = Axis(state["asked_axis"]) if state.get("asked_axis") else None
         body = {"state": state, "utterance": ex.answer_for(asked), "request_id": f"demo-{i}"}
         if i == last_turn:
+            # 실제 흐름이 3단계 슬라이더 → 4단계 후보라 이 순서가 맞다.
+            # `ended` 뒤 턴은 카드를 안 바꾸므로 여기서 같이 실어야 녹화에 남는다
+            body["selections"] = [SEVERITY_SELECTION]
             body["question_candidates"] = True
             body["patient_profile"] = PROFILE
         r = client.post("/v1/previsit/turns", json=body)

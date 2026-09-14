@@ -1463,6 +1463,12 @@
         },
         "utterance": "아침에 좀 뻣뻣해요",
         "request_id": "demo-5",
+        "selections": [
+          {
+            "axis": "severity",
+            "value": "3 (꽤 아파요)"
+          }
+        ],
         "question_candidates": true,
         "patient_profile": {
           "medications": [
@@ -1532,9 +1538,11 @@
                 ]
               },
               "severity": {
-                "status": "not_asked",
-                "value": null,
-                "evidence": []
+                "status": "filled",
+                "value": "3 (꽤 아파요)",
+                "evidence": [
+                  "[선택] 3 (꽤 아파요)"
+                ]
               }
             },
             "red_flags": [],
@@ -1636,16 +1644,18 @@
               "source": "ai_extraction"
             },
             "severity": {
-              "status": "not_asked",
-              "value": null,
-              "evidence": [],
-              "source": null
+              "status": "filled",
+              "value": "3 (꽤 아파요)",
+              "evidence": [
+                "[선택] 3 (꽤 아파요)"
+              ],
+              "source": "selection"
             }
           },
           "red_flags": [],
           "patient_notes": [],
           "minimally_complete": true,
-          "completeness": 0.875,
+          "completeness": 1.0,
           "provenance": {
             "prompt_version": "demo-fixture",
             "model_id": "demo/stored",
