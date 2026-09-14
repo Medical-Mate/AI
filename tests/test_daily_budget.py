@@ -10,7 +10,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from medimate.api.app import create_app
-from medimate.api.budget import ENV_CAP, BudgetGuarded, DailyBudget, DailyBudgetExceeded
+from medimate.api.budget import (
+    ENV_CAP,
+    ENV_STATE_FILE,
+    BudgetGuarded,
+    DailyBudget,
+    DailyBudgetExceeded,
+)
 from medimate.llm import AxisUpdate, TurnExtraction
 from medimate.schema import Axis, FieldStatus
 from tests.fakes import ScriptedExtractor
@@ -45,11 +51,15 @@ class Fake(ScriptedExtractor):
         return super().extract(*a, **kw)
 
 
-def _client(cap: str | None, monkeypatch):
+def _client(cap: str | None, monkeypatch, state_file=None):
     if cap is None:
         monkeypatch.delenv(ENV_CAP, raising=False)
     else:
         monkeypatch.setenv(ENV_CAP, cap)
+    if state_file is None:
+        monkeypatch.delenv(ENV_STATE_FILE, raising=False)
+    else:
+        monkeypatch.setenv(ENV_STATE_FILE, str(state_file))
     ex = Fake()
     return TestClient(create_app(lambda: ex)), ex
 
@@ -73,6 +83,32 @@ def test_health_shows_the_cap_and_what_was_spent(monkeypatch):
     b = c.get("/health").json()["llm_budget"]
     assert b["cap_usd"] == 5.0 and b["spent_today_usd"] == 0.0
     assert b["resets_at"].endswith("T00:00:00+09:00")  # 기본은 KST 자정
+    assert b["persisted"] is False  # 파일 경로를 주지 않으면 지금처럼 메모리
+
+
+def test_state_file_survives_a_new_app_process(tmp_path, monkeypatch):
+    """배포가 새 프로세스를 띄워도 같은 날짜의 누적액을 다시 읽는다."""
+    state_file = tmp_path / "budget.json"
+    c, _ = _client("5.0", monkeypatch, state_file)
+    c.app.state.daily_budget.record(0.75)
+    assert c.get("/health").json()["llm_budget"]["persisted"] is True
+
+    restarted, _ = _client("5.0", monkeypatch, state_file)
+    restored = restarted.get("/health").json()["llm_budget"]
+    assert restored["spent_today_usd"] == pytest.approx(0.75)
+    assert restored["persisted"] is True
+
+
+def test_state_write_failure_does_not_stop_the_questionnaire(tmp_path, monkeypatch):
+    """볼륨 권한이 깨져도 메모리 상한은 남고 문진 요청은 파일 I/O 때문에 죽지 않는다."""
+    state_file = tmp_path / "a-directory-not-a-file"
+    state_file.mkdir()
+    c, _ = _client("5.0", monkeypatch, state_file)
+
+    c.app.state.daily_budget.record(0.25)  # 예외가 밖으로 나오지 않는다
+    status = c.get("/health").json()["llm_budget"]
+    assert status["spent_today_usd"] == pytest.approx(0.25)
+    assert status["persisted"] is False
 
 
 def test_the_day_boundary_is_seoul_midnight_by_default(monkeypatch):
