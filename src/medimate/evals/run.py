@@ -210,14 +210,31 @@ def main() -> None:
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--report", type=Path, help="저장된 결과를 재채점만")
     ap.add_argument("--yes", action="store_true", help="예상 비용 확인 생략")
-    ap.add_argument("--prompt", choices=["v3", "small"], default="v3", help="프롬프트 계열")
+    ap.add_argument(
+        "--prompt",
+        choices=["auto", "v3", "small", "v4-nova"],
+        default="auto",
+        help="프롬프트 계열. auto는 모델 id로 고른다(providers.prompt_family_for)",
+    )
     ap.add_argument("--limit", type=int, help="앞에서 N케이스만 (기기 실측처럼 속도만 볼 때)")
+    ap.add_argument(
+        "--cases",
+        help="케이스 id만 골라 돌린다(쉼표 구분: J02,A01). 실패 몇 건만 다시 볼 때 — 전체를 "
+        "돌리면 한 번에 $0.16이 나간다",
+    )
     ap.add_argument(
         "--guard", choices=["server", "ondevice"], help="재채점 시 런타임 가드 적용(호출 0)"
     )
     a = ap.parse_args()
 
     cases = load_cases()
+    if a.cases:
+        want = [x.strip() for x in a.cases.split(",") if x.strip()]
+        by_id = {c["id"]: c for c in cases}
+        missing = [x for x in want if x not in by_id]
+        if missing:
+            ap.error(f"없는 케이스 id: {', '.join(missing)}")
+        cases = [by_id[x] for x in want]
     if a.limit:
         cases = cases[: a.limit]
 
