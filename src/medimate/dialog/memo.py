@@ -337,6 +337,11 @@ _WORD_DAYS = {
     "두주일": 14,
     "삼주일": 21,
     "세주일": 21,
+    # '일'을 빼고 쓰는 형태(2026-09-15). "이주뒤 재방문"이 안 읽혀서 앞 절의 약 기간
+    # "일주일치"를 재방문으로 썼다 — 어제 고친 것과 같은 모양이 다른 낱말에서 났다
+    "일주": 7,
+    "이주": 14,
+    "삼주": 21,
     "열흘": 10,
     "보름": 15,
     "사흘": 3,
@@ -556,6 +561,37 @@ def _to_noun(m: re.Match[str]) -> str:
     return m.group(1) + "기"
 
 
+# 연결어미 `-고`로 끝나는 절의 어간. 문장을 절 단위로 나누면 "일주일치 약처방받고"처럼
+# **연결어미가 꼬리에 남는다.** 그대로 두면 카드가 메모를 잘라 놓은 것과 같다(2026-09-15 QA).
+# `보`는 뺐다 — "결과 보고"(report)와 "결과 보고"(see and)를 가를 수 없다. 모르면 둔다.
+_CONNECTIVE_STEMS = tuple(
+    st
+    for st in dict.fromkeys(
+        _VERB_STEMS + ("받", "맞", "찍", "넣", "빼", "붙이", "마시", "걷", "뛰", "복용하", "처방받")
+    )
+    if st != "보"  # `_VERB_STEMS`에 있어도 여기서는 뺀다 — "결과 보고"가 report일 수 있다
+)
+_CONNECTIVE_ALT = "|".join(sorted(_CONNECTIVE_STEMS, key=len, reverse=True))
+
+
+def _nominal(stem: str) -> str:
+    """어간 → 명사형(`-음`/`-ㅁ`). 받침 있으면 `음`, 없으면 ㅁ 받침을 합성한다.
+
+    받 → 받음 · 먹 → 먹음 · 하 → 함 · 오 → 옴 · 쓰 → 씀 · 드시 → 드심 · 줄이 → 줄임
+    """
+    last = stem[-1]
+    if not ("가" <= last <= "힣"):
+        return stem + "음"
+    code = ord(last) - 0xAC00
+    if code % 28:  # 받침 있음
+        return stem + "음"
+    return stem[:-1] + chr(0xAC00 + code + 16)  # ㅁ 종성 index 16
+
+
+def _connective_to_noun(m: re.Match[str]) -> str:
+    return _nominal(m.group(1))
+
+
 _RULES: list[tuple[re.Pattern[str], object]] = [
     # ~지 말라고 → ~지 않기 (금지). `말`이 어간 목록에 있어 아래 규칙보다 먼저 와야 한다
     (re.compile(r"지\s*말라고" + _SAID), "지 않기"),
@@ -568,6 +604,9 @@ _RULES: list[tuple[re.Pattern[str], object]] = [
     (re.compile(r"다고" + _SAID), "다"),
     (re.compile(r"대요" + _SAID), "다"),
     (re.compile(r"자고" + _SAID), "자"),
+    # 절 끝에 남은 연결어미 `-고` → 명사형(`받고` → `받음`). 인용 규칙들 **뒤**에 둔다 —
+    # `~라고`·`~다고`·`~자고`가 먼저 걸려야 하고, 여기는 그 무엇도 아닌 맨 `-고`만 받는다
+    (re.compile(rf"({_CONNECTIVE_ALT})고[\s.。!?,]*$"), _connective_to_noun),
     # 인용 없이 명사형 어미(`했음`·`갔음`)만 붙은 것은 **건드리지 않는다.**
     # 떼면 "오늘은 스케일링만 했음" → "…했"으로 어간이 맨몸으로 남는다. 어색하게 남는 쪽이
     # 잘라먹는 쪽보다 낫다 — 모르는 어미는 그대로 둔다는 원칙이 이 자리다.
