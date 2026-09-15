@@ -50,7 +50,7 @@ uv run python -m medimate.evals.run --provider openai --model gpt-5.6-terra  # �
 - 프롬프트를 바꾸면 비교 대상 모델을 전부 다시 돌린다. 한 모델만 v2로 두지 않는다
 
 ## 모델
-- Extractor 기본: `gpt-5.6-terra`. 동등 대안 `claude-sonnet-5`. 근거: `docs/decisions/2026-09-03-extractor-model.md`
+- Extractor 기본·운영: **`apac.amazon.nova-pro-v1:0`**(Bedrock 서울, 프롬프트 `extract-v4-nova`). 코드 기본값도 이것이다(2026-09-15). Terra·Sonnet은 비교 기준: `docs/decisions/2026-09-03-extractor-model.md`
 - 모델 ID는 `src/medimate/llm/providers.py` 가격표의 문자열을 그대로 쓴다. 날짜 접미사 임의 추가 금지
 - Gemini는 사고 토큰이 출력 한도에 포함된다. max_output_tokens 8192 유지
 
