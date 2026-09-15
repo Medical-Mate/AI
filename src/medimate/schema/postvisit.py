@@ -29,8 +29,8 @@ class PostAxis(StrEnum):
     MEDICATION_INSTRUCTIONS = "medication_instructions"  # 약 — 처방, 복용법, 주사·처치
     # 지침 — 식이·활동·자세·금지 같은 생활 지시(2026-09-15 분리). 전에는 약 칸에 접혀 있어서
     # 약 칸이 길어지고 "약"이라는 라벨 아래 약이 아닌 말이 찍혔다(백엔드 #78도 같은 지적).
-    # `MEDIMATE_LIFESTYLE_AXIS`가 꺼져 있으면 예전처럼 약 칸에 접어 낸다 — 앱이 이 행을
-    # 그리기 전까지 화면에서 줄이 사라지지 않게
+    # `MEDIMATE_LIFESTYLE_AXIS`가 꺼져 있으면 예전처럼 약 칸에 접어 낸다. 앱은 모르는 축도
+    # 뒤에 붙여 그리지만(라벨은 키 그대로), 켜는 시점은 운영이 정한다 — 켜면 끝까지 유지
     LIFESTYLE_INSTRUCTIONS = "lifestyle_instructions"
     FOLLOW_UP = "follow_up"  # 재방문 — 다음 방문 시점·조건
 
