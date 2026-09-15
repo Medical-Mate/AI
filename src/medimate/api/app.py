@@ -417,12 +417,48 @@ def create_app(
             "cors_origins": len(request.app.state.cors_origins) or None,
         }
 
+    def _site_node_of(text: str) -> str | None:
+        """자유 텍스트 부위 → 노드 id. 못 찾으면 None.
+
+        **점수 3(이름·별칭과 정확히 같음)만** 인정한다. 점수 2(앞뒤로 걸림)까지 받으면
+        `"배"`가 `"아랫배"`에도 걸려 엉뚱한 쌍이 만들어진다. 확실할 때만 되묻는다.
+        """
+        if app.state.ontology is None:
+            app.state.ontology = load_ontology()
+        for node, _term, score in app.state.ontology.search(text, limit=4):
+            if score < 3:
+                break
+            return node.id
+        return None
+
+    def _site_relation(label: str, spoken: str) -> str:
+        """인체도에서 짚은 곳과 환자가 말한 곳의 관계.
+
+        `other`만 되묻는다. 상하위로 이어져 있으면 같은 곳이고, **더 좁은 쪽을 남긴다** —
+        `어깨`를 짚고 `팔`이라고 했다고 `"어깨 팔"`로 적으면 의사가 읽는 자리가 흐려진다.
+        한쪽이라도 온톨로지에 없으면 `unknown`이다. 모르면 되묻지 않는다 — 헛되묻기가
+        "왜 못 알아듣지"로 읽히는 쪽이 놓치는 쪽보다 나쁘다.
+        """
+        a, b = _site_node_of(label), _site_node_of(spoken)
+        if not a or not b:
+            return "unknown"
+        if a == b:
+            return "same"
+        onto = app.state.ontology
+        assert onto is not None
+        if onto.is_ancestor(a, b):
+            return "narrower"  # 말한 쪽이 짚은 것의 하위
+        if onto.is_ancestor(b, a):
+            return "broader"  # 말한 쪽이 짚은 것의 상위
+        return "other"
+
     @app.post("/v1/previsit/sessions", response_model=StartResponse)
     def start_session(extractor: Ex, body: StartRequest | None = None) -> StartResponse:
         ondevice = bool(body and body.profile == "ondevice")
         s = Session(
             extractor,
             limits=app.state.limits,
+            site_relation=_site_relation,
             profile="ondevice" if ondevice else "server",
             guard=GuardConfig.ondevice() if ondevice else GuardConfig(),
             skip_open_ended=ondevice,
@@ -449,7 +485,9 @@ def create_app(
         problems = check_state(body.state)
         if problems:
             raise HTTPException(status_code=400, detail="; ".join(problems))
-        s = Session.from_state(extractor, body.state, limits=app.state.limits)
+        s = Session.from_state(
+            extractor, body.state, limits=app.state.limits, site_relation=_site_relation
+        )
         if body.extraction_meta is not None and s.card.provenance is not None:
             # 폰이 뽑았으면 어느 모델·프롬프트였는지 카드에 남긴다
             s.card.provenance.model_id = body.extraction_meta.model_id
