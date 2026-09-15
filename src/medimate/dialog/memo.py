@@ -619,18 +619,54 @@ _RULES: list[tuple[re.Pattern[str], object]] = [
 _TRAILING = re.compile(r"[\s·,.。!?]+$")
 
 
-def tidy_value(text: str) -> str:
+# 칸 이름이 이미 말하는 낱말이 값 꼬리에 또 있으면 뗀다(2026-09-15). "일주일치 약처방 이주일 후
+# 재방문"이 약 칸에 `일주일치 약처방`, 재방문 칸에 `이주일 후 재방문`으로 나가 "잘라 놓기만 했다"로
+# 읽혔다. 사실을 바꾸는 게 아니라 **라벨과 겹치는 단어**만 빼는 것이라 ㉡(어미 정리 + 틀) 안이다.
+# 긴 것부터 본다. 떼고 남는 것이 없으면 안 뗀다 — `재방문` 한 낱말은 그대로 둔다.
+_AXIS_TRAILERS: dict[PostAxis, tuple[str, ...]] = {
+    PostAxis.FOLLOW_UP: ("재방문", "재내원", "재진", "방문"),
+    PostAxis.MEDICATION_INSTRUCTIONS: (
+        "약처방받음",
+        "약 처방받음",
+        "약처방",
+        "약 처방",
+        "처방받음",
+        "처방",
+    ),
+}
+_TRAILING_PARTICLE = re.compile(r"(에|에서|으로|로)$")
+
+
+def _strip_axis_trailer(s: str, axis: PostAxis | None) -> str:
+    if axis is None:
+        return s
+    for word in _AXIS_TRAILERS.get(axis, ()):
+        if s.endswith(word):
+            rest = s[: -len(word)].strip()
+            if len(rest.replace(" ", "")) < 2:
+                return s  # 떼면 남는 게 없다
+            return _TRAILING_PARTICLE.sub("", rest).strip() or s
+    return s
+
+
+def tidy_value(text: str, axis: PostAxis | None = None) -> str:
     """카드 `value`용으로 어미를 정리한다. **원문(`evidence`)은 건드리지 않는다.**
 
+    `axis`를 주면 그 칸 이름과 겹치는 꼬리 낱말(`재방문`·`약처방`)도 뗀다 — 라벨이 이미 말한다.
     규칙에 없는 모양은 그대로 돌려준다. 결과가 비면 원문을 쓴다 — 다듬다가 값을 없애는 것이
     제일 나쁘다.
     """
     s = text.strip()
+    out = None
     for rx, repl in _RULES:
         new = rx.sub(repl, s)
         if new != s:
-            return _TRAILING.sub("", new).strip() or s
-    return _TRAILING.sub("", s).strip() or s
+            out = _TRAILING.sub("", new).strip()
+            break
+    if out is None:
+        out = _TRAILING.sub("", s).strip()
+    out = _strip_axis_trailer(out, axis)
+    return out or s
 
 
 class FollowUpReader(Protocol):
@@ -742,7 +778,7 @@ def classify_memo(
             entry.status = FieldStatus.FILLED
             # `value`는 어미를 정리한 줄, `evidence`는 **문장 원문 그대로**.
             # 진료 전 카드가 이미 이 구조다. 원문이 사라지면 우리가 보증하는 것이 사라진다
-            entry.value = " · ".join(tidy_value(s) for s in sents)
+            entry.value = " · ".join(tidy_value(s, axis) for s in sents)
             entry.evidence = list(sents)
         else:
             entry.status = FieldStatus.UNKNOWN  # 메모에 그 묶음 얘기가 없었다
