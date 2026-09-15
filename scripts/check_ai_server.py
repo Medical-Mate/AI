@@ -12,6 +12,9 @@
     # 모델을 부르지 않고 경로·서명만 확인(비용 0)
     uv run python scripts/check_ai_server.py --base http://ai:8000 --no-llm
 
+    # 밖에서 백엔드 프록시를 통해(서명은 백엔드가 한다. 운영 모델·프롬프트 확인용)
+    uv run python scripts/check_ai_server.py --base https://<백엔드> --prefix /api/demo
+
 무엇을 보나
 
 1. `/health` — 컨테이너가 떴는가
@@ -88,18 +91,30 @@ def main() -> None:
     a.add_argument("--secret", default=None, help="MEDIMATE_HMAC_SECRET. 없으면 서명 없이 보낸다")
     a.add_argument("--no-llm", action="store_true", help="selections만 보내 LLM을 부르지 않는다")
     a.add_argument(
+        "--prefix",
+        default="/v1",
+        help="경로 접두사. 백엔드 프록시로 갈 때는 /api/demo (거기엔 v1이 없다)",
+    )
+    a.add_argument(
         "--utterance", default="오른쪽 무릎이 계단 내려갈 때만 아파요. 2주쯤 됐어요."
     )
     args = a.parse_args()
 
-    print(f"대상 {args.base}   서명 {'켬' if args.secret else '끔'}\n")
+    P = args.prefix.rstrip("/")
+    # 백엔드 프록시로 가면 /health·온톨로지는 안 열려 있을 수 있다. 그건 실패가 아니다
+    proxy = P != "/v1"
+    print(f"대상 {args.base}{P}   서명 {'켬' if args.secret else '끔'}\n")
     fails = 0
 
     # 1. health (서명 면제 경로)
     st, b, dt = call(args.base, "GET", "/health", None, None, "chk-health")
     ok = st == 200 and b.get("status") == "ok"
-    fails += not ok
-    print(f"{OK if ok else NO}/health  {st}  {dt * 1000:.0f}ms  hmac_enforced={b.get('hmac_enforced')}")
+    skip_health = proxy and not ok
+    fails += not ok and not skip_health
+    mark = "  --  " if skip_health else (OK if ok else NO)
+    print(f"{mark}/health  {st}  {dt * 1000:.0f}ms  hmac_enforced={b.get('hmac_enforced')}")
+    if skip_health:
+        print("       (프록시는 /health를 안 연다. 건너뛴다 — 확인할 것은 아래 prompt_version이다)")
 
     # 1-b. **이 스크립트가 쓰는 계산식과 서버가 검증하는 계산식이 같은가**
     #
@@ -122,21 +137,25 @@ def main() -> None:
         print("       ⚠ 키를 줬는데 서버는 검증이 꺼져 있다 — 서버 .env의 MEDIMATE_HMAC_SECRET이 비었다")
 
     # 2. 온톨로지 (GET도 서명 필요)
-    st, b, dt = call(args.base, "GET", "/v1/ontology/body-map", None, args.secret, "chk-map")
+    st, b, dt = call(args.base, "GET", f"{P}/ontology/body-map", None, args.secret, "chk-map")
     ok = st == 200 and b.get("anchors")
-    fails += not ok
+    skip_map = proxy and not ok
+    fails += not ok and not skip_map
     extra = f"앵커 {len(b.get('anchors', []))}개" if ok else b.get("detail", "")
-    print(f"{OK if ok else NO}GET /v1/ontology/body-map  {st}  {dt * 1000:.0f}ms  {extra}")
+    mark = "  --  " if skip_map else (OK if ok else NO)
+    print(f"{mark}GET {P}/ontology/body-map  {st}  {dt * 1000:.0f}ms  {extra}")
+    if skip_map:
+        print("       (프록시가 안 여는 경로일 수 있다. 건너뛴다)")
     if st == 401:
         print("       → 서명 검증이 켜져 있다. --secret 을 주고 다시 돌리면 된다")
 
     # 3. 세션 시작
     st, start, dt = call(
-        args.base, "POST", "/v1/previsit/sessions", {"site_label": "무릎"}, args.secret, "chk-start"
+        args.base, "POST", f"{P}/previsit/sessions", {"site_label": "무릎"}, args.secret, "chk-start"
     )
     ok = st == 200 and "state" in start
     fails += not ok
-    print(f"{OK if ok else NO}POST /v1/previsit/sessions  {st}  {dt * 1000:.0f}ms")
+    print(f"{OK if ok else NO}POST {P}/previsit/sessions  {st}  {dt * 1000:.0f}ms")
     if not ok:
         print(f"       {start}")
         raise SystemExit(1 if fails else 0)
@@ -146,11 +165,11 @@ def main() -> None:
     payload: dict = {"state": start["state"]}
     if args.no_llm:
         payload["selections"] = [{"axis": "severity", "value": "4 (매우 심함)"}]
-        label = "POST /v1/previsit/turns (selections만, LLM 0)"
+        label = f"POST {P}/previsit/turns (selections만, LLM 0)"
     else:
         payload["utterance"] = args.utterance
-        label = "POST /v1/previsit/turns (Bedrock 호출)"
-    st, turn, dt = call(args.base, "POST", "/v1/previsit/turns", payload, args.secret, "chk-turn")
+        label = f"POST {P}/previsit/turns (Bedrock 호출)"
+    st, turn, dt = call(args.base, "POST", f"{P}/previsit/turns", payload, args.secret, "chk-turn")
     ok = st == 200
     fails += not ok
     print(f"{OK if ok else NO}{label}  {st}  {dt * 1000:.0f}ms")
