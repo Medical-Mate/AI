@@ -77,6 +77,23 @@ Lite·Haiku도 채점했다(2026-09-11). **Haiku만 추측 어투 6건**이 나�
 
 ## 환경변수 · 시크릿
 
+> **`MEDIMATE_MODEL`은 문자열이 정확히 일치해야 한다.** 프롬프트 계열을 모델 id로 고르기
+> 때문에 `apac.` 누락·대소문자 하나가 어긋나면 **조용히 `extract-v3`로 떨어진다** — 88케이스
+> 84 → 76, 인젝션 방어 3/3 → 0/3이 되는데 응답은 200이고 카드도 멀쩡하다.
+>
+> **배포하면 `/health`의 `extractor`를 본다.** 턴을 안 태우고 확인된다.
+>
+> ```
+> "extractor": { "provider": "bedrock",
+>                "model_id": "apac.amazon.nova-pro-v1:0",
+>                "prompt_version": "extract-v4-nova",   ← v3면 모델 id가 어긋난 것
+>                "pricing_known": true }                ← false면 지출 상한이 못 센다
+> ```
+>
+> 앞뒤 공백은 서버가 떼므로(`extractor_env()`) 그것만으로 떨어지지는 않는다.
+> 여기 나오는 것은 **설정값**이다. 그 턴이 실제로 무엇으로 돌았는지는 `card.provenance`가 낸다.
+
+
 ```
 MEDIMATE_PROVIDER=bedrock
 MEDIMATE_MODEL=apac.amazon.nova-pro-v1:0

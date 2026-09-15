@@ -42,7 +42,13 @@ from medimate.llm import assist_prompts as ap
 from medimate.llm.assist_rank import top_candidates
 from medimate.llm.base import Extractor, TurnExtraction
 from medimate.llm.memo_classifier import FixedLabels, LLMMemoClassifier
-from medimate.llm.providers import BudgetExceeded, LLMExtractor
+from medimate.llm.providers import (
+    PRICES,
+    PROMPTS,
+    BudgetExceeded,
+    LLMExtractor,
+    prompt_family_for,
+)
 from medimate.ontology import load_ontology
 from medimate.schema.card import (
     Axis,
@@ -318,6 +324,20 @@ def _install_cors(app: FastAPI) -> list[str]:
     return origins
 
 
+def extractor_env() -> tuple[str, str]:
+    """env가 정한 (공급자, 모델). **읽는 자리는 여기 하나다.**
+
+    `strip()`을 건다. 프롬프트 계열은 모델 id로 고르는데 정확히 일치해야 해서, `.env`에
+    따라붙은 공백 하나로 `extract-v4-nova`가 `extract-v3`로 조용히 떨어진다
+    (88케이스 84 → 76, 인젝션 3/3 → 0/3). 감지보다 없애는 쪽이 낫다.
+
+    `/health`와 실제 호출이 **같은 값**을 봐야 하므로 둘 다 이 함수를 쓴다.
+    """
+    provider = os.getenv("MEDIMATE_PROVIDER", DEFAULT_PROVIDER).strip() or DEFAULT_PROVIDER
+    model = os.getenv("MEDIMATE_MODEL", DEFAULT_MODEL).strip() or DEFAULT_MODEL
+    return provider, model
+
+
 def _default_factory() -> ExtractorFactory:
     """요청마다 새 LLMExtractor(usage는 요청 단위), SDK 클라이언트는 공유."""
     try:
@@ -326,8 +346,7 @@ def _default_factory() -> ExtractorFactory:
         load_dotenv()  # 저장소 루트 .env. 없으면 조용히 넘어간다
     except ImportError:
         pass
-    provider = os.getenv("MEDIMATE_PROVIDER", DEFAULT_PROVIDER)
-    model = os.getenv("MEDIMATE_MODEL", DEFAULT_MODEL)
+    provider, model = extractor_env()
     shared: dict[str, object] = {}
 
     def make() -> Extractor:
@@ -415,6 +434,30 @@ def create_app(
             # `hmac_required`와 같다 — "켠 줄 알았는데 안 켜진" 상태를 없앤다. 꺼져 있으면 null
             "llm_budget": request.app.state.daily_budget.status(),
             "cors_origins": len(request.app.state.cors_origins) or None,
+            # 어떤 모델·프롬프트로 뜰 것인가. **턴을 태우지 않고** 확인하라고 낸다.
+            #
+            # 프롬프트 계열은 모델 id로 고르는데 **정확히 일치**해야 한다. 뒤에 공백 하나,
+            # `apac.` 누락, 대문자 — 무엇이든 어긋나면 조용히 `extract-v3`로 떨어진다.
+            # 그때 88케이스 84 → 76, 인젝션 방어 3/3 → 0/3이 되는데 200도 나오고 카드도
+            # 멀쩡하다. 배포 직후 `curl /health` 한 번으로 그 상태를 없앤다.
+            #
+            # 여기 나오는 것은 **설정값**(이 서버가 쓸 것)이다. 그 턴이 실제로 무엇으로
+            # 돌았는지는 `card.provenance`가 낸다. 둘 다 필요하다.
+            "extractor": _extractor_config(),
+        }
+
+    def _extractor_config() -> dict[str, object]:
+        """env가 정한 공급자·모델과, 그 모델이 쓸 프롬프트 버전.
+
+        LLM 클라이언트를 만들지 않는다 — 자격증명 없이도 `/health`는 200이어야 한다.
+        `pricing_known`이 false면 가격표에 없는 모델이라 **지출 상한이 세지 못한다**.
+        """
+        provider, model = extractor_env()
+        return {
+            "provider": provider,
+            "model_id": model,
+            "prompt_version": PROMPTS[prompt_family_for(model)].PROMPT_VERSION,
+            "pricing_known": model in PRICES,
         }
 
     def _site_node_of(text: str) -> str | None:
@@ -591,8 +634,7 @@ def create_app(
     def _memo_classifier(request: Request):
         factory = request.app.state.memo_factory
         if factory is None:
-            provider = os.getenv("MEDIMATE_PROVIDER", DEFAULT_PROVIDER)
-            model = os.getenv("MEDIMATE_MODEL", DEFAULT_MODEL)
+            provider, model = extractor_env()
             shared: dict[str, object] = {}
 
             def make():

@@ -345,3 +345,50 @@ def test_a_bogus_side_is_still_rejected():
     for bad in ("sideways", "왼쪽", "l"):
         r = client.post("/v1/previsit/sessions", json={"site_node_id": "SUR:042", "side": bad})
         assert r.status_code == 422, bad
+
+
+# ── 어떤 모델·프롬프트로 떠 있나 (2026-09-15) ──────────────────────────────────
+
+
+def test_health_says_which_model_and_prompt_the_server_will_use(monkeypatch):
+    """턴을 태우지 않고 확인하라고 낸다.
+
+    프롬프트 계열은 모델 id로 고르는데 **정확히 일치**해야 한다. 어긋나면 조용히
+    `extract-v3`로 떨어지고 88케이스 84 → 76, 인젝션 방어 3/3 → 0/3이 된다.
+    200도 나오고 카드도 멀쩡해서 밖에서는 안 보였다.
+    """
+    monkeypatch.setenv("MEDIMATE_PROVIDER", "bedrock")
+    monkeypatch.setenv("MEDIMATE_MODEL", "apac.amazon.nova-pro-v1:0")
+    client, _ = make_client([])
+    assert client.get("/health").json()["extractor"] == {
+        "provider": "bedrock",
+        "model_id": "apac.amazon.nova-pro-v1:0",
+        "prompt_version": "extract-v4-nova",
+        "pricing_known": True,
+    }
+
+
+def test_a_wrong_model_id_is_visible_instead_of_silent(monkeypatch):
+    """`apac.`이 빠지면 Nova 전용 프롬프트가 아니다. 그 사실이 `/health`에 보여야 한다."""
+    monkeypatch.setenv("MEDIMATE_MODEL", "amazon.nova-pro-v1:0")
+    client, _ = make_client([])
+    ex = client.get("/health").json()["extractor"]
+    assert ex["prompt_version"] == "extract-v3"
+    # 가격표에도 없다 = 지출 상한이 이 모델을 세지 못한다
+    assert ex["pricing_known"] is False
+
+
+def test_whitespace_in_the_model_env_is_removed_not_just_reported(monkeypatch):
+    """공백 하나로 프롬프트가 바뀌는 것은 **감지**가 아니라 **제거**로 막는다.
+
+    `/health`와 실제 호출이 같은 값을 보게 읽는 자리가 하나여야 한다.
+    """
+    from medimate.api.app import extractor_env
+
+    monkeypatch.setenv("MEDIMATE_MODEL", "  apac.amazon.nova-pro-v1:0  ")
+    client, _ = make_client([])
+    assert client.get("/health").json()["extractor"]["prompt_version"] == "extract-v4-nova"
+    assert extractor_env()[1] == "apac.amazon.nova-pro-v1:0"
+
+    monkeypatch.setenv("MEDIMATE_MODEL", "   ")  # 빈 값은 기본값으로
+    assert extractor_env()[1] == "gpt-5.6-terra"
