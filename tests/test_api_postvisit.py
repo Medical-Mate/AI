@@ -127,3 +127,56 @@ def test_memo_rejects_empty_and_unknown_fields():
     assert (
         client.post("/v1/postvisit/memo", json={"memo": "x", "diagnosis": "y"}).status_code == 422
     )
+
+
+# ── 운영 경로: 지연 초기화에서 리더가 같이 만들어지는가 (2026-09-15) ────────────────
+
+
+def test_the_lazy_production_path_builds_the_reader_too(monkeypatch):
+    """`create_app()`에 아무것도 주입하지 않은 **운영 모양**으로 두 번 부른다.
+
+    전에는 `_followup_reader`가 "memo_factory가 차 있으면 테스트 주입"이라고 추론해서
+    운영에서 리더가 한 번도 안 만들어졌다 — 백엔드가 운영 12건에서 `LLM 읽음`이 0번인 것으로
+    잡았다. 첫 요청(캐시 비어 있음)과 두 번째 요청(캐시 차 있음) 둘 다 리더가 붙어야 한다.
+    """
+    import medimate.api.app as appmod
+
+    calls = {"clf": 0, "read": 0}
+
+    class FakeClf:
+        model_id = "fake"
+        prompt_version = "memo-small-v4"
+        usage = None
+
+        def __init__(self, *a, **k):
+            pass
+
+        def classify(self, sentences):
+            from medimate.dialog.memo import MemoLabels
+
+            calls["clf"] += 1
+            labs = ["medication_instructions", "follow_up"][: len(sentences)]
+            return MemoLabels.from_keyed({str(i): x for i, x in enumerate(labs)}, len(sentences))
+
+    class FakeReader:
+        model_id = "fake"
+        prompt_version = "followup-v1"
+        usage = None
+
+        def __init__(self, *a, **k):
+            pass
+
+        def read(self, sentence, prev_text=None):
+            calls["read"] += 1
+            return {"text": "담주", "days": 7, "month": None, "day": None}
+
+    monkeypatch.setattr(appmod, "LLMMemoClassifier", FakeClf)
+    monkeypatch.setattr(appmod, "LLMFollowUpReader", FakeReader)
+    client = TestClient(create_app())  # 주입 없음 = 운영 모양
+    body = {"memo": "약 받았어요. 담주에 다시 오래요.", "visit_date": "2026-09-15"}
+    for expected_reads in (1, 2):
+        r = client.post("/v1/postvisit/memo", json=body)
+        assert r.status_code == 200
+        fu = r.json()["card"]["follow_up_date"]
+        assert fu["date"] == "2026-09-22" and fu["basis"].startswith("LLM 읽음 '담주'")
+        assert calls["read"] == expected_reads
