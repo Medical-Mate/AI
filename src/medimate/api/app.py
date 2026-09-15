@@ -533,7 +533,31 @@ def create_app(
             s.card.site_selection = SiteSelectionRecord(**sel.model_dump())
             s.card.provenance.ontology_snapshot = sel.ontology_snapshot
         elif body and body.site_label:
-            s.preselect_site(body.site_label)
+            # 이름만 온 경우도 **노드로 풀어 본다**(2026-09-15). 앱이 노드 id를 안 보내고
+            # 화면에 보이는 이름만 보내고 있었다(백엔드 #7 확인). 이름만으로 두면 되묻기는
+            # 돌지만 `title`·`department_guidance`가 비어 나간다 — 그 둘은 노드에서 온다.
+            # 못 풀면 예전처럼 이름만 쓴다. **422로 끊지 않는다** — 환자가 짚은 것은 맞고,
+            # 우리가 그 이름을 모르는 것뿐이다.
+            node_id, side = _parse_site(body.site_label)
+            sel = None
+            if node_id:
+                if app.state.ontology is None:
+                    app.state.ontology = load_ontology()
+                try:
+                    sel = resolve_site(app.state.ontology, node_id, body.side or side)
+                except ValueError:
+                    sel = None
+            if sel is not None:
+                # **이름은 받은 그대로 쓴다.** 노드는 진료과·제목 재료를 얻으려고 푼 것이지
+                # 이름을 고치려고 푼 것이 아니다 — `"허리"`로 보냈는데 `"허리 가운데"`로
+                # 되돌려주면 앱 화면에 없던 말이 환자에게 보인다.
+                record = sel.model_dump()
+                record["label"] = body.site_label.strip()
+                s.preselect_site(record["label"])
+                s.card.site_selection = SiteSelectionRecord(**record)
+                s.card.provenance.ontology_snapshot = sel.ontology_snapshot
+            else:
+                s.preselect_site(body.site_label)
         return StartResponse(
             reply=s.opening(), state=s.to_state(), request_id=body.request_id if body else None
         )

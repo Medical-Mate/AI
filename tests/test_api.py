@@ -392,3 +392,44 @@ def test_whitespace_in_the_model_env_is_removed_not_just_reported(monkeypatch):
 
     monkeypatch.setenv("MEDIMATE_MODEL", "   ")  # 빈 값은 기본값으로
     assert extractor_env()[1] == "gpt-5.6-terra"
+
+
+# ── 앱이 노드 id를 안 보내고 이름만 보낼 때 (2026-09-15, 백엔드 #7) ───────────────
+
+
+def test_a_site_name_alone_still_fills_title_and_department():
+    """앱이 `siteText`(화면 이름)만 보내고 노드 id를 안 보내고 있었다.
+
+    이름만 쓰면 되묻기는 돌지만 `title`·`department_guidance`가 빈다 — 둘 다 노드에서
+    나온다. 이름으로 노드를 풀어 그 둘을 채운다.
+    """
+    client, _ = make_client([])
+    b = client.post("/v1/previsit/sessions", json={"site_label": "팔"}).json()
+    card = b["state"]["card"]
+    assert card["site_selection"]["node_id"] == "ANC:013"
+    assert card["site_selection"]["departments"] == ["정형외과"]
+
+
+def test_the_name_the_caller_sent_is_the_name_we_show():
+    """노드를 푸는 것은 재료를 얻으려는 것이지 이름을 고치려는 것이 아니다.
+
+    `"허리"`로 보냈는데 `"허리 가운데"`로 되돌려주면 앱 화면에 없던 말이 환자에게 보인다.
+    """
+    client, _ = make_client([])
+    b = client.post("/v1/previsit/sessions", json={"site_label": "허리"}).json()
+    assert "허리 가운데" not in b["reply"]
+    assert b["state"]["card"]["axes"]["site"]["value"] == "허리"
+    assert b["state"]["card"]["site_selection"]["label"] == "허리"
+
+
+def test_an_unknown_site_name_is_kept_not_rejected():
+    """온톨로지에 없는 이름이어도 422로 끊지 않는다.
+
+    환자가 짚은 것은 맞고 우리가 그 이름을 모르는 것뿐이다. 이름만 쓰고 넘어간다.
+    """
+    client, _ = make_client([])
+    r = client.post("/v1/previsit/sessions", json={"site_label": "거시기"})
+    assert r.status_code == 200
+    card = r.json()["state"]["card"]
+    assert card["axes"]["site"]["value"] == "거시기"
+    assert card["site_selection"] is None
