@@ -296,3 +296,27 @@ def test_the_reported_memo_end_to_end():
     assert res.card.follow_up_date.date == "2026-09-29"
     # 원문은 그대로 남는다
     assert ax[PostAxis.FOLLOW_UP].evidence == ["이주일 후 재방문"]
+
+
+# ── 운영에서 원문 그대로 남은 것들 (2026-09-15 저녁, 백엔드 #107) ────────────────────
+
+
+def test_noun_plus_igo_at_the_tail_is_dropped():
+    """조각 경로가 혼합 문장을 주제 경계에서 나누면 앞 조각에 `이고`가 남는다.
+
+    "약은 2주분이고 커피 줄이래요" → "약은 2주분이고" / "커피 줄이래요".
+    """
+    from medimate.dialog.memo import tidy_value
+    from medimate.schema.postvisit import PostAxis
+
+    assert tidy_value("약은 2주분이고", PostAxis.MEDICATION_INSTRUCTIONS) == "약은 2주분"
+    assert tidy_value("약 먹이고") == "약 먹임"  # 동사 `먹이`는 동사 규칙이 먼저 잡는다
+    assert tidy_value("2주분이고") == "2주분"
+
+
+def test_more_stems_from_production_memos():
+    from medimate.dialog.memo import tidy_value
+
+    assert tidy_value("베개 낮은 걸로 바꾸래요") == "베개 낮은 걸로 바꾸기"
+    assert tidy_value("무거운 거 들지 말라고") == "무거운 거 들지 않기"
+    assert tidy_value("자세 자주 바꾸고") == "자세 자주 바꿈"
