@@ -329,6 +329,21 @@ def split_sentences(memo: str) -> list[str]:
     return out
 
 
+# 숫자로 안 쓰는 기간. 공백을 뺀 형태를 키로 둔다(`한 주일` → `한주일`).
+_WORD_DAYS = {
+    "일주일": 7,
+    "한주일": 7,
+    "이주일": 14,
+    "두주일": 14,
+    "삼주일": 21,
+    "세주일": 21,
+    "열흘": 10,
+    "보름": 15,
+    "사흘": 3,
+    "나흘": 4,
+}
+_WORD_ALT = "|".join(sorted((k[0] + r"\s*" + k[1:] for k in _WORD_DAYS), key=len, reverse=True))
+
 _REL = [
     (re.compile(r"(\d+)\s*주\s*(뒤|후|있다가|지나서)"), lambda m: timedelta(weeks=int(m.group(1)))),
     (re.compile(r"(\d+)\s*일\s*(뒤|후|있다가|지나서)"), lambda m: timedelta(days=int(m.group(1)))),
@@ -345,6 +360,12 @@ _REL = [
         re.compile(r"(한|두|세)\s*달\s*(뒤|후)"),
         lambda m: timedelta(days=30 * {"한": 1, "두": 2, "세": 3}[m.group(1)]),
     ),
+    # 숫자 없는 기간 (2026-09-15). `\d+`만 보다가 `일주일 뒤에 다시 오세요`를 못 읽고
+    # **앞 절의 약 기간으로 새는** 사고가 있었다. 환자는 `7일`보다 `일주일`이라고 쓴다.
+    (
+        re.compile(rf"({_WORD_ALT})\s*(뒤|후|있다가|지나서)"),
+        lambda m: timedelta(days=_WORD_DAYS[m.group(1).replace(" ", "")]),
+    ),
 ]
 _ABS = re.compile(r"(\d{1,2})\s*월\s*(\d{1,2})\s*일")
 _NEXT_MONTH_DAY = re.compile(r"다음\s*달\s*(\d{1,2})\s*일")
@@ -356,8 +377,21 @@ _NEXT_MONTH_DAY = re.compile(r"다음\s*달\s*(\d{1,2})\s*일")
 #
 # **기간만 보고 잡으면 안 된다.** "2주 약 먹고"의 2주는 약 기간이지 재방문 시점이 아닐 수 있다.
 # 그래서 **같은 절에 다시 온다는 말이 있을 때만** 기간을 재방문으로 읽는다.
-_RETURN_WORDS = ("다시 오", "다시 와", "재방문", "경과 보", "보자", "오라고", "오세요", "뵙")
-_BARE_DURATION = re.compile(r"(\d+)\s*(주일|개월|주|일|달|년)")
+# `방문했`은 안 걸리고 `방문하세요`·`방문해 주세요`만 걸린다 — 지난 방문의 숫자를 끌어오면 안 된다
+_RETURN_WORDS = (
+    "다시 오",
+    "다시 와",
+    "재방문",
+    "경과 보",
+    "보자",
+    "오라고",
+    "오세요",
+    "뵙",
+    "방문하",
+    "방문해",
+    "내원",
+)
+_BARE_DURATION = re.compile(rf"(\d+)\s*(주일|개월|주|일|달|년)|({_WORD_ALT})")
 _UNIT_DAYS = {"주": 7, "주일": 7, "일": 1, "개월": 30, "달": 30, "년": 365}
 
 # 앞 절에서 기간을 끌어올 수 있는 조건. 여기만 추론이 들어가므로 `basis`에 남긴다.
@@ -369,12 +403,33 @@ def _has_return_word(text: str) -> bool:
     return any(w in text for w in _RETURN_WORDS)
 
 
-def _bare_duration(text: str) -> tuple[str, timedelta] | None:
-    m = _BARE_DURATION.search(text)
-    if not m:
+def _return_word_pos(text: str) -> int | None:
+    """가장 먼저 나오는 재방문 말의 위치. 기간을 고르는 기준점이다."""
+    hits = [text.index(w) for w in _RETURN_WORDS if w in text]
+    return min(hits) if hits else None
+
+
+def _match_days(m: re.Match[str]) -> int:
+    if m.group(3):  # 숫자 없는 기간(`일주일`·`열흘`)
+        return _WORD_DAYS[m.group(3).replace(" ", "")]
+    return _UNIT_DAYS[m.group(2)] * int(m.group(1))
+
+
+def _bare_duration(text: str, near: int | None = None) -> tuple[str, timedelta] | None:
+    """기간 하나를 고른다. `near`가 있으면 **그 위치에 가장 가까운** 것으로.
+
+    첫 번째를 집으면 안 된다 (2026-09-15). `"3일치 약처방 4일후 재방문"`에서 첫 기간은
+    **약 기간**이라 재방문이 3일 뒤로 잡힌다. 지금은 `_REL`이 `4일후`를 먼저 잡아 가려져
+    있지만, `"3일치 약 먹고 4일에 다시 오세요"`처럼 `뒤`·`후`가 빠지면 바로 드러난다.
+    재방문 말 옆에 있는 기간이 재방문 기간이다.
+    """
+    ms = list(_BARE_DURATION.finditer(text))
+    if not ms:
         return None
-    days = _UNIT_DAYS[m.group(2)] * int(m.group(1))
-    return m.group(0), timedelta(days=days)
+    if near is not None:
+        ms.sort(key=lambda m: min(abs(m.start() - near), abs(m.end() - near)))
+    m = ms[0]
+    return m.group(0), timedelta(days=_match_days(m))
 
 
 def followup_date(text: str, visit_date: date, prev_text: str | None = None) -> FollowUpDate | None:
@@ -415,7 +470,7 @@ def followup_date(text: str, visit_date: date, prev_text: str | None = None) -> 
 
     # 뒤에 오는 말 없이 기간만 있는 경우 — **같은 절에 다시 온다는 말이 있을 때만**
     if _has_return_word(text):
-        found = _bare_duration(text)
+        found = _bare_duration(text, near=_return_word_pos(text))
         if found:
             raw, delta = found
             return FollowUpDate(
