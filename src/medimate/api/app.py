@@ -41,7 +41,7 @@ from medimate.dialog.widening import compare_sites, widen_card
 from medimate.llm import assist_prompts as ap
 from medimate.llm.assist_rank import top_candidates
 from medimate.llm.base import Extractor, TurnExtraction
-from medimate.llm.memo_classifier import FixedLabels, LLMMemoClassifier
+from medimate.llm.memo_classifier import FixedLabels, LLMFollowUpReader, LLMMemoClassifier
 from medimate.llm.providers import (
     PRICES,
     PROMPTS,
@@ -688,6 +688,24 @@ def create_app(
             factory = request.app.state.memo_factory = make
         return BudgetGuarded(factory(), request.app.state.daily_budget)
 
+    def _followup_reader(request: Request):
+        """재방문 표현 읽기(followup-v1). 분류기와 같은 공급자·모델·지출 가드.
+
+        분류기 팩토리를 주입한 구성(테스트)에서는 `followup_factory`를 따로 주입하지 않으면
+        리더 없이 돈다 — 규칙 파서만 쓴다.
+        """
+        factory = getattr(request.app.state, "followup_factory", None)
+        if factory is None:
+            if getattr(request.app.state, "memo_factory", None) is not None:
+                return None
+            provider, model = extractor_env()
+
+            def make():
+                return LLMFollowUpReader(provider, model)
+
+            factory = request.app.state.followup_factory = make
+        return BudgetGuarded(factory(), request.app.state.daily_budget)
+
     @app.post("/v1/postvisit/memo", response_model=MemoResponse)
     def postvisit_memo(body: MemoRequest, request: Request) -> MemoResponse:
         """메모 → 4묶음 카드. labels가 오면 LLM 없이 조립(폰 분류·1q-2 수정 모두 이 경로)."""
@@ -712,8 +730,17 @@ def create_app(
         else:
             clf = _memo_classifier(request)
             source = "server"
+        # 재방문 표현 2차 읽기는 **서버가 분류하는 경로에서만** 붙는다. `labels`가 온 경로는
+        # 계약이 "LLM을 부르지 않고 조립"이라 규칙 파서만 쓴다
+        reader = _followup_reader(request) if source == "server" else None
         try:
-            res = classify_memo(body.memo, clf, visit_date=body.visit_date, clinic=body.clinic)
+            res = classify_memo(
+                body.memo,
+                clf,
+                visit_date=body.visit_date,
+                clinic=body.clinic,
+                followup_reader=reader,
+            )
         except BudgetExceeded as e:
             raise HTTPException(status_code=503, detail=str(e)) from e
         except ValueError as e:

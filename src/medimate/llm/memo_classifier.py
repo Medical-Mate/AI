@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from medimate.dialog.memo import MemoLabels
-from medimate.llm import prompt_memo_small
+from medimate.llm import prompt_followup, prompt_memo_small
 from medimate.llm.base import parse_json_text
 from medimate.llm.providers import LLMExtractor
 
@@ -52,3 +52,28 @@ class FixedLabels:
 
     def classify(self, sentences: Sequence[str]) -> MemoLabels:
         return MemoLabels.from_keyed(self._keyed, len(sentences))
+
+
+class LLMFollowUpReader:
+    """재방문 기간 표현을 읽는 2차 호출(`followup-v1`). 분류기와 같은 공급자·모델·지출 가드."""
+
+    def __init__(self, provider: str, model_id: str, budget_usd: float = 0.5, client=None):
+        self.ex = LLMExtractor(provider, model_id, budget_usd=budget_usd, _client=client)
+        self.model_id = model_id
+        self.prompt_version = prompt_followup.PROMPT_VERSION
+        self.last_text = ""
+
+    @property
+    def usage(self):
+        return self.ex.usage
+
+    def read(self, sentence: str, prev_text: str | None = None) -> dict:
+        self.ex.response_schema = prompt_followup.SCHEMA
+        text, i, o = self.ex._call(
+            prompt_followup.system_prompt(), prompt_followup.user_message(sentence, prev_text)
+        )
+        self.ex.usage.calls += 1
+        self.ex.usage.input_tokens += i
+        self.ex.usage.output_tokens += o
+        self.last_text = text
+        return parse_json_text(text)
