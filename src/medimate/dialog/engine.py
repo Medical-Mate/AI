@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -50,6 +50,22 @@ class Limits:
     )
 
 
+def _has_final(word: str) -> bool:
+    """마지막 글자에 받침이 있나. 한글이 아니면 없는 것으로 본다(조사를 덜 틀리는 쪽)."""
+    ch = word.strip()[-1:] if word.strip() else ""
+    if not ch or not ("가" <= ch <= "힣"):
+        return False
+    return (ord(ch) - 0xAC00) % 28 != 0
+
+
+def _eul(word: str) -> str:
+    return "을" if _has_final(word) else "를"
+
+
+def _i_ga(word: str) -> str:
+    return "이" if _has_final(word) else "가"
+
+
 @dataclass
 class Session:
     extractor: Extractor
@@ -72,6 +88,11 @@ class Session:
     # (온디바이스: 소형 모델은 다축 첫 발화를 못 뽑는다)
     skip_open_ended: bool = False
     profile: str = "server"  # server | ondevice. 상태로 왕복된다
+    # 짚은 부위와 말한 부위의 관계를 본다. API가 온톨로지로 만들어 넣는다.
+    # 반환: "other"(다른 곳) | "narrower"(말한 쪽이 더 좁다) | "broader"(짚은 쪽이 더 좁다)
+    #       | "same" | "unknown"(모름). None이면 대조를 안 한다 — 엔진 단위 테스트는
+    # 주입 없이 예전 동작 그대로 돈다
+    site_relation: Callable[[str, str], str] | None = None
 
     def __post_init__(self) -> None:
         if self.card is None:
@@ -90,6 +111,7 @@ class Session:
         state: SessionState,
         limits: Limits | None = None,
         spec: InterviewSpec | None = None,
+        site_relation: Callable[[str, str], str] | None = None,
     ) -> Session:
         """백엔드가 들고 있던 상태로 세션을 복원한다. 판정 로그는 복원하지 않는다."""
         spec = spec or SPECS[state.spec]
@@ -113,6 +135,7 @@ class Session:
             message_asked=state.message_asked,
             carried_tokens=state.session_tokens,
             limits=limits or Limits(),
+            site_relation=site_relation,
         )
 
     def to_state(self) -> SessionState:
@@ -266,7 +289,7 @@ class Session:
         self.asked_axis = nxt
         if self.card.axes[nxt].status == FieldStatus.AMBIGUOUS:
             self.clarified.add(nxt)
-            return notice + self.spec.clarify[nxt]
+            return notice + self._clarify_text(nxt)
         return notice + self.spec.questions[nxt]
 
     def end(self, reason: str = "stop") -> str:
@@ -291,7 +314,7 @@ class Session:
                 return self.spec.message_question
             return self.opening()
         if self.asked_axis in self.clarified:
-            return self.spec.clarify[self.asked_axis]
+            return self._clarify_text(self.asked_axis)
         return self.spec.questions[self.asked_axis]
 
     def _session_tokens(self) -> int:
@@ -321,6 +344,11 @@ class Session:
             entry.status = u.status
             if u.status == FieldStatus.FILLED:
                 entry.value = self._merge_site_label(axis, u.value)
+                # 짚은 곳과 다른 부위를 말했다. 어느 쪽인지는 **환자가 정한다** — 우리가
+                # 고르면 의사가 읽는 사실이 바뀐다. 되묻고, 안 답하면 그대로 닫힌다
+                label = self._preselected_site() if is_site else None
+                if label and u.value and self._site_conflict(label, u.value):
+                    entry.status = FieldStatus.AMBIGUOUS
             entry.evidence.append(u.evidence)
 
     def _preselected_site(self) -> str | None:
@@ -335,13 +363,63 @@ class Session:
 
     def _merge_site_label(self, axis: StrEnum, value: str | None) -> str | None:
         """SITE에 부위가 미리 선택돼 있으면 환자의 세부 표현("아래쪽 중앙")이 라벨을 지우지 않게
-        앞에 붙인다. 모델은 선택된 부위를 모르므로 엔진이 지킨다."""
+        앞에 붙인다. 모델은 선택된 부위를 모르므로 엔진이 지킨다.
+
+        **다른 부위를 말한 경우는 붙이지 않는다**(2026-09-15). `이마`를 짚고 `눈`이라고 하면
+        `"이마 눈"`이 되어 어느 쪽인지 알 수 없는 줄이 카드에 남았다. 그때는 값을 환자 말로
+        두고 `AMBIGUOUS`로 되묻는다 — 판정은 `_site_conflict`가 한다.
+        """
         if axis != self.spec.site_axis or not value:
             return value
         label = self._preselected_site()
-        if label and label not in value:
-            return f"{label} {value}"
-        return value
+        if not label or label in value:
+            return value
+        rel = self._site_relation(label, value)
+        if rel in ("other", "narrower", "same"):
+            # 다른 곳이면 되묻고(값은 환자 말), 더 좁혀 말했으면 좁은 쪽이 맞다
+            return value
+        if rel == "broader":
+            # 짚은 쪽이 더 좁다("어깨"를 짚고 "팔"이라고 함). 넓은 말을 붙이면 흐려진다
+            return label
+        # 온톨로지가 모르는 세부 표현("무릎 안쪽"). 겹치는 낱말은 두 번 쓰지 않는다
+        if any(w and w in value for w in label.split()):
+            return value
+        return f"{label} {value}"
+
+    def _site_conflict(self, label: str, value: str) -> bool:
+        """짚은 부위와 말한 부위가 **다른 곳**인가.
+
+        온톨로지를 모르면(주입 없음·둘 중 하나라도 못 찾음) **충돌로 보지 않는다.**
+        헛되묻기는 환자에게 "왜 못 알아듣지"로 읽혀서, 확실할 때만 묻는다.
+        """
+        return self._site_relation(label, value) == "other"
+
+    def _site_relation(self, label: str, value: str) -> str:
+        if self.site_relation is None:
+            return "unknown"
+        return self.site_relation(label, value)
+
+    def _clarify_text(self, axis: StrEnum) -> str:
+        """되묻기 문구. 부위가 어긋난 경우만 무엇과 무엇이 어긋났는지 짚어 준다."""
+        generic = self.spec.clarify[axis]
+        if axis != self.spec.site_axis:
+            return generic
+        label = self._preselected_site()
+        spoken = self._spoken_site()
+        if not label or not spoken or not self._site_conflict(label, spoken):
+            return generic
+        return (
+            f"{label}{_eul(label)} 짚어 주셨는데 {spoken}{_i_ga(spoken)} 불편하다고 하셨어요. "
+            "어느 쪽을 적을까요?"
+        )
+
+    def _spoken_site(self) -> str | None:
+        """SITE evidence 중 환자가 말한 마지막 것. `[부위 선택]` 표시가 붙은 것은 발화가 아니다."""
+        if self.spec.site_axis is None:
+            return None
+        tag = self.spec.site_preselected_tag
+        spoken = [e for e in self.card.axes[self.spec.site_axis].evidence if not e.startswith(tag)]
+        return spoken[-1] if spoken else None
 
     def _next_axis(self) -> StrEnum | None:
         # 확인이 필요한 축이 먼저, 그 다음 아직 안 물은 축
