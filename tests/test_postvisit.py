@@ -95,6 +95,42 @@ def test_followup_date_relative_and_absolute():
     assert followup_date("안 좋아지면 바로 오래요", v) is None
 
 
+def test_the_duration_next_to_the_return_word_wins_not_the_first_one():
+    """약 기간이 앞에 있어도 재방문 기간을 쓴다.
+
+    제보: "약 3일치 받았고, 4일 뒤에 방문하세요"인데 캘린더가 3일 뒤로 잡혔다.
+    `_bare_duration`이 문장의 **첫** 기간을 집고 있었다 — 그게 약 기간이다.
+    """
+    v = date(2026, 9, 15)
+    assert followup_date("약 3일치 받았고, 4일 뒤에 방문하세요", v).date == "2026-09-19"
+    assert followup_date("3일치 약처방 4일후 재방문", v).date == "2026-09-19"
+    # `뒤`·`후`가 빠지면 _REL이 안 잡아 첫 기간을 집던 자리
+    assert followup_date("3일치 약 먹고 4일에 다시 오세요", v).date == "2026-09-19"
+
+
+def test_durations_written_as_words():
+    """환자는 `7일`보다 `일주일`이라고 쓴다.
+
+    못 읽으면 앞 절 폴백이 돌아 **약 기간**을 재방문으로 쓴다. 조용히 틀린 날짜가 된다.
+    """
+    v = date(2026, 9, 15)
+    assert followup_date("3일 약 먹고 일주일 뒤에 다시 오세요", v, prev_text="3일 약 먹고")
+    assert followup_date("일주일 뒤에 다시 오세요", v).date == "2026-09-22"
+    assert followup_date("열흘 뒤에 오세요", v).date == "2026-09-25"
+    assert followup_date("보름 뒤에 다시 오세요", v).date == "2026-09-30"
+    assert followup_date("이주일 후에 재방문", v).date == "2026-09-29"
+    # 앞 절 폴백도 단어 기간을 읽는다
+    fu = followup_date("다시 오세요", v, prev_text="일주일 약 드시고")
+    assert fu.date == "2026-09-22" and "앞 절" in fu.basis
+
+
+def test_past_visit_is_not_a_return_word():
+    """`방문하세요`는 재방문이고 `방문했고`는 지난 방문이다. 후자의 숫자를 끌어오면 안 된다."""
+    v = date(2026, 9, 15)
+    assert followup_date("3일치 약 받으러 방문했고", v) is None
+    assert followup_date("4일 뒤에 내원하세요", v).date == "2026-09-19"
+
+
 def test_export_marks_card_type_and_includes_memo_fields():
     res = classify_memo(
         "위염 초기라고 하셨어요. 2주 뒤에 오라고.",
