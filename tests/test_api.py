@@ -365,6 +365,7 @@ def test_health_says_which_model_and_prompt_the_server_will_use(monkeypatch):
         "model_id": "apac.amazon.nova-pro-v1:0",
         "prompt_version": "extract-v4-nova",
         "pricing_known": True,
+        "lifestyle_axis": False,  # 테스트 기본은 꺼짐
     }
 
 

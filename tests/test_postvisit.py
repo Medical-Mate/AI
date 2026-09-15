@@ -139,7 +139,8 @@ def test_export_marks_card_type_and_includes_memo_fields():
     )
     p = to_backend_payload(res.card)
     assert p["card_type"] == "postvisit"
-    assert set(p["axes"]) == {a.value for a in PostAxis}
+    # 지침 축은 플래그가 꺼져 있으면(테스트 기본) 키가 안 나간다 — 앱이 아직 모르는 행이다
+    assert set(p["axes"]) == {a.value for a in PostAxis} - {"lifestyle_instructions"}
     assert p["widening"] == [] and p["site_comparison"] is None
     assert p["follow_up_date"]["date"] == "2026-09-26"
     assert p["memo"].startswith("위염") and p["unsorted"] == []

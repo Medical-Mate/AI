@@ -33,7 +33,30 @@ logger = logging.getLogger("medimate.memo")
 LABELS = tuple(a.value for a in PostAxis) + ("none",)
 
 
-Label = Literal["findings", "tests", "medication_instructions", "follow_up", "none"]
+Label = Literal[
+    "findings", "tests", "medication_instructions", "lifestyle_instructions", "follow_up", "none"
+]
+
+
+def lifestyle_axis_enabled() -> bool:
+    """지침을 **따로 낼지** 약 칸에 접을지. env `MEDIMATE_LIFESTYLE_AXIS` (기본 꺼짐).
+
+    모델은 언제나 지침을 따로 분류한다. 끄면 카드에 담을 때만 약 칸으로 접는다 — 앱이
+    "지침" 행을 그리기 전에 켜면 그 줄이 화면에서 통째로 사라진다. 앱이 준비되면 env 한 줄이다.
+    """
+    import os
+
+    return os.getenv("MEDIMATE_LIFESTYLE_AXIS", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def fold_lifestyle(labels: dict[int, str]) -> dict[int, str]:
+    """플래그가 꺼져 있으면 지침 라벨을 약으로 접는다. 켜져 있으면 그대로."""
+    if lifestyle_axis_enabled():
+        return labels
+    return {
+        i: ("medication_instructions" if lab == "lifestyle_instructions" else lab)
+        for i, lab in labels.items()
+    }
 
 
 class MemoLabels(BaseModel):
@@ -740,6 +763,7 @@ def _assemble(
     followup_reader: FollowUpReader | None,
 ) -> None:
     """(문장, 라벨) → 카드. 규칙 분리든 LLM 조각이든 되보낸 조각이든 여기 하나로 온다."""
+    labels = fold_lifestyle(labels)
     buckets: dict[PostAxis, list[str]] = {a: [] for a in PostAxis}
     unsorted: list[str] = []
     for i, s in enumerate(sentences):
@@ -880,7 +904,7 @@ def segment_memo(
     card.visit_date = visit_date.isoformat() if visit_date else card.visit_date
     labels = dict(enumerate(labs))
     _assemble(card, sentences, labels, visit_date, followup_reader)
-    return MemoResult(card, sentences, labels, [])
+    return MemoResult(card, sentences, fold_lifestyle(labels), [])
 
 
 def assemble_from_client(
@@ -905,7 +929,7 @@ def assemble_from_client(
     raw = MemoLabels.from_keyed(keyed_labels, len(sliced))
     labels = dict(enumerate(raw.labels))
     _assemble(card, sliced, labels, visit_date, None)
-    return MemoResult(card, sliced, labels, [])
+    return MemoResult(card, sliced, fold_lifestyle(labels), [])
 
 
 def classify_memo(
@@ -940,4 +964,4 @@ def classify_memo(
         dropped.append({"i": i, "label": None, "reason": "missing_label"})  # none으로 처리된다
 
     _assemble(card, sentences, labels, visit_date, followup_reader)
-    return MemoResult(card, sentences, labels, dropped)
+    return MemoResult(card, sentences, fold_lifestyle(labels), dropped)

@@ -105,6 +105,7 @@ MEDIMATE_HMAC_SECRET=          # 비워둠
 MEDIMATE_DAILY_BUDGET_USD=     # 웹 데모에서는 채운다. 비우면 상한 없음
 MEDIMATE_BUDGET_RESET_TZ=Asia/Seoul
 MEDIMATE_BUDGET_STATE_FILE=    # 선택. 예: /var/lib/medimate/budget.json
+MEDIMATE_LIFESTYLE_AXIS=       # 비움=꺼짐. 앱이 "지침" 행을 그리면 1로. 켜기 전엔 지침이 약 칸에 접혀 나간다
 MEDIMATE_CORS_ORIGINS=         # 웹이 우리를 직접 부를 때만. 쉼표 구분, `*` 금지
 ```
 
