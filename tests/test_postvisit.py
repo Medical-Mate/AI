@@ -201,3 +201,102 @@ def test_two_weeks_written_without_il_is_read_not_stolen_from_the_medication():
     assert fu.date == "2026-09-29" and "앞 절" not in fu.basis
     assert followup_date("일주 뒤 오세요", v).date == "2026-09-22"
     assert followup_date("삼주 후 재방문", v).date == "2026-10-06"
+
+
+# ── 재방문 표현을 LLM이 읽고 날짜는 코드가 센다 (2026-09-15) ──────────────────────
+
+
+class _Reader:
+    def __init__(self, out):
+        self.out = out
+        self.calls = []
+
+    def read(self, sentence, prev_text=None):
+        self.calls.append((sentence, prev_text))
+        if isinstance(self.out, Exception):
+            raise self.out
+        return self.out
+
+
+def test_the_reader_is_only_asked_when_the_rules_fail_or_guess():
+    """규칙이 확실히 읽으면 LLM을 안 부른다. 못 읽거나 앞 절에서 끌어왔을 때만 부른다."""
+    from medimate.dialog.memo import classify_memo
+
+    v = date(2026, 9, 15)
+    r = _Reader({"text": "이주뒤", "days": 14, "month": None, "day": None})
+    classify_memo("2주 뒤에 오라고", FakeClassifier(["follow_up"]), visit_date=v, followup_reader=r)
+    assert r.calls == []  # 규칙이 읽었다
+
+    # `담주`는 규칙이 모른다 → 앞 절 폴백이 약 기간을 집으려는 자리 → 여기서 LLM이 읽는다
+    r = _Reader({"text": "담주", "days": 7, "month": None, "day": None})
+    res = classify_memo(
+        "일주일치 약처방받고. 담주에 보자고.",
+        FakeClassifier(["medication_instructions", "follow_up"]),
+        visit_date=v,
+        followup_reader=r,
+    )
+    assert r.calls and r.calls[0][0] == "담주에 보자고."
+    assert res.card.follow_up_date.date == "2026-09-22"
+    assert res.card.follow_up_date.basis.startswith("LLM 읽음 '담주' = 7d")
+
+
+def test_what_the_reader_says_must_be_in_the_sentence_verbatim():
+    """LLM이 문장에 없는 표현을 내면 버린다.
+
+    앞 문장에만 있는 것도 버린다 — 그게 약 기간이 재방문으로 넘어오는 길이다.
+    """
+    from medimate.dialog.memo import followup_from_reader
+
+    v = date(2026, 9, 15)
+    assert (
+        followup_from_reader(
+            _Reader({"text": "2주 뒤", "days": 14, "month": None, "day": None}), "담주에 보자고", v
+        )
+        is None
+    )
+    assert (
+        followup_from_reader(
+            _Reader({"text": "일주일치", "days": 7, "month": None, "day": None}),
+            "다시 오세요",
+            v,
+            prev_text="일주일치 약",
+        )
+        is None
+    )
+    assert (
+        followup_from_reader(
+            _Reader({"text": "담주", "days": 0, "month": None, "day": None}), "담주에 보자고", v
+        )
+        is None
+    )
+    assert (
+        followup_from_reader(
+            _Reader({"text": "담주", "days": 9999, "month": None, "day": None}), "담주에 보자고", v
+        )
+        is None
+    )
+    assert followup_from_reader(_Reader(RuntimeError("boom")), "담주에 보자고", v) is None
+
+
+def test_the_reader_can_give_an_absolute_date():
+    from medimate.dialog.memo import followup_from_reader
+
+    v = date(2026, 9, 15)
+    fu = followup_from_reader(
+        _Reader({"text": "10월 3일", "days": None, "month": 10, "day": 3}), "10월 3일에 오라고", v
+    )
+    assert fu.date == "2026-10-03" and not fu.approximate
+    fu = followup_from_reader(
+        _Reader({"text": "1월 5일", "days": None, "month": 1, "day": 5}), "1월 5일에 오라고", v
+    )
+    assert fu.date == "2027-01-05"  # 지난 날짜는 다음 해
+
+
+def test_the_week_after_next_is_two_weeks_not_one():
+    """`다다음주` 안에서 `다음 주`가 걸려 7일이 되고 있었다 — followup-v1 실측표에서 드러났다.
+
+    규칙이 **자신 있게 틀리는** 경우라 LLM 폴백이 안 불린다. 규칙을 고쳐야 한다.
+    """
+    v = date(2026, 9, 15)
+    assert followup_date("다다음주에 재방문", v).date == "2026-09-29"
+    assert followup_date("다음 주에 다시", v).date == "2026-09-22"

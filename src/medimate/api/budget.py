@@ -243,7 +243,7 @@ class BudgetGuarded:
     설계와 정면으로 어긋난다. 실제로 부르는 자리에 붙이면 추측이 필요 없다.
     """
 
-    _WRAPPED = ("extract", "extract_raw", "complete_json", "classify")
+    _WRAPPED = ("extract", "extract_raw", "complete_json", "classify", "read")
 
     def __init__(self, inner: Any, budget: DailyBudget):
         self._inner = inner

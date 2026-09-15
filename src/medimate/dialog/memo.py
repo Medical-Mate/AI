@@ -356,7 +356,9 @@ _REL = [
         re.compile(r"(\d+)\s*(개월|달)\s*(뒤|후|있다가|지나서)"),
         lambda m: timedelta(days=30 * int(m.group(1))),
     ),
-    (re.compile(r"다음\s*주"), lambda m: timedelta(weeks=1)),
+    # `다다음주`는 2주다. `다음 주`가 그 안에서 걸려 7일이 되던 것을 실측(followup-v1)이 잡았다
+    (re.compile(r"다다음\s*주"), lambda m: timedelta(weeks=2)),
+    (re.compile(r"(?<!다)다음\s*주"), lambda m: timedelta(weeks=1)),
     (
         re.compile(r"(한|두|세|네)\s*주\s*(뒤|후)"),
         lambda m: timedelta(weeks={"한": 1, "두": 2, "세": 3, "네": 4}[m.group(1)]),
@@ -628,6 +630,58 @@ def tidy_value(text: str) -> str:
     return _TRAILING.sub("", s).strip() or s
 
 
+class FollowUpReader(Protocol):
+    """재방문 표현을 읽는 것. `read`는 {"text","days","month","day"}를 돌려준다(followup-v1)."""
+
+    def read(self, sentence: str, prev_text: str | None = None) -> dict: ...
+
+
+_READ_MAX_DAYS = 400
+
+
+def followup_from_reader(
+    reader: FollowUpReader, sentence: str, visit_date: date, prev_text: str | None = None
+) -> FollowUpDate | None:
+    """LLM이 **읽은** 표현으로 날짜를 **계산**한다. 검증에 하나라도 걸리면 None — 지어내지 않는다.
+
+    - `text`는 현재 문장에 글자 그대로 있어야 한다(근거 가드). 앞 문장에만 있으면 버린다 —
+      그게 약 기간을 재방문으로 옮겨 적는 경로다
+    - `days`는 1..400. 아니면 버린다. 월·일이 오면 진료일 기준 다음 도래일
+    - 어떤 예외든 None. 2차 호출이 죽어도 카드는 나간다
+    """
+    try:
+        out = reader.read(sentence, prev_text)
+    except Exception:
+        return None
+    if not isinstance(out, dict):
+        return None
+    text = str(out.get("text") or "").strip()
+    if not text or text not in sentence:
+        return None
+    days, mo, d = out.get("days"), out.get("month"), out.get("day")
+    if isinstance(days, int) and not isinstance(days, bool) and 1 <= days <= _READ_MAX_DAYS:
+        dt = visit_date + timedelta(days=days)
+        return FollowUpDate(
+            text=text,
+            date=dt.isoformat(),
+            approximate=True,
+            basis=f"LLM 읽음 '{text}' = {days}d · visit_date {visit_date.isoformat()} + {days}d",
+        )
+    if isinstance(mo, int) and isinstance(d, int) and not isinstance(mo, bool):
+        yr = visit_date.year + (1 if (mo, d) < (visit_date.month, visit_date.day) else 0)
+        try:
+            dt = date(yr, mo, d)
+        except ValueError:
+            return None
+        return FollowUpDate(
+            text=text,
+            date=dt.isoformat(),
+            approximate=False,
+            basis=f"LLM 읽음 '{text}' · 절대 날짜",
+        )
+    return None
+
+
 @dataclass
 class MemoResult:
     card: PostVisitCard
@@ -642,8 +696,12 @@ def classify_memo(
     visit_date: date | None = None,
     clinic: str | None = None,
     card: PostVisitCard | None = None,
+    followup_reader: FollowUpReader | None = None,
 ) -> MemoResult:
-    """메모 하나를 4묶음 카드로. 문장 원문 보존, 라벨 없는 문장은 unsorted."""
+    """메모 하나를 4묶음 카드로. 문장 원문 보존, 라벨 없는 문장은 unsorted.
+
+    `followup_reader`가 있으면 규칙이 못 읽은 재방문 표현을 LLM으로 **읽고** 날짜는 코드가 센다.
+    """
     card = card or PostVisitCard()
     card.memo = memo
     card.clinic = clinic
@@ -693,7 +751,15 @@ def classify_memo(
         for i, s in enumerate(sentences):
             if labels.get(i) != PostAxis.FOLLOW_UP.value:
                 continue
-            fu = followup_date(s, visit_date, prev_text=sentences[i - 1] if i else None)
+            prev = sentences[i - 1] if i else None
+            fu = followup_date(s, visit_date, prev_text=prev)
+            # 규칙이 먼저다 — 확인 가능하고 공짜다. 규칙이 **못 읽었거나 앞 절에서 끌어왔을 때만**
+            # LLM에게 읽힌다(2026-09-15). "이주뒤"를 못 읽어 앞 절의 약 기간을 재방문으로 쓴
+            # 것이 계기다. LLM이 읽은 것도 문장에 글자 그대로 있어야만 받는다
+            if followup_reader is not None and (fu is None or fu.basis.startswith("앞 절")):
+                read = followup_from_reader(followup_reader, s, visit_date, prev_text=prev)
+                if read is not None:
+                    fu = read
             if fu:
                 card.follow_up_date = fu
                 # **`value`에는 날짜를 넣지 않는다.**
