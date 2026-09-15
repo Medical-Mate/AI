@@ -34,7 +34,7 @@ from medimate.api.state_guard import check_state
 from medimate.dialog.engine import Limits, Session
 from medimate.dialog.guard import GuardConfig
 from medimate.dialog.memo import SPLIT_VERSION, classify_memo
-from medimate.dialog.site import normalize_side, resolve_site
+from medimate.dialog.site import normalize_side, resolve_site, strip_side
 from medimate.dialog.spec import PREVISIT_SPEC
 from medimate.dialog.state import SessionState
 from medimate.dialog.widening import compare_sites, widen_card
@@ -460,19 +460,27 @@ def create_app(
             "pricing_known": model in PRICES,
         }
 
-    def _site_node_of(text: str) -> str | None:
-        """자유 텍스트 부위 → 노드 id. 못 찾으면 None.
+    def _parse_site(text: str) -> tuple[str | None, str | None]:
+        """자유 텍스트 부위 → (노드 id, 좌우). 못 찾으면 (None, 좌우).
 
         **점수 3(이름·별칭과 정확히 같음)만** 인정한다. 점수 2(앞뒤로 걸림)까지 받으면
         `"배"`가 `"아랫배"`에도 걸려 엉뚱한 쌍이 만들어진다. 확실할 때만 되묻는다.
+
+        좌우는 떼고 찾는다. 온톨로지 노드 이름에는 좌우가 없는데(`눈`·`무릎`) 환자는 붙여서
+        말해서, 안 떼면 `"오른쪽 눈"`이 점수 1로 떨어져 **대조가 통째로 조용히 꺼졌다**
+        (2026-09-15 QA — 이마를 짚고 "오른쪽 눈"이라 해도 아무 말 없이 지나갔다).
         """
         if app.state.ontology is None:
             app.state.ontology = load_ontology()
-        for node, _term, score in app.state.ontology.search(text, limit=4):
-            if score < 3:
+        side, bare = strip_side(text)
+        for query in (text, bare):
+            if not query:
+                continue
+            for node, _term, score in app.state.ontology.search(query, limit=4):
+                if score >= 3:
+                    return node.id, side
                 break
-            return node.id
-        return None
+        return None, side
 
     def _site_relation(label: str, spoken: str) -> str:
         """인체도에서 짚은 곳과 환자가 말한 곳의 관계.
@@ -481,10 +489,18 @@ def create_app(
         `어깨`를 짚고 `팔`이라고 했다고 `"어깨 팔"`로 적으면 의사가 읽는 자리가 흐려진다.
         한쪽이라도 온톨로지에 없으면 `unknown`이다. 모르면 되묻지 않는다 — 헛되묻기가
         "왜 못 알아듣지"로 읽히는 쪽이 놓치는 쪽보다 나쁘다.
+
+        **같은 부위라도 좌우가 다르면 다른 곳이다.** 왼쪽 무릎을 짚고 오른쪽 무릎이라고
+        말한 것은 되물어야 한다 — 의사가 보는 곳이 바뀐다.
         """
-        a, b = _site_node_of(label), _site_node_of(spoken)
+        a, a_side = _parse_site(label)
+        b, b_side = _parse_site(spoken)
+        sides_differ = bool(a_side and b_side and a_side != b_side)
         if not a or not b:
-            return "unknown"
+            # 부위를 못 찾아도 **좌우가 맞부딪히면** 그것만으로 되묻는다
+            return "other" if sides_differ and a == b else "unknown"
+        if sides_differ:
+            return "other"
         if a == b:
             return "same"
         onto = app.state.ontology

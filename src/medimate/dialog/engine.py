@@ -414,11 +414,19 @@ class Session:
         )
 
     def _spoken_site(self) -> str | None:
-        """SITE evidence 중 환자가 말한 마지막 것. `[부위 선택]` 표시가 붙은 것은 발화가 아니다."""
+        """환자가 말한 부위. **`value`를 쓴다**(모델이 정리한 부위 이름).
+
+        evidence는 발화 원문이라 `"눈이 불편해요"`처럼 문장이다(2026-09-15). 문장으로는
+        온톨로지를 못 찾아서 구체 되묻기 문구가 일반 문구로 조용히 새어나갔다 — 테스트가
+        evidence에 낱말(`"눈"`)만 넣고 있어서 못 잡았다. 실제로는 문장이 들어온다.
+        """
         if self.spec.site_axis is None:
             return None
+        entry = self.card.axes[self.spec.site_axis]
+        if entry.value:
+            return entry.value
         tag = self.spec.site_preselected_tag
-        spoken = [e for e in self.card.axes[self.spec.site_axis].evidence if not e.startswith(tag)]
+        spoken = [e for e in entry.evidence if not e.startswith(tag)]
         return spoken[-1] if spoken else None
 
     def _next_axis(self) -> StrEnum | None:
