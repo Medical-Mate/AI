@@ -106,6 +106,22 @@ MEDIMATE_DAILY_BUDGET_USD=     # 웹 데모에서는 채운다. 비우면 상한
 MEDIMATE_BUDGET_RESET_TZ=Asia/Seoul
 MEDIMATE_BUDGET_STATE_FILE=    # 선택. 예: /var/lib/medimate/budget.json
 MEDIMATE_LIFESTYLE_AXIS=       # 비움=꺼짐. 앱이 "지침" 행을 그리면 1로. 켜기 전엔 지침이 약 칸에 접혀 나간다
+```
+
+> **`MEDIMATE_LIFESTYLE_AXIS` 두 가지 함정 (백엔드 #107, 2026-09-15)**
+>
+> 1. **`.env`에 넣는 것으로 끝이 아니다.** 운영 `docker-compose.prod.yml`의 `ai` 서비스가 env를
+>    **명시 목록**으로 받는다. 거기에도 이름을 넣어야 컨테이너에 들어간다. 안 넣으면 켠 줄 알고
+>    넘어가는데 응답은 그대로라, 앱은 "지침" 행을 그렸는데 값이 안 와서 빈 줄이 남는다.
+>    일일 상한 때 같은 자리에서 한 번 당했다. **켠 뒤 `/health.extractor.lifestyle_axis`와 실제
+>    응답에 키가 나오는 것 둘 다 확인한다.**
+> 2. **플래그가 대칭이 아니다.** 백엔드는 축을 행으로 저장하므로 켜 있던 동안 쌓인 기록에는
+>    `lifestyle_instructions` 행이 남는다. 끄면 새 기록만 예전 모양이 되고, 그 사이 기록은 계속 그
+>    축을 내려보낸다 — 앱이 못 그리는 판이면 그 기간 지침 줄만 조용히 사라진다.
+>    **켤 거면 녹화 전에 켜고 심사 끝까지 유지한다. 녹화 도중에는 안 켠다.** 못 켤 거면 안 켜고
+>    약 칸이 긴 것을 감수한다 — 줄이 사라지는 쪽이 더 나쁘다.
+>
+> ```
 MEDIMATE_CORS_ORIGINS=         # 웹이 우리를 직접 부를 때만. 쉼표 구분, `*` 금지
 ```
 
