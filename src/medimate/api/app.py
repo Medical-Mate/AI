@@ -767,14 +767,21 @@ def create_app(
         notes = widen_card(card, app.state.ontology)
         card.site_comparison = compare_sites(app.state.ontology, body.previsit_anchor_id, notes)
 
-        usage = getattr(clf, "usage", None)
+        # 응답 `usage`는 **이 요청이 부른 LLM 전부**를 담는다 — 분류기 + 재방문 리더(2차 호출).
+        # 2026-09-15에 분류기 것만 담아 리더가 붙은 건에서 38%를 빠뜨렸다. 예산 카운터는 맞게
+        # 세고 있었는데 응답만 달라서, 비용으로 "켜졌나"를 판단하면 틀리게 읽혔다(백엔드 #7).
         tu = TurnUsage()
-        if usage is not None and source == "server":
-            tu = TurnUsage(
-                input_tokens=int(usage.input_tokens),
-                output_tokens=int(usage.output_tokens),
-                cost_usd=round(float(usage.cost_usd(clf.model_id)), 6),
-            )
+        if source == "server":
+            in_t = out_t = 0
+            cost = 0.0
+            for obj in (clf, reader):
+                u = getattr(obj, "usage", None) if obj is not None else None
+                if u is None:
+                    continue
+                in_t += int(u.input_tokens)
+                out_t += int(u.output_tokens)
+                cost += float(u.cost_usd(obj.model_id))
+            tu = TurnUsage(input_tokens=in_t, output_tokens=out_t, cost_usd=round(cost, 6))
         return MemoResponse(
             card=to_backend_payload(card),
             sentences=res.sentences,

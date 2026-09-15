@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -26,6 +27,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from medimate.schema.card import AxisEntry, FieldStatus
 from medimate.schema.postvisit import FollowUpDate, PostAxis, PostVisitCard
+
+logger = logging.getLogger("medimate.memo")
 
 LABELS = tuple(a.value for a in PostAxis) + ("none",)
 
@@ -651,7 +654,10 @@ def followup_from_reader(
     """
     try:
         out = reader.read(sentence, prev_text)
-    except Exception:
+    except Exception as e:  # noqa: BLE001 — 2차 호출이 죽어도 카드는 나간다
+        # 삼키되 **남긴다**(2026-09-15). 전에는 조용히 None이라 "안 켜진 것"과 "죽은 것"이
+        # 밖에서 구별되지 않았다. 문장은 안 적는다 — 진료 내용이다. 예외 종류만 남긴다
+        logger.warning("재방문 표현 읽기 실패(%s) — 규칙 결과로 계속합니다", type(e).__name__)
         return None
     if not isinstance(out, dict):
         return None

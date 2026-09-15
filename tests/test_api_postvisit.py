@@ -143,13 +143,19 @@ def test_the_lazy_production_path_builds_the_reader_too(monkeypatch):
 
     calls = {"clf": 0, "read": 0}
 
+    class _Usage:
+        def __init__(self, i, o, c):
+            self.input_tokens, self.output_tokens, self._c = i, o, c
+
+        def cost_usd(self, model_id):
+            return self._c
+
     class FakeClf:
         model_id = "fake"
         prompt_version = "memo-small-v4"
-        usage = None
 
         def __init__(self, *a, **k):
-            pass
+            self.usage = _Usage(1200, 30, 0.0013)
 
         def classify(self, sentences):
             from medimate.dialog.memo import MemoLabels
@@ -161,13 +167,13 @@ def test_the_lazy_production_path_builds_the_reader_too(monkeypatch):
     class FakeReader:
         model_id = "fake"
         prompt_version = "followup-v1"
-        usage = None
 
         def __init__(self, *a, **k):
-            pass
+            self.usage = _Usage(0, 0, 0.0)
 
         def read(self, sentence, prev_text=None):
             calls["read"] += 1
+            self.usage = _Usage(800, 20, 0.0008)
             return {"text": "담주", "days": 7, "month": None, "day": None}
 
     monkeypatch.setattr(appmod, "LLMMemoClassifier", FakeClf)
@@ -180,3 +186,24 @@ def test_the_lazy_production_path_builds_the_reader_too(monkeypatch):
         fu = r.json()["card"]["follow_up_date"]
         assert fu["date"] == "2026-09-22" and fu["basis"].startswith("LLM 읽음 '담주'")
         assert calls["read"] == expected_reads
+        # 응답 usage는 분류기 + 리더 **둘 다** 담는다. 리더 몫이 빠지면 켜졌는지 비용으로 못 본다
+        u = r.json()["usage"]
+        assert u["cost_usd"] == 0.0021 and u["input_tokens"] == 2000
+
+
+def test_a_dead_reader_leaves_one_line_in_the_log_without_the_sentence(caplog):
+    """2차 호출이 죽어도 카드는 나간다. 다만 **죽었다는 사실은 남는다** — 문장은 안 남는다."""
+    import logging
+    from datetime import date
+
+    from medimate.dialog.memo import followup_from_reader
+
+    class Dead:
+        def read(self, sentence, prev_text=None):
+            raise TimeoutError("bedrock")
+
+    with caplog.at_level(logging.WARNING, logger="medimate.memo"):
+        assert followup_from_reader(Dead(), "담주에 보자고", date(2026, 9, 15)) is None
+    lines = [r.getMessage() for r in caplog.records if r.name == "medimate.memo"]
+    assert len(lines) == 1 and "TimeoutError" in lines[0]
+    assert "담주" not in lines[0]  # 진료 내용은 로그에 안 적는다
