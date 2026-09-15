@@ -37,6 +37,7 @@ from medimate.dialog.memo import (
     SPLIT_VERSION,
     assemble_from_client,
     classify_memo,
+    lifestyle_axis_enabled,
     segment_memo,
     split_sentences,
 )
@@ -482,6 +483,8 @@ def create_app(
             "model_id": model,
             "prompt_version": PROMPTS[prompt_family_for(model)].PROMPT_VERSION,
             "pricing_known": model in PRICES,
+            # 지침 축을 따로 내는가. 꺼져 있으면 약 칸에 접힌다(앱이 행을 그리기 전까지)
+            "lifestyle_axis": lifestyle_axis_enabled(),
         }
 
     def _parse_site(text: str) -> tuple[str | None, str | None]:

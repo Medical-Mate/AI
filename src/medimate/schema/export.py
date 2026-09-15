@@ -29,6 +29,9 @@ def to_backend_payload(
                 "source": _axis_source(entry),
             }
             for axis, entry in card.axes.items()
+            # 지침 축은 플래그가 켜졌을 때만 낸다(2026-09-15). 꺼져 있으면 값은 이미 약 칸에
+            # 접혀 있고, 키를 내면 앱이 모르는 행이 하나 늘 뿐이다
+            if _axis_visible(axis)
         },
         "red_flags": card.red_flags,
         "patient_notes": card.patient_notes,
@@ -57,6 +60,12 @@ def to_backend_payload(
         out["visit_date"] = card.visit_date
         out["clinic"] = card.clinic
     return out
+
+
+def _axis_visible(axis: object) -> bool:
+    from medimate.dialog.memo import lifestyle_axis_enabled  # 순환 import 회피
+
+    return getattr(axis, "value", axis) != "lifestyle_instructions" or lifestyle_axis_enabled()
 
 
 def _card_type(card: InterviewCard) -> str:

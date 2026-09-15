@@ -26,7 +26,12 @@ class PostAxis(StrEnum):
 
     FINDINGS = "findings"  # 소견 — 의사가 말한 병명·상태. 환자가 옮긴 문장 그대로
     TESTS = "tests"  # 검사 — 받았거나 하기로 한 검사, 결과 안내 시점
-    MEDICATION_INSTRUCTIONS = "medication_instructions"  # 약·지시 — 처방, 복용법, 생활 지시
+    MEDICATION_INSTRUCTIONS = "medication_instructions"  # 약 — 처방, 복용법, 주사·처치
+    # 지침 — 식이·활동·자세·금지 같은 생활 지시(2026-09-15 분리). 전에는 약 칸에 접혀 있어서
+    # 약 칸이 길어지고 "약"이라는 라벨 아래 약이 아닌 말이 찍혔다(백엔드 #78도 같은 지적).
+    # `MEDIMATE_LIFESTYLE_AXIS`가 꺼져 있으면 예전처럼 약 칸에 접어 낸다 — 앱이 이 행을
+    # 그리기 전까지 화면에서 줄이 사라지지 않게
+    LIFESTYLE_INSTRUCTIONS = "lifestyle_instructions"
     FOLLOW_UP = "follow_up"  # 재방문 — 다음 방문 시점·조건
 
 
@@ -79,3 +84,17 @@ class PostVisitCard(InterviewCard):
 
         open_ = (FieldStatus.NOT_ASKED, FieldStatus.AMBIGUOUS)
         return [a for a in PostAxis if self.axes[a].status in open_]
+
+    def completeness(self) -> float:
+        """지침 축이 접혀 있으면(플래그 꺼짐) 분모에서 뺀다 — 묻지도 채우지도 않는 축이다."""
+        from medimate.dialog.memo import lifestyle_axis_enabled  # 순환 import 회피
+        from medimate.schema.card import _CLOSED
+
+        axes = {
+            a: e
+            for a, e in self.axes.items()
+            if a != PostAxis.LIFESTYLE_INSTRUCTIONS or lifestyle_axis_enabled()
+        }
+        if not axes:
+            return 0.0
+        return sum(1 for e in axes.values() if e.status in _CLOSED) / len(axes)

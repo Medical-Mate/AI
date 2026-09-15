@@ -14,9 +14,16 @@ v5는 LLM이 **원문에서 글자 그대로 잘라낸 조각**과 라벨을 함
 
 from __future__ import annotations
 
-PROMPT_VERSION = "memo-v5"
+PROMPT_VERSION = "memo-v6"
 
-LABELS = ("findings", "tests", "medication_instructions", "follow_up", "none")
+LABELS = (
+    "findings",
+    "tests",
+    "medication_instructions",
+    "lifestyle_instructions",
+    "follow_up",
+    "none",
+)
 
 SCHEMA: dict = {
     "type": "object",
@@ -50,13 +57,15 @@ _SYSTEM = """너는 환자가 진료실에서 들은 말을 적은 메모를 **�
 라벨
 - findings: 의사가 말한 상태·소견·병명·안심. "위염 초기래요", "뼈는 괜찮대요", "혈압이 좀 높다고"
 - tests: 검사·영상·결과 안내·검사 예약. "피검사 했어요", "결과는 다음에", "MRI 예약은 다음 주"
-- medication_instructions: 약·처방·주사·처치·복용법·생활 지시·금지. "2주분 처방", "일주일치약처방", "하루 두 번", "커피 줄이라고", "계단은 피하라고"
+- medication_instructions: 약·처방·복용법, 병원에서 한 주사·처치. "2주분 처방", "일주일치약처방", "하루 두 번", "주사 맞았어요"
+- lifestyle_instructions: 집에서 지키라는 생활 지시·금지 — 식이·음료·활동·운동·자세·자가관리. "커피 줄이라고", "계단은 피하라고", "무리하지 말라고", "얼음찜질하라고"
 - follow_up: 다시 오는 시점·조건. "2주 뒤에 오라고", "이주일후재방문", "안 좋아지면 바로 오래요"
 - none: 진료 내용이 아닌 것만. 인사, 감상, 병원이 붐볐다, 제목만 있는 줄
 
 판단 순서
 1. 다시 오라는 말(오라고/보자고/재진/재방문)이 있으면 follow_up.
-2. 약·주사·처치·"~하라고/~하지 말라고/금지/피하라고"가 있으면 medication_instructions. "피하라고"는 지시다.
+2. 약·처방·복용법·주사·처치가 있으면 medication_instructions. 약과 생활 지시가 한 조각에 같이 있으면 medication_instructions.
+2-1. 약 얘기 없이 "~하라고/~하지 말라고/금지/피하라고/줄이라고"만 있으면 lifestyle_instructions.
 3. 검사·영상·결과 얘기면 tests. 검사 날짜·예약도 tests.
 4. 그 외 의사가 몸 상태에 대해 한 말은 findings.
 5. 진료와 무관한 말만 none.
@@ -71,7 +80,7 @@ _SYSTEM = """너는 환자가 진료실에서 들은 말을 적은 메모를 **�
 
 예시 3
 메모: 발목 인대가 조금 늘어났대요 2주 정도 붕대 감고 다니래요 무리하지 말라고 안 좋아지면 바로 오래요
-{"segments":[{"text":"발목 인대가 조금 늘어났대요","label":"findings"},{"text":"2주 정도 붕대 감고 다니래요","label":"medication_instructions"},{"text":"무리하지 말라고","label":"medication_instructions"},{"text":"안 좋아지면 바로 오래요","label":"follow_up"}]}"""
+{"segments":[{"text":"발목 인대가 조금 늘어났대요","label":"findings"},{"text":"2주 정도 붕대 감고 다니래요","label":"medication_instructions"},{"text":"무리하지 말라고","label":"lifestyle_instructions"},{"text":"안 좋아지면 바로 오래요","label":"follow_up"}]}"""
 
 
 def system_prompt() -> str:
