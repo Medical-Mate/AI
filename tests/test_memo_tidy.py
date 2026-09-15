@@ -245,3 +245,54 @@ def test_go_that_is_not_a_connective_is_left_alone():
     assert tidy_value("교통사고") == "교통사고"
     assert tidy_value("결과 보고") == "결과 보고"  # report인지 "보고(see and)"인지 알 수 없다
     assert tidy_value("커피랑 매운 거 줄이라고.") == "커피랑 매운 거 줄이기"  # 인용 규칙이 먼저
+
+
+# ── 칸 이름과 겹치는 꼬리 낱말 (2026-09-15) ────────────────────────────────────────
+
+
+def test_a_word_the_label_already_says_is_dropped_from_the_tail():
+    """ "일주일치 약처방 이주일 후 재방문" → 약 칸 `일주일치`, 재방문 칸 `이주일 후`.
+
+    약 칸에 `약처방`, 재방문 칸에 `재방문`이 또 있으면 잘라 놓기만 한 것으로 읽힌다. 라벨이
+    이미 말하는 낱말이라 빼도 사실이 안 바뀐다.
+    """
+    from medimate.dialog.memo import tidy_value
+    from medimate.schema.postvisit import PostAxis
+
+    M, F = PostAxis.MEDICATION_INSTRUCTIONS, PostAxis.FOLLOW_UP
+    assert tidy_value("일주일치 약처방", M) == "일주일치"
+    assert tidy_value("일주일치 약처방받고", M) == "일주일치"  # 연결어미 정리 뒤에도 뗀다
+    assert tidy_value("이주일 후 재방문", F) == "이주일 후"
+    assert tidy_value("2주 뒤에 재방문", F) == "2주 뒤"  # 남은 조사도 뗀다
+    assert tidy_value("3일치 약처방", M) == "3일치"
+
+
+def test_the_trailer_is_kept_when_nothing_would_remain_or_axis_is_unknown():
+    from medimate.dialog.memo import tidy_value
+    from medimate.schema.postvisit import PostAxis
+
+    assert tidy_value("재방문", PostAxis.FOLLOW_UP) == "재방문"  # 떼면 빈다
+    assert tidy_value("약처방", PostAxis.MEDICATION_INSTRUCTIONS) == "약처방"
+    assert tidy_value("이주일 후 재방문") == "이주일 후 재방문"  # 칸을 모르면 안 뗀다
+    assert (
+        tidy_value("위산 줄이는 약", PostAxis.MEDICATION_INSTRUCTIONS) == "위산 줄이는 약"
+    )  # `약`만은 안 뗀다
+
+
+def test_the_reported_memo_end_to_end():
+    from datetime import date
+
+    from medimate.dialog.memo import classify_memo
+    from medimate.schema.postvisit import PostAxis
+
+    res = classify_memo(
+        "일주일치 약처방 이주일 후 재방문",
+        Fixed(["medication_instructions", "follow_up"]),
+        visit_date=date(2026, 9, 15),
+    )
+    ax = res.card.axes
+    assert ax[PostAxis.MEDICATION_INSTRUCTIONS].value == "일주일치"
+    assert ax[PostAxis.FOLLOW_UP].value == "이주일 후"
+    assert res.card.follow_up_date.date == "2026-09-29"
+    # 원문은 그대로 남는다
+    assert ax[PostAxis.FOLLOW_UP].evidence == ["이주일 후 재방문"]
