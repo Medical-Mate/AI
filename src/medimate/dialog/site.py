@@ -89,6 +89,37 @@ def resolve_site(onto: Ontology, node_id: str, side: str | None = None) -> SiteS
     )
 
 
+# 좌우 표현. 긴 것부터 본다("오른쪽"이 "오른"보다 먼저 걸려야 한다)
+_SIDE_WORDS: tuple[tuple[str, str], ...] = (
+    ("오른쪽", "right"),
+    ("우측", "right"),
+    ("오른", "right"),
+    ("왼쪽", "left"),
+    ("좌측", "left"),
+    ("왼", "left"),
+    ("양쪽", "both"),
+    ("양측", "both"),
+)
+
+
+def strip_side(text: str) -> tuple[str | None, str]:
+    """`"오른쪽 눈"` → `("right", "눈")`. 좌우 말이 없으면 `(None, 원문)`.
+
+    온톨로지 노드 이름에는 좌우가 없다(`눈`·`무릎`). 환자는 붙여서 말한다. 떼고 찾지 않으면
+    `"오른쪽 눈"`이 아무것도 안 걸려서 부위 대조가 통째로 조용히 꺼진다 — 2026-09-15 QA.
+
+    앞뒤 어느 쪽에 붙어도 뗀다(`"눈 오른쪽"`).
+    """
+    t = text.strip()
+    for word, side in _SIDE_WORDS:
+        if t == word:
+            return side, ""  # 좌우만 말했다. 더 짧은 말("오른")이 걸려 "쪽"이 남지 않게
+        for cand in (t.removeprefix(word), t.removesuffix(word)):
+            if cand != t and cand.strip():
+                return side, cand.strip()
+    return None, t
+
+
 def find_site_by_name(onto: Ontology, name: str) -> str | None:
     """표시 이름으로 앵커·구역 ID를 찾는다(터미널 클라이언트용). 정확히 하나만 맞을 때 돌려준다."""
     name = name.strip()

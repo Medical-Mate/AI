@@ -271,7 +271,11 @@ def _relation(pairs: dict[tuple[str, str], str]):
     return lambda a, b: pairs.get((a, b), "unknown")
 
 
-def _site_session(label: str, spoken: str, relation=None) -> Session:
+def _site_turn(label: str, spoken: str, relation=None) -> tuple[Session, str]:
+    """부위를 짚고 한 턴 말한다. **evidence는 발화 원문과 같아야 한다** — 다르면 근거
+    검증 가드가 업데이트를 버린다(그것도 정상 동작이다). 실제와 같게 문장으로 둔다.
+    """
+    utterance = f"{spoken}이 불편해요"
     s = Session(
         ScriptedExtractor(
             [
@@ -281,7 +285,7 @@ def _site_session(label: str, spoken: str, relation=None) -> Session:
                             axis=Axis.SITE,
                             status=FieldStatus.FILLED,
                             value=spoken,
-                            evidence=spoken,
+                            evidence=utterance,
                         )
                     ]
                 )
@@ -291,12 +295,11 @@ def _site_session(label: str, spoken: str, relation=None) -> Session:
     )
     s.preselect_site(label)
     s.opening()
-    return s
+    return s, s.step(utterance)
 
 
 def test_a_different_site_is_asked_back_not_merged():
-    s = _site_session("이마", "눈", _relation({("이마", "눈"): "other"}))
-    reply = s.step("눈이 불편해요")
+    s, reply = _site_turn("이마", "눈", _relation({("이마", "눈"): "other"}))
     entry = s.card.axes[Axis.SITE]
     assert entry.status == FieldStatus.AMBIGUOUS
     assert entry.value == "눈"  # 환자 말이 값. 우리가 고르지 않는다
@@ -309,20 +312,17 @@ def test_the_narrower_site_wins_and_nothing_is_said_twice():
 
     예전에는 붙이기만 해서 `"어깨 팔"`·`"왼쪽 무릎 무릎 안쪽"`이 나왔다.
     """
-    s = _site_session("배", "아랫배", _relation({("배", "아랫배"): "narrower"}))
-    s.step("아랫배가 아파요")
+    s, _ = _site_turn("배", "아랫배", _relation({("배", "아랫배"): "narrower"}))
     assert s.card.axes[Axis.SITE].value == "아랫배"
     assert s.card.axes[Axis.SITE].status == FieldStatus.FILLED
 
-    s2 = _site_session("어깨", "팔", _relation({("어깨", "팔"): "broader"}))
-    s2.step("팔이 아파요")
+    s2, _ = _site_turn("어깨", "팔", _relation({("어깨", "팔"): "broader"}))
     assert s2.card.axes[Axis.SITE].value == "어깨"  # 짚은 쪽이 더 좁다
 
 
 def test_an_unknown_site_is_never_asked_back():
     """온톨로지가 모르는 세부 표현은 되묻지 않는다. 헛되묻기가 놓치는 것보다 나쁘다."""
-    s = _site_session("무릎", "무릎 안쪽")  # 판정 주입 없음 = 항상 unknown
-    s.step("무릎 안쪽이 아파요")
+    s, _ = _site_turn("무릎", "무릎 안쪽")  # 판정 주입 없음 = 항상 unknown
     entry = s.card.axes[Axis.SITE]
     assert entry.status == FieldStatus.FILLED
     assert entry.value == "무릎 안쪽"  # 낱말이 겹치면 두 번 쓰지 않는다
@@ -331,9 +331,37 @@ def test_an_unknown_site_is_never_asked_back():
 def test_the_clarify_question_survives_the_state_round_trip():
     """무상태라 되묻기 문구는 카드에서 다시 만들어져야 한다 — 상태에 문장을 넣지 않는다."""
     rel = _relation({("이마", "눈"): "other"})
-    s = _site_session("이마", "눈", rel)
-    s.step("눈이 불편해요")
+    s, _ = _site_turn("이마", "눈", rel)
     back = Session.from_state(s.extractor, s.to_state(), site_relation=rel)
     assert back._current_question() == (
         "이마를 짚어 주셨는데 눈이 불편하다고 하셨어요. 어느 쪽을 적을까요?"
     )
+
+
+def test_the_clarify_text_names_the_site_not_the_whole_sentence():
+    """evidence는 문장(`"오른쪽 눈이 아파요"`)이고 부위 이름은 `value`에 있다.
+
+    문장으로 온톨로지를 찾으면 아무것도 안 걸려 구체 문구가 **일반 문구로 조용히 샌다.**
+    QA에서 그렇게 새고 있었고, 테스트가 evidence에 낱말만 넣고 있어서 못 잡았다.
+    """
+    s = Session(
+        ScriptedExtractor(
+            [
+                TurnExtraction(
+                    updates=[
+                        AxisUpdate(
+                            axis=Axis.SITE,
+                            status=FieldStatus.FILLED,
+                            value="오른쪽 눈",
+                            evidence="오른쪽 눈이 아파요",
+                        )
+                    ]
+                )
+            ]
+        ),
+        site_relation=_relation({("이마", "오른쪽 눈"): "other"}),
+    )
+    s.preselect_site("이마")
+    s.opening()
+    reply = s.step("오른쪽 눈이 아파요")
+    assert reply == "이마를 짚어 주셨는데 오른쪽 눈이 불편하다고 하셨어요. 어느 쪽을 적을까요?"

@@ -96,7 +96,7 @@ PYTHONIOENCODING=utf-8 gh release list --repo Medical-Mate/AI
 | HMAC | `SIGNING_TEMPLATE = "{method}.{path}.{timestamp}.{request_id}."` + body, `hmac-sha256-hex`, ±300초. `path`는 쿼리 제외·앞 `/` 포함. **`main`에 병합·배포 완료** | `api/auth.py` |
 | 서명 면제 | `exempt_paths` 4개(`/health` `/docs` `/openapi.json` `/redoc`)**뿐.** 메서드 면제 없음 — GET도 서명 필요 | `api/auth.py` |
 | `GET /health` | `status` · `hmac_enforced` · `signing{template,algorithm}`. **`signing`은 `sign()`이 쓰는 상수에서 나온다**(손으로 관리하는 버전 번호 없음) | `api/app.py`, `api/auth.py` |
-| 추출 | **온디바이스 확정**(Qwen3-1.7B Q4_0 + `extract-small-v4` + 엔진 가드) | `docs/android-ondevice-handoff.md` |
+| 추출 | **설계는 온디바이스, 운영은 서버**(2026-09-15 확인). 앱은 문답·질문후보·메모분류를 전부 백엔드 API로 보낸다. 폰에서 도는 건 STT뿐. 온디바이스 LLM은 앱 #142 미머지 | `docs/android-ondevice-handoff.md`, 앱 #142 |
 | 엔진 빌드 | 릴리즈 `pkg-android-2092353` (65,374,731 bytes). llama.cpp 업스트림 산출물 | `gh release view pkg-android-2092353` |
 | 외부 LLM 자리 | ① 질문 후보 ② 진료 후 메모 폴백. **둘뿐** | `evals/RESULTS.md` |
 | 증상 정리 흐름 | **1 부위 → 2 문답(챗) → 3 통증 강도 → 4 물어볼 것.** "2/4"는 화면 단계 | 피그마 `cG6lz8nwzp75bfAXCnMqxx` 섹션 `D · 증상 문답 4단계` |
