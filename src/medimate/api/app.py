@@ -33,7 +33,13 @@ from medimate.api.budget import BudgetGuarded, DailyBudget
 from medimate.api.state_guard import check_state
 from medimate.dialog.engine import Limits, Session
 from medimate.dialog.guard import GuardConfig
-from medimate.dialog.memo import SPLIT_VERSION, classify_memo
+from medimate.dialog.memo import (
+    SPLIT_VERSION,
+    assemble_from_client,
+    classify_memo,
+    segment_memo,
+    split_sentences,
+)
 from medimate.dialog.site import normalize_side, resolve_site, strip_side
 from medimate.dialog.spec import PREVISIT_SPEC
 from medimate.dialog.state import SessionState
@@ -41,7 +47,12 @@ from medimate.dialog.widening import compare_sites, widen_card
 from medimate.llm import assist_prompts as ap
 from medimate.llm.assist_rank import top_candidates
 from medimate.llm.base import Extractor, TurnExtraction
-from medimate.llm.memo_classifier import FixedLabels, LLMFollowUpReader, LLMMemoClassifier
+from medimate.llm.memo_classifier import (
+    FixedLabels,
+    LLMFollowUpReader,
+    LLMMemoClassifier,
+    LLMMemoSegmenter,
+)
 from medimate.llm.providers import (
     PRICES,
     PROMPTS,
@@ -237,6 +248,9 @@ class MemoRequest(BaseModel):
     visit_date: date | None = None  # 재방문 날짜 계산 기준. 앱이 준다
     clinic: str | None = Field(default=None, max_length=80)  # "서울OO병원 내과". 앱이 준다
     labels: dict[str, str] | None = None  # 폰 분류 결과 또는 1q-2에서 고친 라벨
+    # 앞 응답의 `sentences`를 **그대로** 되보낸다(memo-v5). 있으면 서버는 다시 나누지 않고
+    # 이 조각에 라벨을 붙인다 — 번호가 다른 문장을 가리킬 길이 없어진다. 원문을 못 덮으면 409
+    sentences: list[str] | None = Field(default=None, max_length=200)
     classify: bool = (
         True  # false면 서버 LLM을 부르지 않고 sentences만(폰 분류 1단계). labels가 있으면 무시
     )
@@ -395,6 +409,7 @@ def create_app(
     extractor_factory: ExtractorFactory | None = None,
     memo_factory: Callable | None = None,
     followup_factory: Callable | None = None,
+    segment_factory: Callable | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="진료 메이트 AI — 진료 전 카드",
@@ -414,6 +429,7 @@ def create_app(
     )
     # 재방문 표현 리더. 주입 없으면 운영은 _memo_classifier가 분류기와 짝으로 채운다
     app.state.followup_factory = followup_factory
+    app.state.segment_factory = segment_factory
 
     @app.get("/health")
     def health(request: Request) -> dict[str, Any]:
@@ -697,9 +713,14 @@ def create_app(
             def make_reader():
                 return LLMFollowUpReader(provider, model, client=shared.get("client"))
 
+            def make_segmenter():
+                return LLMMemoSegmenter(provider, model, client=shared.get("client"))
+
             factory = request.app.state.memo_factory = make
             if request.app.state.followup_factory is None:
                 request.app.state.followup_factory = make_reader
+            if request.app.state.segment_factory is None:
+                request.app.state.segment_factory = make_segmenter
         return BudgetGuarded(factory(), request.app.state.daily_budget)
 
     def _followup_reader(request: Request):
@@ -714,52 +735,102 @@ def create_app(
             return None
         return BudgetGuarded(factory(), request.app.state.daily_budget)
 
+    def _memo_segmenter(request: Request):
+        """조각내기(memo-v5). 팩토리가 있으면 쓰고, 없으면 규칙 분리 + v4 분류로 간다."""
+        factory = request.app.state.segment_factory
+        if factory is None:
+            return None
+        return BudgetGuarded(factory(), request.app.state.daily_budget)
+
     @app.post("/v1/postvisit/memo", response_model=MemoResponse)
     def postvisit_memo(body: MemoRequest, request: Request) -> MemoResponse:
         """메모 → 4묶음 카드. labels가 오면 LLM 없이 조립(폰 분류·1q-2 수정 모두 이 경로)."""
         # 라벨의 번호는 우리가 나눈 문장의 주소다. 그 사이 분리 규칙이 바뀌었으면 같은 메모가
         # 다르게 나뉘어 **예전 번호가 다른 문장을 가리킨다.** 200에 카드도 멀쩡해 보이므로
         # 여기서 끊는다. 다시 분류하면 되는 일이라 4xx이고, 상태 충돌이라 409다
-        if body.split_version is not None and body.split_version != SPLIT_VERSION:
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    "분리 규칙이 바뀌었습니다. 다시 분류해 주세요 "
-                    f"(보낸 값 {body.split_version}, 서버 {SPLIT_VERSION})"
-                ),
-            )
-        if body.labels is not None:
-            clf = FixedLabels(body.labels)
+        res = None
+        used: list = []  # 이 요청이 실제로 LLM을 태운 객체들(usage 합산용)
+        prov_obj = None  # provenance를 낼 객체
+        if body.labels is not None and body.sentences is not None:
+            # memo-v5 되보내기: 조각 자체가 왔다. **다시 나누지 않는다.** 번호가 어긋날 길이 없다
             source = "client"
-        elif not body.classify:
-            # 폰 분류 1단계: 문장 번호만 필요. 전부 unsorted인 카드가 나오지만 앱은 sentences만 쓴다
-            clf = FixedLabels({})
-            source = "none"
-        else:
-            clf = _memo_classifier(request)
-            source = "server"
-        # 재방문 표현 2차 읽기는 **서버가 분류하는 경로에서만** 붙는다. `labels`가 온 경로는
-        # 계약이 "LLM을 부르지 않고 조립"이라 규칙 파서만 쓴다
-        reader = _followup_reader(request) if source == "server" else None
-        try:
-            res = classify_memo(
+            res = assemble_from_client(
                 body.memo,
-                clf,
+                body.sentences,
+                body.labels,
                 visit_date=body.visit_date,
                 clinic=body.clinic,
-                followup_reader=reader,
             )
-        except BudgetExceeded as e:
-            raise HTTPException(status_code=503, detail=str(e)) from e
-        except ValueError as e:
-            raise HTTPException(status_code=502, detail=f"classifier: {e}") from e
+            if res is None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="되보낸 sentences가 memo를 덮지 않습니다. 다시 분류해 주세요",
+                )
+            prov_obj = FixedLabels(body.labels)
+        else:
+            # 번호로만 되보낸 경로(v4 호환). 그 사이 분리 규칙이 바뀌었으면 같은 메모가 다르게
+            # 나뉘어 예전 번호가 다른 문장을 가리킨다. 200에 카드도 멀쩡해 보이므로 여기서 끊는다
+            if body.split_version is not None and body.split_version != SPLIT_VERSION:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "분리 규칙이 바뀌었습니다. 다시 분류해 주세요 "
+                        f"(보낸 값 {body.split_version}, 서버 {SPLIT_VERSION})"
+                    ),
+                )
+            if body.labels is not None:
+                clf = FixedLabels(body.labels)
+                source = "client"
+            elif not body.classify:
+                clf = FixedLabels({})
+                source = "none"
+            else:
+                clf = _memo_classifier(request)
+                source = "server"
+            prov_obj = clf
+            reader = _followup_reader(request) if source == "server" else None
+            try:
+                # **규칙이 한 덩어리밖에 못 만들 때만** LLM에게 조각을 맡긴다(2026-09-15 실측).
+                # 마침표·띄어쓰기가 있는 정상 입력은 규칙 분리 + v4 분류가 더 정확했다
+                # (라벨 98.5% vs v5 95.1%, v5는 "2주 약 먹고 다시 오라고"를 한 조각으로 합쳐
+                # 약 칸을 비우기도 했다). v5가 이기는 자리는 `"일주일치약처방이주일후재방문"`처럼
+                # 규칙이 자를 곳을 못 찾는 입력이다. 둘의 장점만 남긴다.
+                if source == "server" and len(split_sentences(body.memo)) == 1:
+                    seg = _memo_segmenter(request)
+                    if seg is not None:
+                        used.append(seg)
+                        res = segment_memo(
+                            body.memo,
+                            seg,
+                            visit_date=body.visit_date,
+                            clinic=body.clinic,
+                            followup_reader=reader,
+                        )
+                        if res is not None:
+                            prov_obj = seg
+                if res is None:
+                    # 조각이 원문을 못 덮었거나 세그멘터가 없다 — 규칙 분리 + v4 분류
+                    used.append(clf)
+                    res = classify_memo(
+                        body.memo,
+                        clf,
+                        visit_date=body.visit_date,
+                        clinic=body.clinic,
+                        followup_reader=reader,
+                    )
+                if reader is not None:
+                    used.append(reader)
+            except BudgetExceeded as e:
+                raise HTTPException(status_code=503, detail=str(e)) from e
+            except ValueError as e:
+                raise HTTPException(status_code=502, detail=f"classifier: {e}") from e
 
         card = res.card
         card.provenance = Provenance(
             prompt_version=(
-                body.labels_meta.prompt_version if body.labels_meta else clf.prompt_version
+                body.labels_meta.prompt_version if body.labels_meta else prov_obj.prompt_version
             ),
-            model_id=body.labels_meta.model_id if body.labels_meta else clf.model_id,
+            model_id=body.labels_meta.model_id if body.labels_meta else prov_obj.model_id,
         )
         # 소견 용어에 부위 병기 + 진료 전 부위와 대조(판정 아님)
         if app.state.ontology is None:
@@ -774,7 +845,7 @@ def create_app(
         if source == "server":
             in_t = out_t = 0
             cost = 0.0
-            for obj in (clf, reader):
+            for obj in used:
                 u = getattr(obj, "usage", None) if obj is not None else None
                 if u is None:
                     continue

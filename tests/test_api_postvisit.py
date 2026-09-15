@@ -176,8 +176,19 @@ def test_the_lazy_production_path_builds_the_reader_too(monkeypatch):
             self.usage = _Usage(800, 20, 0.0008)
             return {"text": "담주", "days": 7, "month": None, "day": None}
 
+    class DeadSeg:  # 세그멘터는 이 테스트의 관심 밖 — 죽여서 v4 분류 + 리더 경로를 타게 한다
+        model_id = "fake"
+        prompt_version = "memo-v5"
+
+        def __init__(self, *a, **k):
+            self.usage = _Usage(0, 0, 0.0)
+
+        def segment(self, memo):
+            raise RuntimeError("offline")
+
     monkeypatch.setattr(appmod, "LLMMemoClassifier", FakeClf)
     monkeypatch.setattr(appmod, "LLMFollowUpReader", FakeReader)
+    monkeypatch.setattr(appmod, "LLMMemoSegmenter", DeadSeg)
     client = TestClient(create_app())  # 주입 없음 = 운영 모양
     body = {"memo": "약 받았어요. 담주에 다시 오래요.", "visit_date": "2026-09-15"}
     for expected_reads in (1, 2):

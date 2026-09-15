@@ -732,37 +732,14 @@ class MemoResult:
     dropped: list[dict] = field(default_factory=list)  # 가드가 무시한 라벨
 
 
-def classify_memo(
-    memo: str,
-    classifier: MemoClassifier,
-    visit_date: date | None = None,
-    clinic: str | None = None,
-    card: PostVisitCard | None = None,
-    followup_reader: FollowUpReader | None = None,
-) -> MemoResult:
-    """메모 하나를 4묶음 카드로. 문장 원문 보존, 라벨 없는 문장은 unsorted.
-
-    `followup_reader`가 있으면 규칙이 못 읽은 재방문 표현을 LLM으로 **읽고** 날짜는 코드가 센다.
-    """
-    card = card or PostVisitCard()
-    card.memo = memo
-    card.clinic = clinic
-    card.visit_date = visit_date.isoformat() if visit_date else card.visit_date
-    sentences = split_sentences(memo)
-    if not sentences:
-        return MemoResult(card, [], {})
-
-    raw = classifier.classify(sentences)
-    labels: dict[int, str] = {}
-    dropped: list[dict] = []
-    for i, lab in enumerate(raw.labels):
-        if i >= len(sentences):
-            dropped.append({"i": i, "label": lab, "reason": "extra_label"})
-            continue
-        labels[i] = lab
-    for i in range(len(raw.labels), len(sentences)):
-        dropped.append({"i": i, "label": None, "reason": "missing_label"})  # none으로 처리된다
-
+def _assemble(
+    card: PostVisitCard,
+    sentences: list[str],
+    labels: dict[int, str],
+    visit_date: date | None,
+    followup_reader: FollowUpReader | None,
+) -> None:
+    """(문장, 라벨) → 카드. 규칙 분리든 LLM 조각이든 되보낸 조각이든 여기 하나로 온다."""
     buckets: dict[PostAxis, list[str]] = {a: [] for a in PostAxis}
     unsorted: list[str] = []
     for i, s in enumerate(sentences):
@@ -815,4 +792,152 @@ def classify_memo(
                 # 날짜의 주인은 `follow_up_date` 하나다. 화면 문장은 앱이 한 번만 만든다 —
                 # 우리가 계산한 값을 환자 말 옆에 끼워 넣는 순간 그 줄의 주인이 둘이 된다.
                 break
+
+
+_WS = re.compile(r"\s+")
+
+
+def slice_by_coverage(memo: str, pieces: Sequence[str]) -> list[str] | None:
+    """조각들이 순서대로 원문을 **빠짐없이·겹침없이** 덮는지 보고, 덮으면 원문에서 잘라 돌려준다.
+
+    공백만 무시한다. 글자가 하나라도 다르거나 빠지거나 남으면 None — LLM이 고쳐 쓴 것이다.
+    돌려주는 조각은 **원문 substring**이라 띄어쓰기·구두점이 원문 그대로다(evidence 보증).
+    """
+    if not pieces:
+        return None
+    out: list[str] = []
+    i = 0
+    n = len(memo)
+    for piece in pieces:
+        target = _WS.sub("", piece)
+        if not target:
+            return None
+        while i < n and memo[i].isspace():
+            i += 1
+        start = i
+        k = 0
+        while k < len(target):
+            while i < n and memo[i].isspace():
+                i += 1
+            if i >= n or memo[i] != target[k]:
+                return None
+            i += 1
+            k += 1
+        out.append(memo[start:i].strip())
+    while i < n and memo[i].isspace():
+        i += 1
+    if i != n:
+        return None  # 남은 글자가 있다 — 빠뜨렸다
+    return out
+
+
+class MemoSegmenter(Protocol):
+    """메모를 조각 + 라벨로. `segment`는 {"segments":[{"text","label"},…]}를 돌려준다(memo-v5)."""
+
+    def segment(self, memo: str) -> dict: ...
+
+
+def segment_memo(
+    memo: str,
+    segmenter: MemoSegmenter,
+    visit_date: date | None = None,
+    clinic: str | None = None,
+    card: PostVisitCard | None = None,
+    followup_reader: FollowUpReader | None = None,
+) -> MemoResult | None:
+    """LLM이 나눈 조각으로 카드를 만든다.
+
+    **원문을 정확히 덮지 못하면 None** — 호출자가 규칙 분리로 폴백한다.
+    """
+    try:
+        out = segmenter.segment(memo)
+    except Exception as e:  # noqa: BLE001
+        from medimate.llm.providers import BudgetExceeded  # 순환 import 회피용 지연 import
+
+        if isinstance(e, BudgetExceeded):
+            raise  # 예산 초과는 삼키지 않는다 — 503으로 올라가야 한다
+        logger.warning("메모 조각내기 실패(%s) — 규칙 분리로 계속합니다", type(e).__name__)
+        return None
+    segs = out.get("segments") if isinstance(out, dict) else None
+    if not isinstance(segs, list) or not segs:
+        return None
+    texts, labs = [], []
+    for sgm in segs:
+        if not isinstance(sgm, dict):
+            return None
+        t, lab = sgm.get("text"), sgm.get("label")
+        if not isinstance(t, str) or lab not in LABELS:
+            return None
+        texts.append(t)
+        labs.append(lab)
+    sentences = slice_by_coverage(memo, texts)
+    if sentences is None:
+        logger.warning("메모 조각이 원문을 덮지 못했습니다 — 규칙 분리로 계속합니다")
+        return None
+    card = card or PostVisitCard()
+    card.memo = memo
+    card.clinic = clinic
+    card.visit_date = visit_date.isoformat() if visit_date else card.visit_date
+    labels = dict(enumerate(labs))
+    _assemble(card, sentences, labels, visit_date, followup_reader)
+    return MemoResult(card, sentences, labels, [])
+
+
+def assemble_from_client(
+    memo: str,
+    sentences: Sequence[str],
+    keyed_labels: dict[str, str],
+    visit_date: date | None = None,
+    clinic: str | None = None,
+    card: PostVisitCard | None = None,
+) -> MemoResult | None:
+    """앱이 되보낸 조각 + 라벨로 카드를 만든다(1q-2 수정). **다시 나누지 않는다.**
+
+    조각이 원문을 덮지 못하면 None — 되보낸 것이 이 메모의 조각이 아니다(409 감).
+    """
+    sliced = slice_by_coverage(memo, sentences)
+    if sliced is None:
+        return None
+    card = card or PostVisitCard()
+    card.memo = memo
+    card.clinic = clinic
+    card.visit_date = visit_date.isoformat() if visit_date else card.visit_date
+    raw = MemoLabels.from_keyed(keyed_labels, len(sliced))
+    labels = dict(enumerate(raw.labels))
+    _assemble(card, sliced, labels, visit_date, None)
+    return MemoResult(card, sliced, labels, [])
+
+
+def classify_memo(
+    memo: str,
+    classifier: MemoClassifier,
+    visit_date: date | None = None,
+    clinic: str | None = None,
+    card: PostVisitCard | None = None,
+    followup_reader: FollowUpReader | None = None,
+) -> MemoResult:
+    """메모 하나를 4묶음 카드로. 문장 원문 보존, 라벨 없는 문장은 unsorted.
+
+    `followup_reader`가 있으면 규칙이 못 읽은 재방문 표현을 LLM으로 **읽고** 날짜는 코드가 센다.
+    """
+    card = card or PostVisitCard()
+    card.memo = memo
+    card.clinic = clinic
+    card.visit_date = visit_date.isoformat() if visit_date else card.visit_date
+    sentences = split_sentences(memo)
+    if not sentences:
+        return MemoResult(card, [], {})
+
+    raw = classifier.classify(sentences)
+    labels: dict[int, str] = {}
+    dropped: list[dict] = []
+    for i, lab in enumerate(raw.labels):
+        if i >= len(sentences):
+            dropped.append({"i": i, "label": lab, "reason": "extra_label"})
+            continue
+        labels[i] = lab
+    for i in range(len(raw.labels), len(sentences)):
+        dropped.append({"i": i, "label": None, "reason": "missing_label"})  # none으로 처리된다
+
+    _assemble(card, sentences, labels, visit_date, followup_reader)
     return MemoResult(card, sentences, labels, dropped)
