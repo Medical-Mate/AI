@@ -159,7 +159,7 @@ def test_the_screen_memo_produces_a_readable_card():
     from medimate.schema.postvisit import PostAxis
 
     assert ax[PostAxis.FINDINGS].value == "위염 초기"  # 예전에는 줄 자체가 없었다
-    assert ax[PostAxis.MEDICATION_INSTRUCTIONS].value == "2주 약 먹고 · 커피랑 매운 거 줄이기"
+    assert ax[PostAxis.MEDICATION_INSTRUCTIONS].value == "2주 약 먹음 · 커피랑 매운 거 줄이기"
     # **`value`에 날짜를 넣지 않는다.** 날짜의 주인은 `follow_up_date` 하나다
     assert ax[PostAxis.FOLLOW_UP].value == "다시 오기"
     assert "9월" not in ax[PostAxis.FOLLOW_UP].value
@@ -220,3 +220,28 @@ def test_telegraphic_memo_splits(memo, expected):
 )
 def test_telegraphic_memo_does_not_over_split(memo):
     assert split_sentences(memo) == [memo]
+
+
+# ── 절 끝에 남은 연결어미 `-고` (2026-09-15 QA) ─────────────────────────────────
+
+
+def test_a_trailing_connective_becomes_a_nominal_not_a_raw_slice():
+    """문장을 절로 나누면 "일주일치 약처방받고"처럼 `-고`가 꼬리에 남는다.
+
+    그대로 두면 카드가 메모를 잘라 놓은 것과 같다 — 그래서 "슬라이싱만 된다"고 보였다.
+    """
+    from medimate.dialog.memo import tidy_value
+
+    assert tidy_value("일주일치 약처방받고") == "일주일치 약처방받음"
+    assert tidy_value("3일치 약 먹고") == "3일치 약 먹음"
+    assert tidy_value("물 많이 마시고") == "물 많이 마심"  # 받침 없는 어간은 ㅁ을 합성한다
+    assert tidy_value("연고 바르고") == "연고 바름"
+
+
+def test_go_that_is_not_a_connective_is_left_alone():
+    """`사고`·`경고`·`참고`의 `고`는 어미가 아니다. 어간 목록에 없으면 손대지 않는다."""
+    from medimate.dialog.memo import tidy_value
+
+    assert tidy_value("교통사고") == "교통사고"
+    assert tidy_value("결과 보고") == "결과 보고"  # report인지 "보고(see and)"인지 알 수 없다
+    assert tidy_value("커피랑 매운 거 줄이라고.") == "커피랑 매운 거 줄이기"  # 인용 규칙이 먼저

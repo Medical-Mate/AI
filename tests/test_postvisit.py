@@ -188,3 +188,16 @@ def test_fallback_dialog_asks_four_axes_then_message():
     s.step("없어요")
     assert s.ended and s.card.completeness() == 1.0
     assert Axis.SITE not in s.card.axes  # 진료 전 축은 섞이지 않는다
+
+
+def test_two_weeks_written_without_il_is_read_not_stolen_from_the_medication():
+    """ "일주일치 약처방받고, 이주뒤 재방문" → 재방문은 2주 뒤다.
+
+    `이주뒤`를 못 읽어 앞 절 폴백이 돌았고 **약 기간 "일주일치"**를 재방문으로 썼다(09-22).
+    어제 `일주일`을 고친 것과 같은 모양이 `이주`에서 다시 났다.
+    """
+    v = date(2026, 9, 15)
+    fu = followup_date("이주뒤 재방문", v, prev_text="일주일치 약처방받고")
+    assert fu.date == "2026-09-29" and "앞 절" not in fu.basis
+    assert followup_date("일주 뒤 오세요", v).date == "2026-09-22"
+    assert followup_date("삼주 후 재방문", v).date == "2026-10-06"
