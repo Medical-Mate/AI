@@ -390,8 +390,8 @@ def test_whitespace_in_the_model_env_is_removed_not_just_reported(monkeypatch):
     assert client.get("/health").json()["extractor"]["prompt_version"] == "extract-v4-nova"
     assert extractor_env()[1] == "apac.amazon.nova-pro-v1:0"
 
-    monkeypatch.setenv("MEDIMATE_MODEL", "   ")  # 빈 값은 기본값으로
-    assert extractor_env()[1] == "gpt-5.6-terra"
+    monkeypatch.setenv("MEDIMATE_MODEL", "   ")  # 빈 값은 기본값으로 — 기본값이 곧 운영값(Nova)
+    assert extractor_env() == ("bedrock", "apac.amazon.nova-pro-v1:0")
 
 
 # ── 앱이 노드 id를 안 보내고 이름만 보낼 때 (2026-09-15, 백엔드 #7) ───────────────
@@ -433,3 +433,17 @@ def test_an_unknown_site_name_is_kept_not_rejected():
     card = r.json()["state"]["card"]
     assert card["axes"]["site"]["value"] == "거시기"
     assert card["site_selection"] is None
+
+
+def test_the_default_is_nova_so_a_missing_env_cannot_fall_back_to_another_vendor(monkeypatch):
+    """env가 통째로 빠져도 Terra·OpenAI로 떨어지지 않는다.
+
+    2026-09-15: 로컬 점검 스크립트가 주입에 실패한 채 기본값으로 돌아 **OpenAI 카드로 돈이
+    나갔다.** 기본값이 운영값과 다르면 그 차이만큼 조용히 새는 자리가 생긴다.
+    """
+    monkeypatch.delenv("MEDIMATE_PROVIDER", raising=False)
+    monkeypatch.delenv("MEDIMATE_MODEL", raising=False)
+    client, _ = make_client([])
+    ex = client.get("/health").json()["extractor"]
+    assert (ex["provider"], ex["model_id"]) == ("bedrock", "apac.amazon.nova-pro-v1:0")
+    assert ex["prompt_version"] == "extract-v4-nova"

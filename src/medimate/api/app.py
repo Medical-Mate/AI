@@ -11,7 +11,7 @@
 
 실행:  uv run uvicorn medimate.api.app:app --reload
 설정:  MEDIMATE_PROVIDER(openai|anthropic|google|bedrock|local), MEDIMATE_MODEL
-       기본 openai / gpt-5.6-terra. 배포는 bedrock / apac.amazon.nova-pro-v1:0
+       기본값 = 운영값 = bedrock / apac.amazon.nova-pro-v1:0 (2026-09-15부터)
 """
 
 from __future__ import annotations
@@ -62,8 +62,12 @@ from medimate.schema.export import to_backend_payload
 # 앱 4단계 화면이 3개를 보여준다. 생성은 제한하지 않고 가중치로 정렬해 위에서 자른다
 QUESTION_CANDIDATES_TOP = 3
 
-DEFAULT_PROVIDER = "openai"
-DEFAULT_MODEL = "gpt-5.6-terra"  # docs/decisions/2026-09-03-extractor-model.md
+# 기본값이 곧 운영값이다(2026-09-15). 전에는 openai / gpt-5.6-terra였는데, env 한 줄이
+# 빠지면 **조용히 다른 회사 모델로 떨어지고 다른 카드로 돈이 나갔다** — 로컬 점검 스크립트가
+# 실제로 그렇게 OpenAI를 불렀다. 운영·평가·기본값이 전부 Nova Pro다(팀 확정 2026-09-11).
+# Terra는 `docs/decisions/2026-09-03-extractor-model.md`의 비교 기준으로만 남는다.
+DEFAULT_PROVIDER = "bedrock"
+DEFAULT_MODEL = "apac.amazon.nova-pro-v1:0"
 
 ExtractorFactory = Callable[[], Extractor]
 
