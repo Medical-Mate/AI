@@ -320,3 +320,19 @@ def test_more_stems_from_production_memos():
     assert tidy_value("베개 낮은 걸로 바꾸래요") == "베개 낮은 걸로 바꾸기"
     assert tidy_value("무거운 거 들지 말라고") == "무거운 거 들지 않기"
     assert tidy_value("자세 자주 바꾸고") == "자세 자주 바꿈"
+
+
+def test_patient_statement_forms_are_also_label_trailers():
+    """환자가 사실로 말한 형(`-았어요`)은 어미 정리가 안 건드린다.
+
+    "일주일치 약 처방받았어요"는 약 칸에서 라벨이 이미 그 뜻을 말하므로 통째로 뗀다.
+    """
+    from medimate.dialog.memo import tidy_value
+    from medimate.schema.postvisit import PostAxis
+
+    M = PostAxis.MEDICATION_INSTRUCTIONS
+    assert tidy_value("일주일치 약 처방받았어요", M) == "일주일치"
+    assert tidy_value("3일치 약 받았어요", M) == "3일치"
+    assert tidy_value("연고 처방받았어요", M) == "연고"
+    assert tidy_value("약 받았어요", M) == "약 받았어요"  # 떼면 빈다
+    assert tidy_value("이주일 후 재방문하래요", PostAxis.FOLLOW_UP) == "이주일 후"
