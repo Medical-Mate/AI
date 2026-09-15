@@ -392,7 +392,9 @@ Ex = Annotated[Extractor, Depends(get_extractor)]
 
 
 def create_app(
-    extractor_factory: ExtractorFactory | None = None, memo_factory: Callable | None = None
+    extractor_factory: ExtractorFactory | None = None,
+    memo_factory: Callable | None = None,
+    followup_factory: Callable | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="진료 메이트 AI — 진료 전 카드",
@@ -410,6 +412,8 @@ def create_app(
     app.state.memo_factory = (
         memo_factory  # 진료 후 메모 분류기. 테스트는 create_app(memo_factory=...)
     )
+    # 재방문 표현 리더. 주입 없으면 운영은 _memo_classifier가 분류기와 짝으로 채운다
+    app.state.followup_factory = followup_factory
 
     @app.get("/health")
     def health(request: Request) -> dict[str, Any]:
@@ -685,25 +689,29 @@ def create_app(
                 c = LLMMemoClassifier(provider, model, client=shared.get("client"))
                 return c
 
+            # 리더는 **여기서 같이** 만든다(2026-09-15). 전에는 `_followup_reader`가
+            # "memo_factory가 차 있으면 테스트 주입"이라고 추론했는데, 운영이 바로 이 줄에서
+            # 스스로 채운 캐시와 구별이 안 돼 **운영에서 리더가 한 번도 안 만들어졌다.**
+            # 백엔드가 운영 12건을 태워 `LLM 읽음`이 한 번도 안 나온 것으로 잡았다.
+            # 추론하지 않는다 — 진짜 분류기를 만드는 자리가 진짜 리더도 만든다.
+            def make_reader():
+                return LLMFollowUpReader(provider, model, client=shared.get("client"))
+
             factory = request.app.state.memo_factory = make
+            if request.app.state.followup_factory is None:
+                request.app.state.followup_factory = make_reader
         return BudgetGuarded(factory(), request.app.state.daily_budget)
 
     def _followup_reader(request: Request):
-        """재방문 표현 읽기(followup-v1). 분류기와 같은 공급자·모델·지출 가드.
+        """재방문 표현 읽기(followup-v1). 팩토리가 있으면 쓰고, 없으면 규칙 파서만.
 
-        분류기 팩토리를 주입한 구성(테스트)에서는 `followup_factory`를 따로 주입하지 않으면
-        리더 없이 돈다 — 규칙 파서만 쓴다.
+        팩토리는 `create_app(followup_factory=…)`로 주입되거나, 운영에서는 `_memo_classifier`가
+        진짜 분류기를 만들 때 **짝으로** 채운다. 여기서 "주입인지 운영인지"를 추론하지 않는다 —
+        그 추론이 운영에서 리더를 영영 안 만들게 했다.
         """
-        factory = getattr(request.app.state, "followup_factory", None)
+        factory = request.app.state.followup_factory
         if factory is None:
-            if getattr(request.app.state, "memo_factory", None) is not None:
-                return None
-            provider, model = extractor_env()
-
-            def make():
-                return LLMFollowUpReader(provider, model)
-
-            factory = request.app.state.followup_factory = make
+            return None
         return BudgetGuarded(factory(), request.app.state.daily_budget)
 
     @app.post("/v1/postvisit/memo", response_model=MemoResponse)
