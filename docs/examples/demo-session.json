@@ -2116,6 +2116,33 @@
           "output_tokens": 0,
           "cost_usd": 0.0
         },
+        "audit": {
+          "memo": "위염 초기라고 하셨어요. 혈액검사 했고 결과는 다음에 알려준대요. 약은 2주분이고 커피랑 매운 거 줄이래요. 2주 뒤에 다시 오라고 하셨어요.",
+          "sentences": [
+            "위염 초기라고 하셨어요.",
+            "혈액검사 했고 결과는 다음에 알려준대요.",
+            "약은 2주분이고 커피랑 매운 거 줄이래요.",
+            "2주 뒤에 다시 오라고 하셨어요."
+          ],
+          "labels": {
+            "0": "findings",
+            "1": "tests",
+            "2": "medication_instructions",
+            "3": "follow_up"
+          },
+          "raw_output": null,
+          "dropped": [],
+          "source": "server",
+          "prompt_version": "demo-fixture",
+          "model_id": "demo/stored",
+          "lifestyle_axis": false,
+          "split_version": "split-v4",
+          "usage": {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cost_usd": 0.0
+          }
+        },
         "request_id": "demo-memo"
       }
     }

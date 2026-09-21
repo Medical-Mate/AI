@@ -90,6 +90,32 @@ AI 서버는 무상태다. 메모 하나를 받아 **4묶음 카드**로 돌려�
 > 실측 15표현 15/15, 호출당 $0.0008(`evals/RESULTS.md`).
 > 값을 지어내지 않는 것이 이 필드가 `null`을 갖는 이유입니다.
 
+### `audit` — 판정 로그 (2026-09-21, #113)
+
+previsit의 `audit`과 같은 자리다. **백엔드가 가공 없이 JSON으로 적재한다**(심사 기간 실사용 메모를
+회귀 eval 재료로). 기존 필드는 그대로이고 키 하나가 늘었다.
+
+```json
+"audit": {
+  "memo": "일주일치 약처방 이주일 후 재방문",
+  "sentences": ["일주일치 약처방", "이주일 후 재방문"],
+  "labels": {"0": "medication_instructions", "1": "follow_up"},
+  "raw_output": "{\"0\":\"medication_instructions\",\"1\":\"follow_up\"}",
+  "dropped": [],
+  "source": "server",
+  "prompt_version": "memo-small-v5",
+  "model_id": "apac.amazon.nova-pro-v1:0",
+  "lifestyle_axis": true,
+  "split_version": "split-v4",
+  "usage": {"input_tokens": 1180, "output_tokens": 24, "cost_usd": 0.001021}
+}
+```
+
+- `raw_output`은 모델이 낸 **원본 텍스트**(분류기 또는 세그멘터). `labels`를 되보낸 경로(`client`)에서는 `null`
+- `prompt_version`이 `memo-v6`면 조각 경로, `memo-small-v5`면 규칙 분리 + 분류, `client-labels`면 되보내기
+- `labels`는 응답의 `labels`와 같다 — 지침 축이 접혀 있으면 접힌 값이다. `lifestyle_axis`로 어느 쪽인지 안다
+- 식별자는 없다. 메모 원문 안에 환자가 직접 적은 것 외에는 아무것도 들어가지 않는다
+
 ### `split_version` — 문장 번호가 가리키는 것이 바뀌지 않게
 
 응답에 최상위 `split_version`(예: `"split-v1"`)이 있다. **`labels`를 되보낼 때 같이 보내세요.**
