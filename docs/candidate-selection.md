@@ -1,0 +1,242 @@
+# 후보 선택 실험 — 자유 생성을 원문 span 선택으로 바꾼다 (설계, 2026-09-21)
+
+> 상태: **설계. 착수 전.** 실호출 0. 이 문서의 결정 사항이 확인되면 §8 순서로 착수한다.
+> 배경 메모(Kiwi/Ontology/Jev 후속 실험 제안)를 이 저장소의 현재 구조에 맞춰 옮긴 것이다.
+
+## 0. 한 줄
+
+진료 후 메모의 카드 값이 `위염이래요`·`위산약 2주치 받고`처럼 **어미와 동사를 끌고 나온다.**
+조각내기(memo-v6)와 라벨은 이미 맞는다(덮음 34/34, 라벨 95%). 없는 것은 **조각 안에서 값이 될
+span을 고르는 층**이다. 이 층을 "모델이 문자열을 쓰는 것"이 아니라 "코드가 만든 후보 중 하나를
+고르는 것"으로 만들고, 그 전에 **후보 안에 정답이 있는지(Candidate Recall)**를 먼저 잰다.
+
+## 1. 지금 구조 — 어디에 무엇이 있나
+
+```
+memo ──▶ segment_memo (memo-v6, Nova)  ──▶ [(조각, 라벨)]
+              │ 코드 검증: 조각을 이으면 원문 (slice_by_coverage)
+              └ 못 덮으면 폴백: split_sentences(규칙) + memo-small-v5(라벨만)
+        ──▶ _assemble ──▶ 축별 value = " · ".join(tidy_value(조각, 축)), evidence = [조각 원문]
+        ──▶ followup_date(규칙) → 못 읽으면 LLMFollowUpReader(followup-v1)
+```
+
+| 층 | 위치 | 상태 |
+|---|---|---|
+| 조각내기 + 라벨 | `llm/prompt_memo_segments.py`, `dialog/memo.py: segment_memo` | 검증됨. **건드리지 않는다** |
+| 값 정리 | `dialog/memo.py: tidy_value`, `_RULES`, `_AXIS_TRAILERS` | 정규식 규칙. 하루에 구멍 여섯이 났던 자리(#86 #91 #99 #103 #109) |
+| 재방문 날짜 | `followup_date` + `followup-v1` | 결정론 우선. 이번 범위 밖 |
+| 채점 | `evals/run_memo.py`(라벨 L·날짜 F·원문 V), `scripts/eval_memo_segments.py`(덮음·경계) | **값(value)의 정확도를 재는 지표가 없다** |
+
+**결론.** 배경 메모가 짚은 오류 C(경계)·D(정규화)는 전부 `tidy_value` 한 함수의 몫이다. 모델을
+바꿔서 풀 문제가 아니고, 이 함수를 "규칙으로 자르기"에서 "후보 중 고르기"로 바꾸는 문제다.
+
+## 2. 지키는 선
+
+- **value는 조각의 부분 문자열이다.** 새 말을 만들지 않는다. 공백 차이만 허용한다.
+  `evidence`는 조각 원문 그대로. 이 둘의 관계를 코드가 검증한다(현재 V 지표 확장).
+- **병명은 온톨로지에 넣지 않는다.** Kiwi가 명사를 알아보게 하는 데 필요한 것은 그래프가 아니라
+  표면형·타입·출처다. 그건 `data/lexicon/`(어휘집)이지 `data/ontology/`(부위 그래프)가 아니다.
+  `evals/lexicon/diagnosis_terms.txt`가 이미 "온톨로지가 아니다"라고 선언하고 같은 일을 한다.
+- 후보에 `concept_id`를 붙이지 않는다. 표면형과 타입(finding/medication/test/duration)만.
+  병명은 환자가 옮긴 의사의 말로 기록될 뿐이다(ai-design.md §1 ②).
+- 정규화 층은 표현만 되살린다(`ㄱㅊ → 괜찮다`). 의미(`통증 없음`)는 붙이지 않는다. 원문 보존.
+- 후보에 정답이 없으면 억지로 고르지 않는다. `NONE` → 지금의 `tidy_value` 결과 → 조각 원문.
+  나빠지는 경로는 만들지 않는다.
+- 어휘집 출처는 행마다 적는다. 국가건강정보포털은 라이선스 회신 전이라 출처로 쓰지 않는다.
+
+## 3. 목표 구조
+
+```
+조각(memo-v6, 그대로) + 라벨
+   ↓
+[N] 채팅 정규화 (표현 복원. 보조 입력, 원문 보존)         medimate/text/chatnorm.py
+   ↓
+[K] Kiwi 띄어쓰기·형태소·품사  + 어휘집 사용자 사전        medimate/text/tokenize.py
+   ↓
+[C] 후보 span 생성 (품사 + 정규식 + 어휘집)                 medimate/span/candidates.py
+   ↓
+[S] 선택기: rule / nova / jev / cascade  → 후보 ID 또는 NONE   medimate/span/select.py
+   ↓
+[V] 결정론 검증: 부분 문자열인가, 라벨 꼬리 없는가           memo.py 기존 V 확장
+   ↓
+value                       (evidence는 조각 원문, 변함 없음)
+```
+
+정규화·토큰화는 **후보를 만들기 위한 보조 입력**이다. 후보의 좌표는 항상 원문 조각 기준이다.
+
+### 3.1 [C] 후보 생성 규칙 (초안)
+
+한 조각에서 아래를 모두 만들고 중복을 지운다. **원문 등장 순으로 정렬해 ID를 붙인다**
+(Jev가 선택지 순서에 민감하다고 문서에 적혀 있어, 순서를 고정한다).
+
+| 종류 | 예 (`위산약 2주치 받고`) | 만드는 법 |
+|---|---|---|
+| 어휘집 매치 | `위산약` | 어휘집 표면형 최장 일치 |
+| 명사구 | `위산약 2주치` | 연속 NNG/NNP/SN/NR/XSN + 의존명사(치·분·후·뒤·간) |
+| 기간구 | `2주치`, `3주 후` | 정규식 `\d+\s*(주|일|개월|달|년)(치|분|일치)?(\s*(후|뒤))?` + 한글 수사 |
+| 어미 정리 | `위산약 2주치 받음` | 지금의 `tidy_value` 결과. **파생**으로 표시(부분 문자열 아님) |
+| 조각 전체 | `위산약 2주치 받고` | 항상 포함. 마지막 순서 |
+
+조각당 상한 8개. 넘으면 짧은 것부터 버리지 않고 **어휘집·명사구·기간구 → 파생 → 전체** 우선순위로
+자른다. 상한을 넘긴 조각은 로그에 남긴다(후보 생성기가 놓치는 자리가 거기다).
+
+### 3.2 [S] 선택기
+
+| 이름 | 무엇 | 호출 |
+|---|---|---|
+| `rule` | 축별 우선순위 하나(소견 → 어휘집 매치, 약 → 가장 긴 명사구, 재방문 → 기간구). 기준선이자 폴백 | 0 |
+| `nova` | 지금의 공급자 어댑터 그대로. `response_schema`의 enum을 후보 ID + NONE으로 강제. 조각·라벨·후보 목록을 준다 | 1/조각 |
+| `jev` | Choice 질문 하나. state = 조각(+정규화문, + 문답이면 질문), 선택지 = 후보 ID + NONE. confidence를 받는다 | 1/조각 |
+| `cascade` | jev confidence ≥ θ면 그 답, 아니면 nova | ≤ 2/조각 |
+
+라벨 `lifestyle_instructions`는 이번 범위에서 뺀다. 값이 `커피 줄이기`처럼 **변형**이라 부분
+문자열 원칙과 맞지 않고, 지금의 `tidy_value`가 그 자리를 맡고 있다. `none`도 뺀다.
+
+### 3.3 [N] 채팅 정규화
+
+작은 표 하나. `ㅇㅇ ㄴㄴ ㄱㅊ ㅁㄹ ㅠㅠ ㅋㅋ`, `기억안남 → 기억 안 남`, `몰겠음 → 모르겠음`.
+표에 없는 것은 그대로 둔다. 출력은 `{"raw", "normalized", "ops": [...]}`로 어디를 바꿨는지 남긴다.
+
+**적용 범위 주의.** 진료 후 메모는 자유 문장이고 초성 축약이 드물다. `ㄱㅊ`류가 실제로 오는 곳은
+진료 전 문답(S2, `extract-v4-nova`)의 짧은 답이다. 정규화기는 공용 모듈로 두되 **이번 실험의
+1차 대상은 진료 후 메모의 값 경계**다. 문답 문맥(배경 메모 §9)은 2차로 뒤에 둔다(§8 ⑩).
+
+### 3.4 어휘집 `data/lexicon/`
+
+```
+findings.csv     surface,type,source,note      병명·소견 표현. 씨앗: evals/lexicon/diagnosis_terms.txt
+medications.csv                                 약물명·약물군·제형(위산약, 소염제, 연고, 해열제, 프로톤펌프억제제)
+tests.csv                                       검사·영상·시술(피검사, 엑스레이, MRI, 청력검사, 스케일링)
+```
+
+- 1차는 **케이스에 나오는 용어를 손으로** 채운다(수십 개). 출처 컬럼은 "팀 수집 2026-09-21".
+- 2차(별도 스크립트, 이번 범위 밖): 통계청 KCD 한글 명칭, 식약처 의약품 허가정보, 건보 EDI 검사 명칭.
+  `scripts/extract_uberon.py`와 같은 방식으로 원본은 커밋하지 않고 추출 결과만 둔다.
+- Kiwi 사용자 사전에는 **기본 분석이 쪼개는 것만** 넣는다. 전후 토큰 비교 스크립트가 그 목록을 만든다.
+  `위염`처럼 이미 한 토큰인 것은 넣지 않는다. 일반어와 충돌 가능한 것(`약`, `물`)은 넣지 않는다.
+- 어휘집의 역할은 둘. Kiwi 경계 보호 + 후보 타입 부여. 온톨로지 로더는 이 파일을 모른다.
+
+## 4. 정답 시트와 지표
+
+### 4.1 시트 `evals/span_cases.jsonl`
+
+```json
+{"id": "SP01", "group": "E0_normal",
+ "memo": "위염이래요. 위산약 2주치 받고, 3주 후에 재방문 하래요",
+ "segments": [
+   {"text": "위염이래요.", "label": "findings",  "gold": "위염"},
+   {"text": "위산약 2주치 받고,", "label": "medication_instructions", "gold": "위산약 2주치"},
+   {"text": "3주 후에 재방문 하래요", "label": "follow_up", "gold": "3주 후"}
+ ]}
+```
+
+- 조각과 라벨은 **정답을 준다**(memo-v6가 이미 검증된 층이라 여기서 다시 재지 않는다). 재는 것은 값이다.
+- `gold`는 조각의 부분 문자열이어야 한다(공백 무시). 시트 로더가 검증한다.
+- 출처: 기존 벡터 34개(`scripts/eval_memo_segments.py`) + v2 10개 + 배경 메모 §15 예시 4묶음.
+  **gold 값은 사용자가 정한다.** 먼저 후보 목록을 뽑아 보여주고, 그 표 위에서 EM 정의와 gold를 확정한다.
+- 그룹: `E0_normal / E1_spacing / E2_typo / E3_colloquial / E4_abbrev / E5_casual / E6_marker / E7_term / E8_qa`.
+  E1은 E0 케이스의 공백을 지워 **기계적으로 파생**한다(같은 gold). 나머지는 손으로.
+
+### 4.2 지표 (전부 결정론, judge 없음)
+
+| 지표 | 정의 | 언제 |
+|---|---|---|
+| **CR** Candidate Recall | gold ∈ 후보 집합(공백 무시) 인 조각 비율 | 호출 0. **채택 게이트: E0에서 ≥ 95%** |
+| **EM(축)** | 선택된 값 == gold, 축별 | 선택기별 |
+| **Record EM** | 한 메모의 모든 조각이 EM | 선택기별 |
+| **Baseline EM** | 지금의 `tidy_value(조각, 축)` == gold | 호출 0. 오늘 코드의 점수 |
+| NONE율 · low-confidence율 | 선택기가 기권한 비율, jev confidence < θ 비율 | jev/cascade |
+| 비용·지연 | 조각당 달러·ms | 실호출 |
+
+그룹별로 전부 분리해 낸다. 비율 비교는 **같은 시트, 같은 조각 수**에서만 한다.
+
+### 4.3 오류 분류 (배경 메모 §12를 이 구조에 맞춤)
+
+| | 뜻 | 어느 층 |
+|---|---|---|
+| C 경계 | 후보에 gold가 있는데 다른 후보를 골랐다 | 선택기 |
+| C' 후보 누락 | 후보에 gold가 없다 | 후보 생성기 (CR이 잡는다) |
+| D 정규화 | 파생 후보만 맞고 부분 문자열 후보가 없다 | 후보 생성기 규칙 |
+| E 입력 견고성 | E0에서는 맞는데 E1~E6에서 틀린다 | 정규화·Kiwi |
+| A 의미 / B 라벨 | 조각·라벨 층 문제 | **이번 범위 밖** (memo-v6 지표로 따로) |
+
+## 5. 비용
+
+호출 0으로 되는 것: §8 ①~⑥ 전부. CR, Baseline EM, rule 선택기 EM까지 숫자가 나온다.
+
+실호출(§8 ⑦~⑨) 추정. 시트 50메모 × 평균 3.5조각 = 175조각.
+
+| | 조각당 | 175조각 | 근거 |
+|---|---|---|---|
+| nova 선택 | 입력 ~600tok(시스템+조각+후보) 출력 ~15tok | **≈ $0.09** | Nova Pro 서울 단가, memo-v5 실측 호출당 $0.0019에서 프롬프트 짧아짐 |
+| jev 선택 | 입력 ~400tok, 출력 무료 | **≈ $0.00003** | $42/10억 입력 토큰 |
+| cascade | jev + 일부 nova | ≤ nova | |
+
+`--budget` 기본 $0.50 유지. 프롬프트를 바꾸면 nova·jev 둘 다 다시 돌린다.
+Jev는 API 키 발급 경로가 미확인이다. 직접 API가 안 되면 OpenRouter 경유(기존 OpenAI 어댑터 재사용)를
+본다. 한국어 성능은 검증 기록이 없으므로 **결과가 실험의 일부**다.
+
+### 5.1 Jev 연동 — 공식 문서에서 확인한 것 (2026-09-21, docs.typesafe.ai)
+
+```bash
+uv add typesafe-sdk            # 그룹 nlp 또는 별도 그룹 jev
+export TYPESAFE_API_KEY=...    # 키는 console.typesafe.ai/keys
+```
+
+```python
+from typesafe_sdk import Choice, TypeSafeClient
+client = TypeSafeClient()
+r = client.system_one(
+    state={"segment": "위산약 2주치 받고,", "label": "약", "normalized": "..."},
+    questions={"value": Choice(
+        instructions="카드의 약 칸에 들어갈 값. 약 이름과 수량만. 어미·동사·조사 제외",
+        criteria={"C01": "위산약", "C02": "위산약 2주치", "C03": "2주치", "NONE": "맞는 후보 없음"},
+    )},
+)
+r.answers["value"].choice          # "C02"
+r.answers["value"].probabilities   # {"C01": .., "C02": .., ...}  합 1.0
+r.answers["value"].confidence      # 0~1. 문서 권고: 0.3~0.5 미만은 사람/폴백
+```
+
+- state는 문자열·JSON 객체·문자열 배열. 조각·라벨·정규화문을 JSON 객체로 묶는다.
+- 한 요청에 질문 여러 개를 넣을 수 있다. 메모 하나의 조각 전부를 **요청 하나**로 보낼 수 있다.
+- 모델 `jev-1.13.0`(별칭 `jev-latest`). 입력 $0.042/M tok, 출력 무료. 한도 64k tok/요청, 선택지 255개.
+- **"English is the primary training language. CJK scripts are supported but with lower accuracy.
+  Test on your content before production use."** — 한국어 성능 검증은 우리가 한다. §4의 CR·EM으로 잰다.
+- 선택지 순서가 답에 영향을 줄 수 있다(Pydantic 연동 문서). 후보 ID를 원문 등장 순으로 고정하는 이유.
+- 산술·개수 세기·날짜 비교·여러 단계 추론에 약하다고 문서가 명시. 우리는 날짜를 코드로 계산하므로 무관.
+
+## 6. 의존성
+
+- `kiwipiepy`를 새 그룹 `nlp`에 넣는다(`uv sync --group nlp`). 기본 의존성·API 이미지에는 넣지 않는다.
+  실험이 끝나 운영에 들어갈 때 다시 결정한다. Windows·Linux 휠이 있다.
+- Jev는 `typesafe-sdk`(§5.1). 실호출 단계(⑧)에 가서 추가한다. 그 전엔 필요 없다.
+
+## 7. 운영 연결 (이번 범위 밖, 방향만)
+
+실험이 게이트를 넘으면 `_assemble`의 `tidy_value(s, axis)` 자리를 `select_value(s, axis)`로 바꾸고
+`MEDIMATE_SPAN_SELECT=rule|nova|jev|off`로 켠다. `off`가 지금 동작. API 스키마는 바뀌지 않는다
+(value 문자열, evidence 목록 그대로). 폰 경로(memo-small)는 건드리지 않는다.
+
+## 8. 착수 순서
+
+| # | 할 것 | 호출 | 산출물 |
+|---|---|---|---|
+| ① | `data/lexicon/` 3파일 씨앗(케이스 용어 손으로) + 로더 | 0 | `medimate/text/lexicon.py` |
+| ② | `kiwipiepy` 추가, 사용자 사전 빌드, **전후 토큰 비교** 스크립트 | 0 | `scripts/kiwi_compare.py`, 표 |
+| ③ | 채팅 정규화기 + 테스트 | 0 | `medimate/text/chatnorm.py` |
+| ④ | 후보 생성기 + 테스트 | 0 | `medimate/span/candidates.py` |
+| ⑤ | 시트 초안: 기존 44케이스 조각에 **후보 목록을 붙여 덤프** → 사용자가 gold·EM 확정 | 0 | `evals/span_cases.jsonl`, 검토용 표 |
+| ⑥ | 러너: CR, Baseline EM(tidy_value), rule EM. 그룹별 | 0 | `medimate/evals/run_span.py`, RESULTS.md |
+| — | **게이트: E0 CR ≥ 95%.** 못 넘으면 ④로 돌아간다. 선택기 비교는 그 뒤 | | |
+| ⑦ | nova 선택기 (enum 스키마) + 비용 계산 제시 → 승인 → 실행 | ~$0.09 | 결과 원본 |
+| ⑧ | jev 연동 확인(키·엔드포인트·한국어 상태 입력) → 소규모 시험 10조각 | ~$0 | |
+| ⑨ | jev 전체, cascade, 표 비교 | ~$0 | RESULTS.md, `docs/decisions/` |
+| ⑩ | 2차: 진료 전 문답 짧은 답(E8) — 질문 문맥을 selector에 주는 실험 | 별도 산정 | |
+
+## 9. 확인이 필요한 결정
+
+1. **value = 조각의 부분 문자열** 원칙. `lifestyle_instructions`는 지금처럼 `tidy_value` 변형 유지. 맞나.
+2. 어휘집은 `data/lexicon/`(온톨로지 밖). 1차는 손 씨앗, KCD·식약처 수집은 별도 스크립트로 뒤에. 맞나.
+3. gold 확정 방식: ⑤에서 후보 덤프를 보고 사용자가 정한다. `위산약 2주치` 기준으로 나머지도 "명사구 + 수량, 어미·동사·조사 제외".
+4. 1차 대상은 진료 후 메모. 문답 짧은 답(E8)은 2차. 맞나.
