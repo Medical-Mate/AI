@@ -25,6 +25,24 @@ def test_normalize(raw, want):
     assert n.raw == raw  # 원문은 언제나 그대로
 
 
+@pytest.mark.parametrize(
+    "raw, want",
+    [
+        ("뼈는 ㄱㅊ대요 ㅋㅋ", "뼈는 괜찮대요"),
+        ("엑스레이 찍었는데 ㄱㅊ다고", "엑스레이 찍었는데 괜찮다고"),
+        ("담주 화욜 예약", "다음 주 화요일 예약"),
+        ("위염이랬음 ㅇㅇ", "위염이라고 했음 응"),
+        ("귀에 물찼다함", "귀에 물찼다고 함"),
+        ("3개월뒤 다시 재보재", "3개월뒤 다시 재보자고"),
+        ("안좋아지면 다시오라구", "안좋아지면 다시오라고"),
+        ("수술 ㄴㄴ", "수술 아니"),
+        ("MRI 찍어보재 ㅠ", "MRI 찍어보자고"),
+    ],
+)
+def test_raw_memo_forms(raw, want):
+    assert normalize(raw).text == want
+
+
 def test_unknown_left_alone():
     s = "위염이래요. 위산약 2주치 받고, 3주 후에 재방문 하래요"
     n = normalize(s)

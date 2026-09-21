@@ -46,8 +46,18 @@ SHEET = ROOT / "evals" / "span_cases.jsonl"
 RESULTS = ROOT / "evals" / "results"
 
 
+RAW_SHEET = ROOT / "evals" / "span_raw_cases.jsonl"  # 날것 메모(E3·E4·E5). 손으로 쓴다, 파생 없음
+
+
 def load_sheet(path: Path = SHEET) -> list[dict]:
-    return [json.loads(ln) for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    rows = [json.loads(ln) for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    if path == SHEET and RAW_SHEET.exists():
+        rows += [
+            json.loads(ln)
+            for ln in RAW_SHEET.read_text(encoding="utf-8").splitlines()
+            if ln.strip()
+        ]
+    return rows
 
 
 def same(a: str | None, b: str | None) -> bool:
@@ -80,6 +90,7 @@ def run(
     show_misses: bool = False,
     save: Path | None = None,
     limit: int = 0,
+    groups: set[str] | None = None,
 ) -> dict:
     gen = CandidateGenerator()
     saved: list[dict] = []
@@ -91,6 +102,8 @@ def run(
     skipped = 0
 
     for case in load_sheet():
+        if groups and case["group"] not in groups:
+            continue
         for idx, seg in enumerate(case["segments"]):
             if seg.get("skip"):
                 continue
@@ -185,6 +198,9 @@ def main() -> None:
     a.add_argument("--provider", default="bedrock")
     a.add_argument("--model", default=None, help="llm: apac.amazon.nova-pro-v1:0 · jev: jev-1.13.0")
     a.add_argument("--limit", type=int, default=0, help="앞에서 N조각만(시험 호출)")
+    a.add_argument(
+        "--groups", default="", help="이 그룹만(쉼표 구분). 예: E3_raw,E4_abbrev,E5_casual"
+    )
     a.add_argument("--budget", type=float, default=0.40)
     a.add_argument("--yes", action="store_true", help="비용 확인 없이 실행")
     a.add_argument("--report", type=Path, help="저장 결과로 재채점(호출 0)")
@@ -192,16 +208,17 @@ def main() -> None:
     a.add_argument("--misses", action="store_true")
     args = a.parse_args()
 
+    groups = {g.strip() for g in args.groups.split(",") if g.strip()} or None
     if args.report:
         rows = [
             json.loads(ln)
             for ln in args.report.read_text(encoding="utf-8").splitlines()
             if ln.strip()
         ]
-        run(ReplaySelector(rows), show_misses=args.misses)
+        run(ReplaySelector(rows), show_misses=args.misses, groups=groups)
         return
     if args.selector == "rule":
-        run(RuleSelector(), use_proposed=args.proposed, show_misses=args.misses)
+        run(RuleSelector(), use_proposed=args.proposed, show_misses=args.misses, groups=groups)
         return
 
     from medimate.llm.providers import require_price
@@ -214,7 +231,11 @@ def main() -> None:
         pass
     model = args.model or ("jev-1.13.0" if args.selector == "jev" else "apac.amazon.nova-pro-v1:0")
     n = sum(
-        1 for c in load_sheet() for s_ in c["segments"] if not s_.get("skip") and s_.get("gold")
+        1
+        for c in load_sheet()
+        if not groups or c["group"] in groups
+        for s_ in c["segments"]
+        if not s_.get("skip") and s_.get("gold")
     )
     if args.limit:
         n = min(n, args.limit)
@@ -231,9 +252,11 @@ def main() -> None:
         if args.selector == "jev"
         else LLMSelector(args.provider, model, budget_usd=args.budget)
     )
-    suffix = f"-first{args.limit}" if args.limit else ""
+    suffix = (f"-first{args.limit}" if args.limit else "") + (
+        f"-{'+'.join(sorted(groups))}" if groups else ""
+    )
     out = RESULTS / f"span-{model.replace(':', '_')}{suffix}.jsonl"
-    run(sel, show_misses=args.misses, save=out, limit=args.limit)
+    run(sel, show_misses=args.misses, save=out, limit=args.limit, groups=groups)
 
 
 if __name__ == "__main__":
