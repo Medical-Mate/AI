@@ -249,3 +249,72 @@ def _earliest_containing(
 def _longest(cands: list[Candidate], kind: str) -> Candidate | None:
     hits = [c for c in cands if kind in c.kinds]
     return max(hits, key=lambda c: len(c.compact)) if hits else None
+
+
+class LLMSelector:
+    """LLM이 후보 ID 하나를 고른다(`span-select-v1`). 공급자 어댑터·지출 가드는 LLMExtractor 것.
+
+    응답 ID가 후보 집합 밖이면 NONE(note에 남긴다) — Bedrock converse는 스키마를 강제하지 못하므로
+    코드가 마지막 문을 지킨다. 원문 응답·토큰은 `last`에 남아 러너가 저장한다(재채점용).
+    """
+
+    def __init__(self, provider: str, model_id: str, budget_usd: float = 0.5, client=None):
+        from medimate.llm.providers import LLMExtractor
+
+        self.ex = LLMExtractor(provider, model_id, budget_usd=budget_usd, _client=client)
+        self.name = provider
+        self.model_id = model_id
+        self.last: dict = {}
+
+    @property
+    def usage(self):
+        return self.ex.usage
+
+    def select(self, cset: CandidateSet, axis: str, context: dict | None = None) -> Selection:
+        import time
+
+        from medimate.llm import prompt_span_select as P
+        from medimate.llm.base import parse_json_text
+
+        t0 = time.perf_counter()
+        text, i, o = self.ex.complete_json(
+            P.system_prompt(), P.user_message(cset, axis), P.schema(cset)
+        )
+        lat = time.perf_counter() - t0
+        choice, note = NONE, ""
+        try:
+            got = str(parse_json_text(text).get("choice", "")).strip()
+            if got in cset.ids() or got == NONE:
+                choice = got
+            else:
+                note = f"후보 밖 ID: {got!r}"
+        except Exception as e:  # noqa: BLE001 — 파싱 실패도 기록 대상
+            note = f"파싱 실패: {type(e).__name__}"
+        self.last = {
+            "text": text,
+            "input_tokens": i,
+            "output_tokens": o,
+            "latency_s": round(lat, 3),
+            "prompt_version": P.PROMPT_VERSION,
+        }
+        return Selection(choice, selector=self.name, note=note)
+
+
+class ReplaySelector:
+    """저장된 결과(evals/results/span-*.jsonl)로 다시 채점한다. 호출 0."""
+
+    def __init__(self, rows: list[dict]):
+        self.rows = {(r["case_id"], r["idx"]): r for r in rows}
+        self.name = rows[0]["selector"] if rows else "replay"
+        self.model_id = rows[0].get("model_id", "?") if rows else "?"
+
+    def select(self, cset: CandidateSet, axis: str, context: dict | None = None) -> Selection:
+        ctx = context or {}
+        r = self.rows.get((ctx.get("case_id"), ctx.get("idx")))
+        if r is None:
+            return Selection(NONE, selector=self.name, note="저장 결과 없음")
+        # 후보 생성기가 바뀌었을 수 있다. 저장된 값으로 다시 ID를 찾는다. ID가 아니라 값이 답이다
+        if r["choice"] != NONE:
+            c = cset.contains(r.get("choice_text") or "")
+            return Selection(c.id if c else NONE, selector=self.name, note="" if c else "후보 바뀜")
+        return Selection(NONE, selector=self.name, note=r.get("note", ""))

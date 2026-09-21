@@ -3,6 +3,9 @@
   uv run python -m medimate.evals.run_span                    # rule 선택기, 호출 0
   uv run python -m medimate.evals.run_span --proposed         # gold 대신 rule 제안으로(연기 확인)
   uv run python -m medimate.evals.run_span --misses           # 틀린 조각을 전부 보인다
+  uv run python -m medimate.evals.run_span --selector llm --provider bedrock \\
+      --model apac.amazon.nova-pro-v1:0 --budget 0.40 --yes            # 실호출, 결과 저장
+  uv run python -m medimate.evals.run_span --report evals/results/span-<model>.jsonl  # 재채점
 
 시트 evals/span_cases.jsonl (scripts/build_span_sheet.py). gold가 빈 조각은 채점에서 뺀다.
 
@@ -28,10 +31,18 @@ from pathlib import Path
 from medimate.dialog.memo import tidy_value
 from medimate.schema.postvisit import PostAxis
 from medimate.span.candidates import CandidateGenerator, compact
-from medimate.span.select import NONE, RuleSelector, Selector, resolve
+from medimate.span.select import (
+    NONE,
+    LLMSelector,
+    ReplaySelector,
+    RuleSelector,
+    Selector,
+    resolve,
+)
 
 ROOT = Path(__file__).resolve().parents[3]
 SHEET = ROOT / "evals" / "span_cases.jsonl"
+RESULTS = ROOT / "evals" / "results"
 
 
 def load_sheet(path: Path = SHEET) -> list[dict]:
@@ -61,8 +72,15 @@ class Tally:
         )
 
 
-def run(selector: Selector, *, use_proposed: bool = False, show_misses: bool = False) -> dict:
+def run(
+    selector: Selector,
+    *,
+    use_proposed: bool = False,
+    show_misses: bool = False,
+    save: Path | None = None,
+) -> dict:
     gen = CandidateGenerator()
+    saved: list[dict] = []
     by_group: dict[str, Tally] = defaultdict(Tally)
     by_axis: dict[str, Tally] = defaultdict(Tally)
     total = Tally()
@@ -70,7 +88,7 @@ def run(selector: Selector, *, use_proposed: bool = False, show_misses: bool = F
     skipped = 0
 
     for case in load_sheet():
-        for seg in case["segments"]:
+        for idx, seg in enumerate(case["segments"]):
             if seg.get("skip"):
                 continue
             gold = seg.get("proposed") if use_proposed else seg.get("gold")
@@ -79,8 +97,26 @@ def run(selector: Selector, *, use_proposed: bool = False, show_misses: bool = F
                 continue
             axis = seg["label"]
             cset = gen.generate(seg["text"], axis)
-            sel = selector.select(cset, axis)
+            sel = selector.select(cset, axis, {"case_id": case["id"], "idx": idx})
             picked = resolve(cset, sel)
+            if save is not None:
+                saved.append(
+                    {
+                        "case_id": case["id"],
+                        "idx": idx,
+                        "group": case["group"],
+                        "axis": axis,
+                        "segment": cset.segment,
+                        "candidates": [c.text for c in cset.candidates],
+                        "choice": sel.candidate_id,
+                        "choice_text": picked,
+                        "note": sel.note,
+                        "gold": gold,
+                        "selector": selector.name,
+                        "model_id": getattr(selector, "model_id", ""),
+                        **(getattr(selector, "last", {}) or {}),
+                    }
+                )
             base = tidy_value(seg["text"], PostAxis(axis))
             gold_none = gold.strip().upper() == NONE
             if gold_none:
@@ -123,17 +159,65 @@ def run(selector: Selector, *, use_proposed: bool = False, show_misses: bool = F
     if misses:
         print("\n## 틀린 조각\n")
         print("\n".join(misses))
+    if save is not None:
+        save.parent.mkdir(parents=True, exist_ok=True)
+        with save.open("w", encoding="utf-8") as f:
+            for r in saved:
+                f.write(json.dumps(r, ensure_ascii=False) + "\n")
+        ti = sum(r.get("input_tokens", 0) for r in saved)
+        to = sum(r.get("output_tokens", 0) for r in saved)
+        usage = getattr(selector, "usage", None)
+        cost = usage.cost_usd(selector.model_id) if usage else 0.0
+        print(f"\n저장 {save} · 호출 {len(saved)} · 입력 {ti} tok · 출력 {to} tok · ${cost:.4f}")
     return {"n": total.n, "cr": total.cr, "base": total.base, "em": total.em}
 
 
 def main() -> None:
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
     a = argparse.ArgumentParser()
-    a.add_argument("--selector", default="rule", choices=["rule"])
+    a.add_argument("--selector", default="rule", choices=["rule", "llm"])
+    a.add_argument("--provider", default="bedrock")
+    a.add_argument("--model", default="apac.amazon.nova-pro-v1:0")
+    a.add_argument("--budget", type=float, default=0.40)
+    a.add_argument("--yes", action="store_true", help="비용 확인 없이 실행")
+    a.add_argument("--report", type=Path, help="저장 결과로 재채점(호출 0)")
     a.add_argument("--proposed", action="store_true", help="gold 대신 rule 제안으로 CR 확인")
     a.add_argument("--misses", action="store_true")
     args = a.parse_args()
-    run(RuleSelector(), use_proposed=args.proposed, show_misses=args.misses)
+
+    if args.report:
+        rows = [
+            json.loads(ln)
+            for ln in args.report.read_text(encoding="utf-8").splitlines()
+            if ln.strip()
+        ]
+        run(ReplaySelector(rows), show_misses=args.misses)
+        return
+    if args.selector == "rule":
+        run(RuleSelector(), use_proposed=args.proposed, show_misses=args.misses)
+        return
+
+    from medimate.llm.providers import require_price
+
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv(ROOT / ".env")
+    except ImportError:
+        pass
+    n = sum(
+        1 for c in load_sheet() for s_ in c["segments"] if not s_.get("skip") and s_.get("gold")
+    )
+    i, o = require_price(args.model)
+    # 입력 ~1100 tok(한국어 시스템 프롬프트 포함), 출력 ~15 tok. 실측은 저장 파일에 남는다
+    est = (n * 1100 * i + n * 15 * o) / 1e6
+    print(f"{args.model}: 호출 {n}회, 예상 비용 약 ${est:.3f} (상한 ${args.budget:.2f})")
+    if not args.yes:
+        print("실행하려면 --yes")
+        return
+    sel = LLMSelector(args.provider, args.model, budget_usd=args.budget)
+    out = RESULTS / f"span-{args.model.replace(':', '_')}.jsonl"
+    run(sel, show_misses=args.misses, save=out)
 
 
 if __name__ == "__main__":
