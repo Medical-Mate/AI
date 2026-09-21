@@ -19,6 +19,19 @@ from medimate.dialog.spec import PREVISIT_SPEC, SPECS, InterviewSpec
 from medimate.dialog.state import HistoryTurn, SessionState
 from medimate.llm.base import Extractor, TurnExtraction
 from medimate.schema.card import FieldStatus, InterviewCard, Provenance
+from medimate.text.chatnorm import normalize as _normalize_chat
+
+
+def chat_normalize_enabled() -> bool:
+    """env `MEDIMATE_CHAT_NORMALIZE` (기본 꺼짐). 켜면 가드가 채팅 표기 복원문도 근거로 인정한다."""
+    import os
+
+    return os.getenv("MEDIMATE_CHAT_NORMALIZE", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _chat_normalized(utterance: str) -> str | None:
+    n = _normalize_chat(utterance)
+    return n.text if n.changed else None
 
 
 @dataclass
@@ -252,7 +265,10 @@ class Session:
             raw = self.extractor.extract(utterance, self.asked_axis, self.history)
         else:
             raw = TurnExtraction()  # 선택지만 온 턴
-        g = guard_extraction(raw, utterance, self.asked_axis, self.guard)
+        # 채팅 표기 복원(#117). 기본 꺼짐 — v5 프롬프트 eval 전까지 운영 동작을 바꾸지 않는다.
+        # 켜면 `ㄴㄴ`·`ㄱㅊ`처럼 자음만 있는 답이 글자 없음 필터를 통과할 수 있다(복원문 기준)
+        normalized = _chat_normalized(utterance) if chat_normalize_enabled() else None
+        g = guard_extraction(raw, utterance, self.asked_axis, self.guard, normalized=normalized)
         ext = g.extraction
         self.turn += 1
         self.logs.append(TurnLog(self.turn, self.asked_axis, utterance, ext, raw, g.dropped))

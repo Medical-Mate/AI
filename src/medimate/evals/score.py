@@ -98,17 +98,23 @@ def score(
         if u.status == FieldStatus.NOT_ASKED:
             s.fail("D3", f"{u.axis} status=not_asked")
 
-    # D4 — evidence는 발화의 부분 문자열
+    # D4 — evidence는 발화의 부분 문자열. 채팅 표기 복원문(표로만 바꿈)의 부분 문자열도 인정(#117).
+    # 복원은 결정론이라 출처가 남는다. 엄격판 D4S는 원문 그대로인지 따로 본다
+    from medimate.text.chatnorm import normalize
+
+    normalized = normalize(utt).text
     s.checks["D4"] = True
     for u in parsed.updates:
-        if not u.evidence.strip() or _norm(u.evidence) not in _norm(utt):
+        ev = _norm(u.evidence)
+        if not ev or (ev not in _norm(utt) and ev not in _norm(normalized)):
             s.fail("D4", f"{u.axis} evidence={u.evidence!r}")
 
     # D4S — 엄격판: 공백까지 그대로 원문의 부분 문자열인가. 안전 조건은 아니다(의미는 같다).
     # 띄어쓰기 없는 입력(STT·빠른 타이핑)에서 모델이 정규화해 돌려주는지 보는 관측용
     s.checks["D4S"] = True
     for u in parsed.updates:
-        if u.evidence.strip() and u.evidence.strip() not in utt:
+        ev = u.evidence.strip()
+        if ev and ev not in utt and ev not in normalized:
             s.fail("D4S", f"{u.axis} evidence not verbatim: {u.evidence!r}")
 
     # D5 — 출력의 숫자는 발화에 있어야

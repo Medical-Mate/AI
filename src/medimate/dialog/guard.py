@@ -67,13 +67,26 @@ def guard_extraction(
     utterance: str,
     asked_axis: StrEnum | None,
     cfg: GuardConfig | None = None,
+    normalized: str | None = None,
 ) -> GuardResult:
+    """`normalized`: 채팅 표기 복원문(text/chatnorm). 주면 근거·글자·숫자 판정에 원문과 함께 쓴다.
+
+    `ㄴㄴ`는 자음뿐이라 5번 필터가 갱신을 전부 버렸다(#117). 복원문 `아니`에는 글자가 있어 통과한다.
+    evidence는 원문 또는 복원문의 부분 문자열이면 받는다 — 복원은 표로만 하므로 출처는 남는다.
+    """
     cfg = cfg or GuardConfig()
     kept: list[AxisUpdate] = []
     dropped: list[dict] = []
     nu = _norm(utterance)
-    utt_nums = set(re.findall(r"\d+", utterance))
-    letterless = cfg.no_value_from_letterless and not _HAS_LETTER.search(utterance)
+    nn = _norm(normalized) if normalized and normalized != utterance else ""
+    utt_nums = set(re.findall(r"\d+", utterance)) | set(re.findall(r"\d+", normalized or ""))
+    has_letter = _HAS_LETTER.search(utterance) or (nn and _HAS_LETTER.search(normalized or ""))
+    letterless = cfg.no_value_from_letterless and not has_letter
+
+    def in_utt(s: str) -> bool:
+        ns = _norm(s)
+        return bool(ns) and (ns in nu or (bool(nn) and ns in nn))
+
     # 되묻기: 강도를 물었는데 물음표로 끝나고 숫자가 하나도 없다
     asking_back = (
         cfg.no_severity_from_question
@@ -85,7 +98,7 @@ def guard_extraction(
     # notes는 "축에 안 들어간 환자 말"이다. 발화에 없는 문장(예시 베끼기, 이력 안내문 복사)은 버린다
     notes: list[str] = []
     for n in ext.notes:
-        if cfg.evidence_substring and _norm(n) not in nu:
+        if cfg.evidence_substring and not in_utt(n):
             dropped.append({"axis": "notes", "reason": "note_not_in_utterance", "value": n})
         else:
             notes.append(n)
@@ -98,7 +111,7 @@ def guard_extraction(
             reason = "severity_from_question"
         elif cfg.only_asked_axis and asked_axis is not None and u.axis != asked_axis:
             reason = "not_asked_axis"
-        elif cfg.evidence_substring and (not u.evidence.strip() or _norm(u.evidence) not in nu):
+        elif cfg.evidence_substring and not in_utt(u.evidence):
             reason = "evidence_not_in_utterance"
         elif cfg.numbers_from_utterance and u.value:
             bad = [n for n in re.findall(r"\d+", u.value) if n not in utt_nums]
@@ -111,7 +124,7 @@ def guard_extraction(
             {"axis": u.axis.value, "reason": reason, "value": u.value, "evidence": u.evidence}
         )
         # 물은 축이 아니어서 버린 것은 환자 말이므로 notes에 남긴다(근거가 진짜일 때만)
-        if reason == "not_asked_axis" and u.evidence.strip() and _norm(u.evidence) in nu:
+        if reason == "not_asked_axis" and in_utt(u.evidence):
             if u.evidence not in notes:
                 notes.append(u.evidence)
 

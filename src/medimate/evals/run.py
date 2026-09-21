@@ -172,7 +172,7 @@ def run(extractor, cases, out_path: Path) -> list[dict]:
     return rows
 
 
-def report(rows: list[dict], cases, guard=None) -> None:
+def report(rows: list[dict], cases, guard=None, normalize_chat: bool = False) -> None:
     lexicon = load_lexicon()
     by_id = {c["id"]: c for c in cases}
     per_case: dict[str, list] = {}
@@ -192,7 +192,15 @@ def report(rows: list[dict], cases, guard=None) -> None:
             from medimate.dialog.guard import guard_extraction
 
             axis = Axis(c["asked_axis"]) if c["asked_axis"] else None
-            parsed = guard_extraction(parsed, c["utterance"], axis, guard).extraction
+            normalized = None
+            if normalize_chat:
+                from medimate.text.chatnorm import normalize
+
+                n = normalize(c["utterance"])
+                normalized = n.text if n.changed else None
+            parsed = guard_extraction(
+                parsed, c["utterance"], axis, guard, normalized=normalized
+            ).extraction
         sc = score(c, row["text"], parsed, err, lexicon)
         per_case.setdefault(c["id"], []).append(sc)
         for k, v in sc.checks.items():
@@ -252,7 +260,7 @@ def main() -> None:
     ap.add_argument("--yes", action="store_true", help="예상 비용 확인 생략")
     ap.add_argument(
         "--prompt",
-        choices=["auto", "v3", "small", "v4-nova"],
+        choices=["auto", "v3", "small", "v4-nova", "v5-nova"],
         default="auto",
         help="프롬프트 계열. auto는 모델 id로 고른다(providers.prompt_family_for)",
     )
@@ -266,9 +274,18 @@ def main() -> None:
     ap.add_argument(
         "--guard", choices=["server", "ondevice"], help="재채점 시 런타임 가드 적용(호출 0)"
     )
+    ap.add_argument(
+        "--normalize",
+        action="store_true",
+        help="가드에 채팅 표기 복원문을 준다(MEDIMATE_CHAT_NORMALIZE=on과 같음, #117). --guard와",
+    )
+    ap.add_argument("--category", help="이 카테고리만(쉼표 구분). 예: chat_abbrev,chat_casual")
     a = ap.parse_args()
 
     cases = load_cases()
+    if a.category:
+        cats = {x.strip() for x in a.category.split(",") if x.strip()}
+        cases = [c for c in cases if c["category"] in cats]
     if a.cases:
         want = [x.strip() for x in a.cases.split(",") if x.strip()]
         by_id = {c["id"]: c for c in cases}
@@ -286,7 +303,7 @@ def main() -> None:
             from medimate.dialog.guard import GuardConfig
 
             guard = GuardConfig.ondevice() if a.guard == "ondevice" else GuardConfig()
-        report(rows, cases, guard)
+        report(rows, cases, guard, normalize_chat=a.normalize)
         return
 
     if a.dry_run:
