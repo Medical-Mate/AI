@@ -318,3 +318,75 @@ class ReplaySelector:
             c = cset.contains(r.get("choice_text") or "")
             return Selection(c.id if c else NONE, selector=self.name, note="" if c else "후보 바뀜")
         return Selection(NONE, selector=self.name, note=r.get("note", ""))
+
+
+class JevSelector:
+    """TypeSafe Jev(System One) — Choice 질문 하나로 후보 ID를 고른다. 문자열 생성 없음.
+
+    state = {칸, 조각(, 원문)}, criteria = {후보 ID: 후보 텍스트, NONE: 맞는 후보 없음}.
+    confidence·probabilities를 `last`에 남긴다(cascade 임계값 실험용). 키는 TYPESAFE_API_KEY.
+    지출 가드는 다른 선택기와 같은 Usage·PRICES를 쓴다.
+    """
+
+    def __init__(self, model_id: str = "jev-1.13.0", budget_usd: float = 0.5, client=None):
+        from medimate.llm.providers import Usage, require_price
+
+        require_price(model_id)
+        self.model_id = model_id
+        self.name = "jev"
+        self.budget_usd = budget_usd
+        self.usage = Usage()
+        self._client = client
+        self.last: dict = {}
+
+    def _get_client(self):
+        if self._client is None:
+            from typesafe_sdk import TypeSafeClient
+
+            self._client = TypeSafeClient(model=self.model_id)
+        return self._client
+
+    def select(self, cset: CandidateSet, axis: str, context: dict | None = None) -> Selection:
+        import time
+
+        from typesafe_sdk import Choice
+
+        from medimate.llm import prompt_span_select as P
+        from medimate.llm.providers import BudgetExceeded
+
+        if self.usage.cost_usd(self.model_id) >= self.budget_usd:
+            raise BudgetExceeded(f"{self.model_id}: ${self.budget_usd} 상한 도달")
+        t0 = time.perf_counter()
+        r = self._get_client().system_one(
+            state=P.jev_state(cset, axis),
+            questions={
+                "value": Choice(
+                    instructions=P.JEV_INSTRUCTIONS.get(axis, ""), criteria=P.jev_criteria(cset)
+                )
+            },
+        )
+        lat = time.perf_counter() - t0
+        ans = r.answers["value"]
+        got = str(getattr(ans, "choice", "")).strip()
+        conf = getattr(ans, "confidence", None)
+        probs = getattr(ans, "probabilities", None)
+        i = getattr(r.usage, "input_tokens", 0) or 0
+        o = getattr(r.usage, "output_tokens", 0) or 0
+        self.usage.calls += 1
+        self.usage.input_tokens += i
+        self.usage.output_tokens += o
+        choice, note = NONE, ""
+        if got in cset.ids() or got == NONE:
+            choice = got
+        else:
+            note = f"후보 밖 ID: {got!r}"
+        self.last = {
+            "text": got,
+            "confidence": conf,
+            "probabilities": dict(probs) if probs else None,
+            "input_tokens": i,
+            "output_tokens": o,
+            "latency_s": round(lat, 3),
+            "prompt_version": P.PROMPT_VERSION,
+        }
+        return Selection(choice, confidence=conf, selector=self.name, note=note)

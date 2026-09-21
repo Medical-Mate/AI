@@ -29,6 +29,7 @@ api = [
 ]
 nlp = [
     "kiwipiepy>=0.23.2",
+    "typesafe-sdk>=0.7.0",
 ]
 
 [build-system]

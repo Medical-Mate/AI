@@ -57,3 +57,40 @@ def schema(cset: CandidateSet) -> dict:
         "required": ["choice"],
         "additionalProperties": False,
     }
+
+
+# Jev(Choice)용 축별 지시. 위 _SYSTEM의 같은 규칙을 축 하나만 잘라 짧게. 바꾸면 PROMPT_VERSION을 올린다
+JEV_INSTRUCTIONS = {
+    "findings": (
+        "기록 카드의 '소견' 칸 값을 후보 중에서 고른다. 병명·용어가 있으면 용어만(앞의 좌우·부위 수식은 붙이고, "
+        "뒤는 '초기' 같은 단계 낱말까지만). 수치·변화 서술이면 '-음'으로 끝나는 서술문(혈압이 좀 높음). "
+        "괜찮다·정상·특별한 건 없다·필요 없다 같은 안심·부정 소견은 NONE. 주어·조사·'~라고 하셨어요'가 붙은 긴 후보는 고르지 않는다."
+    ),
+    "medication_instructions": (
+        "기록 카드의 '약' 칸 값을 후보 중에서 고른다. 약 이름과 용법·기간을 한 덩어리로(항생제 5일). 조건·시점이 있으면 앞에(아침에 혈압약). "
+        "'처방'이라는 말은 뺀다(연고). 약을 안 줬다·아직 안 먹는다·주사만 맞았다·처치만 했다는 NONE. 처치를 받으라고 한 것은 처치명. "
+        "'지금은', '~은/는' 같은 주어·조사가 붙은 후보는 고르지 않는다."
+    ),
+    "tests": (
+        "기록 카드의 '검사' 칸 값을 후보 중에서 고른다. 검사를 이미 했으면 검사명만(혈액검사). 결과 얘기만 있으면 '[시점] [검사] 결과 안내'. "
+        "예약·예정이면 '[시점] [검사] 예약/예정'. 시점만 있으면 시점(다음 주 화요일). '이상 없음' 같은 결과 서술은 조각 그대로. "
+        "조사·어미가 붙은 긴 후보는 고르지 않는다."
+    ),
+    "follow_up": (
+        "기록 카드의 '재방문' 칸 값을 후보 중에서 고른다. 시점만 있으면 시점 그대로(2주 뒤). 조건이 있으면 '[조건] 재방문 필요'. "
+        "시점도 조건도 없이 다시 오라고만 했으면 '재방문 필요'. 안 와도 된다·결과 보고 이야기하자는 NONE. 어미가 붙은 긴 후보는 고르지 않는다."
+    ),
+}
+
+
+def jev_state(cset: CandidateSet, axis: str) -> dict:
+    st = {"칸": AXIS_KO.get(axis, axis), "조각": cset.segment}
+    if cset.raw and cset.raw != cset.segment:
+        st["원문"] = cset.raw
+    return st
+
+
+def jev_criteria(cset: CandidateSet) -> dict[str, str]:
+    crit = {c.id: c.text for c in cset.candidates}
+    crit["NONE"] = "맞는 후보 없음"
+    return crit

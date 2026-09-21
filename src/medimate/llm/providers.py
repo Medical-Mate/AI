@@ -49,6 +49,8 @@ PRICES: dict[str, tuple[float, float]] = {
     "apac.amazon.nova-pro-v1:0": (0.80, 3.20),
     "global.anthropic.claude-haiku-4-5-20251001-v1:0": (1.10, 5.50),
     "global.anthropic.claude-sonnet-4-6": (3.00, 15.00),
+    # TypeSafe Jev(System One). 입력 $0.042/M, 출력 무료 (docs.typesafe.ai/models, 2026-09-21)
+    "jev-1.13.0": (0.042, 0.0),
 }
 # 로컬(온디바이스 후보) 모델은 가격표에 없다 → cost 0.
 # model_id는 "local/" + llama-server가 알려주는 이름

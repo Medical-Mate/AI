@@ -33,6 +33,7 @@ from medimate.schema.postvisit import PostAxis
 from medimate.span.candidates import CandidateGenerator, compact
 from medimate.span.select import (
     NONE,
+    JevSelector,
     LLMSelector,
     ReplaySelector,
     RuleSelector,
@@ -78,9 +79,11 @@ def run(
     use_proposed: bool = False,
     show_misses: bool = False,
     save: Path | None = None,
+    limit: int = 0,
 ) -> dict:
     gen = CandidateGenerator()
     saved: list[dict] = []
+    seen = 0
     by_group: dict[str, Tally] = defaultdict(Tally)
     by_axis: dict[str, Tally] = defaultdict(Tally)
     total = Tally()
@@ -95,6 +98,9 @@ def run(
             if not gold:
                 skipped += 1
                 continue
+            if limit and seen >= limit:
+                break
+            seen += 1
             axis = seg["label"]
             cset = gen.generate(seg["text"], axis)
             sel = selector.select(cset, axis, {"case_id": case["id"], "idx": idx})
@@ -175,9 +181,10 @@ def run(
 def main() -> None:
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
     a = argparse.ArgumentParser()
-    a.add_argument("--selector", default="rule", choices=["rule", "llm"])
+    a.add_argument("--selector", default="rule", choices=["rule", "llm", "jev"])
     a.add_argument("--provider", default="bedrock")
-    a.add_argument("--model", default="apac.amazon.nova-pro-v1:0")
+    a.add_argument("--model", default=None, help="llm: apac.amazon.nova-pro-v1:0 · jev: jev-1.13.0")
+    a.add_argument("--limit", type=int, default=0, help="앞에서 N조각만(시험 호출)")
     a.add_argument("--budget", type=float, default=0.40)
     a.add_argument("--yes", action="store_true", help="비용 확인 없이 실행")
     a.add_argument("--report", type=Path, help="저장 결과로 재채점(호출 0)")
@@ -205,19 +212,28 @@ def main() -> None:
         load_dotenv(ROOT / ".env")
     except ImportError:
         pass
+    model = args.model or ("jev-1.13.0" if args.selector == "jev" else "apac.amazon.nova-pro-v1:0")
     n = sum(
         1 for c in load_sheet() for s_ in c["segments"] if not s_.get("skip") and s_.get("gold")
     )
-    i, o = require_price(args.model)
-    # 입력 ~1100 tok(한국어 시스템 프롬프트 포함), 출력 ~15 tok. 실측은 저장 파일에 남는다
-    est = (n * 1100 * i + n * 15 * o) / 1e6
-    print(f"{args.model}: 호출 {n}회, 예상 비용 약 ${est:.3f} (상한 ${args.budget:.2f})")
+    if args.limit:
+        n = min(n, args.limit)
+    i, o = require_price(model)
+    # llm: 입력 ~1100 tok(한국어 시스템 프롬프트 포함) 출력 ~15. jev: state+질문 ~500 tok, 출력 무료
+    per_in = 500 if args.selector == "jev" else 1100
+    est = (n * per_in * i + n * 15 * o) / 1e6
+    print(f"{model}: 호출 {n}회, 예상 비용 약 ${est:.4f} (상한 ${args.budget:.2f})")
     if not args.yes:
         print("실행하려면 --yes")
         return
-    sel = LLMSelector(args.provider, args.model, budget_usd=args.budget)
-    out = RESULTS / f"span-{args.model.replace(':', '_')}.jsonl"
-    run(sel, show_misses=args.misses, save=out)
+    sel = (
+        JevSelector(model, budget_usd=args.budget)
+        if args.selector == "jev"
+        else LLMSelector(args.provider, model, budget_usd=args.budget)
+    )
+    suffix = f"-first{args.limit}" if args.limit else ""
+    out = RESULTS / f"span-{model.replace(':', '_')}{suffix}.jsonl"
+    run(sel, show_misses=args.misses, save=out, limit=args.limit)
 
 
 if __name__ == "__main__":
