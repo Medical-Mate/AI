@@ -27,6 +27,10 @@ api = [
     # IANA 시간대 DB가 없어서 `ZoneInfo("Asia/Seoul")`이 실패한다
     "tzdata>=2024.1",
 ]
+nlp = [
+    "kiwipiepy>=0.23.2",
+    "typesafe-sdk>=0.7.0",
+]
 
 [build-system]
 requires = ["hatchling"]

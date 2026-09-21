@@ -1,0 +1,392 @@
+"""선택기 — 후보 중 하나(또는 NONE)를 고른다. 문자열을 만들지 않는다.
+
+- `rule`  호출 0. 축별 우선순위 하나. 기준선이자 폴백
+- `nova` / `jev` / `cascade`  실호출. 게이트(E0 CR ≥ 95%)를 넘은 뒤 붙인다
+  (docs/candidate-selection.md §8)
+
+선택기는 후보 ID를 돌려준다. 값으로 바꾸는 것은 `resolve()` 한 곳이고, 그 값은 후보의 text다.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from typing import Protocol
+
+from medimate.span.candidates import Candidate, CandidateSet
+
+NONE = "NONE"
+
+
+@dataclass(frozen=True)
+class Selection:
+    candidate_id: str  # 후보 ID 또는 NONE
+    confidence: float | None = None  # 선택기가 주면
+    selector: str = "rule"
+    note: str = ""
+
+
+class Selector(Protocol):
+    name: str
+
+    def select(self, cset: CandidateSet, axis: str, context: dict | None = None) -> Selection: ...
+
+
+def resolve(cset: CandidateSet, sel: Selection) -> str | None:
+    """선택 → 값. NONE이면 None(호출자가 폴백을 정한다)."""
+    if sel.candidate_id == NONE:
+        return None
+    for c in cset.candidates:
+        if c.id == sel.candidate_id:
+            return c.text
+    return None
+
+
+class RuleSelector:
+    """축별 우선순위. 어느 규칙에도 안 걸리면 NONE — 억지로 고르지 않는다.
+
+    규칙은 gold 검토(2026-09-21)에서 읽은 카드 값 모양을 따른다(canon.py 머리말). 기준선이자 폴백.
+    """
+
+    name = "rule"
+
+    def select(self, cset: CandidateSet, axis: str, context: dict | None = None) -> Selection:
+        from medimate.span.canon import reassurance
+
+        seg = cset.segment
+        subs = [c for c in cset.candidates if not c.derived]
+        canon = [c for c in cset.candidates if "canon" in c.kinds]
+        pick: Candidate | None = None
+
+        if axis == "findings":
+            if reassurance(seg):
+                return Selection(NONE, selector=self.name, note="안심·부정 소견")
+            # 수치·변화 서술(높음·늘어났음·찼음·아님)이면 서술문 그대로. 병명·용어가 있으면 용어만
+            stmt = [c for c in canon if _MEASURE.search(c.text)]
+            pick = (
+                (stmt[0] if stmt else None)
+                or _earliest_containing(subs, "lexicon:finding", ("chunk", "tail:finding"))
+                or _longest(subs, "lexicon:finding")
+                or _longest(subs, "chunk")
+            )
+            # 칸 이름과 겹치는 꼬리(`소견`)는 뗀다 — 그 형이 후보에 있으면
+            if pick and pick.text.endswith("소견"):
+                shorter = cset.contains(pick.text[: -len("소견")])
+                pick = shorter or pick
+
+        elif axis == "medication_instructions":
+            if _med_negated(seg):
+                return Selection(NONE, selector=self.name, note="약 없음·보류")
+            has_med = any("lexicon:medication" in c.kinds for c in subs)
+            has_proc = any("lexicon:procedure" in c.kinds for c in subs)
+            has_num = any("duration" in c.kinds for c in subs)
+            if re.search(r"주사.*맞", seg):
+                return Selection(NONE, selector=self.name, note="주사 맞음 — 값 없음")
+            if has_proc and not has_med and re.search(r"(?:했|냈)(?:음|어요|다|고)?", seg):
+                return Selection(NONE, selector=self.name, note="처치를 했음 — 값 없음")
+            if not has_med and not has_num and not has_proc and "약" not in seg:
+                return Selection(NONE, selector=self.name, note="약·용법 없음")
+            # 약 이름과 용법이 한 chunk에 이어져 있으면 그것(항생제 5일). 조건·시점이 앞에 있으면
+            # 템플릿(아침에 혈압약). 그 외 약 이름
+            cond_canon = [c for c in canon if not _starts_with_med(c.text, subs)]
+            # 약 낱말(`약`)과 용법이 한 chunk에 있으면 그것(`2주분 약`, `2주 약`)
+            yak = [
+                c
+                for c in subs
+                if "chunk" in c.kinds
+                and re.search(r"(?<![가-힣])약(?![가-힣])", c.text)
+                and _contains_kind(c, subs, ("duration",))
+            ]
+            pick = (
+                _longest_containing(
+                    subs, "lexicon:medication", ("chunk", "tail:medication"), prefer_not_whole=True
+                )
+                or (min(yak, key=lambda c: len(c.compact)) if yak else None)
+                or (cond_canon[0] if cond_canon else None)
+                or (canon[0] if canon else None)
+                or _longest(subs, "lexicon:medication")
+                or _longest_containing(subs, "lexicon:procedure", ("chunk",), prefer_not_whole=True)
+                or _longest(subs, "lexicon:procedure")
+                or _longest(subs, "chunk")
+            )
+            # `처방`은 전부 뗀다(결정 3) — 뗀 형이 후보에 있으면 그것
+            if pick and pick.text.rstrip().endswith("처방"):
+                shorter = cset.contains(pick.text.rstrip()[: -len("처방")])
+                pick = shorter or pick
+
+        elif axis == "tests":
+            if _result_statement(seg):
+                pick = next((c for c in subs if "whole" in c.kinds), None)
+            # 검사를 했으면 검사명만. 결과 얘기만 있으면 템플릿(추후 피검사 결과 안내). 결정 1
+            if pick is None and _test_done(seg):
+                pick = _longest(subs, "lexicon:test") or _longest(subs, "lexicon:procedure")
+            # 시점으로 시작하는 chunk가 검사를 품고 있으면 그것(`10월 2일 시야검사 예약`)
+            lead = [
+                c
+                for c in subs
+                if "chunk" in c.kinds
+                and any(k in ("lexicon:test", "lexicon:procedure") for k in c.kinds) is False
+                and _starts_with_time(c, subs)
+                and _contains_kind(c, subs, ("lexicon:test", "lexicon:procedure"))
+            ]
+            pick = (
+                pick
+                or (max(lead, key=lambda c: len(c.compact)) if lead else None)
+                or (canon[0] if canon else None)
+                or _longest(subs, "lexicon:test")
+                or _longest(subs, "lexicon:procedure")
+                or _longest(subs, "chunk")
+            )
+
+        elif axis == "follow_up":
+            durs = [c for c in subs if "duration" in c.kinds]
+            cond = any(_has_condition(c.text) for c in canon)
+            if canon and (cond or not durs):
+                pick = canon[0]
+            else:
+                pick = next(
+                    (c for c in durs if c.text.rstrip().endswith(("후", "뒤"))), None
+                ) or _longest(durs, "duration")
+        return Selection(pick.id if pick else NONE, selector=self.name)
+
+
+_STAGE_TAIL = re.compile(r"|초기|말기|의심|전단계")
+_MEASURE = re.compile(
+    r"(?:높음|낮음|늘어났음|찼음|부었음|뭉침|아님|커졌음|작아졌음|올랐음|떨어졌음)$"
+)
+
+
+def _has_condition(s: str) -> bool:
+    # `~면 재방문`·`악화 시 재방문`. `다시`의 시는 조건이 아니다
+    return bool(re.search(r"[가-힣]면\s|\s시\s", s)) or s.strip() == "재방문 필요"
+
+
+def _starts_with_med(text: str, subs: list[Candidate]) -> bool:
+    meds = [c.text for c in subs if "lexicon:medication" in c.kinds] + ["약"]
+    return any(text.startswith(m) for m in meds)
+
+
+def _starts_with_time(c: Candidate, subs: list[Candidate]) -> bool:
+    return any(d.start == c.start and d.end < c.end for d in subs if "duration" in d.kinds)
+
+
+def _contains_kind(c: Candidate, subs: list[Candidate], kinds: tuple[str, ...]) -> bool:
+    return any(
+        i.start >= c.start and i.end <= c.end and any(k in i.kinds for k in kinds)
+        for i in subs
+        if i is not c
+    )
+
+
+def _med_negated(seg: str) -> bool:
+    return bool(
+        re.search(r"약(?:은|만|을)?\s*(?:안|아직|아니|없)|약\s*먹을\s*정도는\s*아니|약만\s*주", seg)
+    )
+
+
+def _test_done(seg: str) -> bool:
+    """검사를 이미 했다는 말(했고·찍었고·봤는데·받았어요)."""
+    return bool(re.search(r"(?<!기로 )(?<!기로)(?:했|찍었|봤|받았)", seg))
+
+
+def _result_statement(seg: str) -> bool:
+    return bool(re.search(r"이상\s*없|정상", seg))
+
+
+def _longest_containing(
+    cands: list[Candidate],
+    inner_kind: str,
+    outer_kinds: tuple[str, ...],
+    *,
+    prefer_not_whole: bool = False,
+) -> Candidate | None:
+    """inner_kind 후보를 **품는** outer_kinds 후보 중 가장 긴 것 (발목 염좌 → 오른쪽 발목 염좌).
+
+    `prefer_not_whole`: 조각 전체가 아닌 것이 있으면 그것을 먼저(`수면제 대신 멜라토닌 2주` 말고
+    `멜라토닌 2주`). 조각 전체밖에 없으면 그것.
+    """
+    inners = [c for c in cands if inner_kind in c.kinds]
+    outers = [
+        c
+        for c in cands
+        if any(k in c.kinds for k in outer_kinds)
+        and any(i.start >= c.start and i.end <= c.end for i in inners)
+    ]
+    if prefer_not_whole:
+        inner_only = [c for c in outers if "whole" not in c.kinds and c not in inners]
+        if inner_only:
+            return max(inner_only, key=lambda c: len(c.compact))
+        rest = [c for c in outers if c not in inners]
+        if rest:
+            return max(rest, key=lambda c: len(c.compact))
+        return None
+    return max(outers, key=lambda c: len(c.compact)) if outers else None
+
+
+def _earliest_containing(
+    cands: list[Candidate], inner_kind: str, outer_kinds: tuple[str, ...]
+) -> Candidate | None:
+    """가장 **먼저 나오는** inner를 품는 후보 중 긴 것 — `중이염은 아니고 귀지 때문`은 중이염."""
+    inners = sorted((c for c in cands if inner_kind in c.kinds), key=lambda c: c.start)
+    if not inners:
+        return None
+    first = inners[0]
+    durs = [c for c in cands if "duration" in c.kinds]
+    outers = [
+        c
+        for c in cands
+        if any(k in c.kinds for k in outer_kinds)
+        and first.start >= c.start
+        and first.end <= c.end
+        # 수치(`4mm`)까지 늘리지 않는다 — `요로결석 4mm`는 요로결석
+        and not any(d.start >= c.start and d.end <= c.end for d in durs)
+        # 용어 뒤는 단계 낱말까지만(위염 초기 ○, 회전근개 쪽 문제 ×). 앞은 자유(오른쪽 발목 염좌)
+        and _STAGE_TAIL.fullmatch(c.text[first.end - c.start :].strip())
+    ]
+    return max(outers, key=lambda c: len(c.compact)) if outers else first
+
+
+def _longest(cands: list[Candidate], kind: str) -> Candidate | None:
+    hits = [c for c in cands if kind in c.kinds]
+    return max(hits, key=lambda c: len(c.compact)) if hits else None
+
+
+class LLMSelector:
+    """LLM이 후보 ID 하나를 고른다(`span-select-v1`). 공급자 어댑터·지출 가드는 LLMExtractor 것.
+
+    응답 ID가 후보 집합 밖이면 NONE(note에 남긴다) — Bedrock converse는 스키마를 강제하지 못하므로
+    코드가 마지막 문을 지킨다. 원문 응답·토큰은 `last`에 남아 러너가 저장한다(재채점용).
+    """
+
+    def __init__(self, provider: str, model_id: str, budget_usd: float = 0.5, client=None):
+        from medimate.llm.providers import LLMExtractor
+
+        self.ex = LLMExtractor(provider, model_id, budget_usd=budget_usd, _client=client)
+        self.name = provider
+        self.model_id = model_id
+        self.last: dict = {}
+
+    @property
+    def usage(self):
+        return self.ex.usage
+
+    def select(self, cset: CandidateSet, axis: str, context: dict | None = None) -> Selection:
+        import time
+
+        from medimate.llm import prompt_span_select as P
+        from medimate.llm.base import parse_json_text
+
+        t0 = time.perf_counter()
+        text, i, o = self.ex.complete_json(
+            P.system_prompt(), P.user_message(cset, axis), P.schema(cset)
+        )
+        lat = time.perf_counter() - t0
+        choice, note = NONE, ""
+        try:
+            got = str(parse_json_text(text).get("choice", "")).strip()
+            if got in cset.ids() or got == NONE:
+                choice = got
+            else:
+                note = f"후보 밖 ID: {got!r}"
+        except Exception as e:  # noqa: BLE001 — 파싱 실패도 기록 대상
+            note = f"파싱 실패: {type(e).__name__}"
+        self.last = {
+            "text": text,
+            "input_tokens": i,
+            "output_tokens": o,
+            "latency_s": round(lat, 3),
+            "prompt_version": P.PROMPT_VERSION,
+        }
+        return Selection(choice, selector=self.name, note=note)
+
+
+class ReplaySelector:
+    """저장된 결과(evals/results/span-*.jsonl)로 다시 채점한다. 호출 0."""
+
+    def __init__(self, rows: list[dict]):
+        self.rows = {(r["case_id"], r["idx"]): r for r in rows}
+        self.name = rows[0]["selector"] if rows else "replay"
+        self.model_id = rows[0].get("model_id", "?") if rows else "?"
+
+    def select(self, cset: CandidateSet, axis: str, context: dict | None = None) -> Selection:
+        ctx = context or {}
+        r = self.rows.get((ctx.get("case_id"), ctx.get("idx")))
+        if r is None:
+            return Selection(NONE, selector=self.name, note="저장 결과 없음")
+        # 후보 생성기가 바뀌었을 수 있다. 저장된 값으로 다시 ID를 찾는다. ID가 아니라 값이 답이다
+        if r["choice"] != NONE:
+            c = cset.contains(r.get("choice_text") or "")
+            return Selection(c.id if c else NONE, selector=self.name, note="" if c else "후보 바뀜")
+        return Selection(NONE, selector=self.name, note=r.get("note", ""))
+
+
+class JevSelector:
+    """TypeSafe Jev(System One) — Choice 질문 하나로 후보 ID를 고른다. 문자열 생성 없음.
+
+    state = {칸, 조각(, 원문)}, criteria = {후보 ID: 후보 텍스트, NONE: 맞는 후보 없음}.
+    confidence·probabilities를 `last`에 남긴다(cascade 임계값 실험용). 키는 TYPESAFE_API_KEY.
+    지출 가드는 다른 선택기와 같은 Usage·PRICES를 쓴다.
+    """
+
+    def __init__(self, model_id: str = "jev-1.13.0", budget_usd: float = 0.5, client=None):
+        from medimate.llm.providers import Usage, require_price
+
+        require_price(model_id)
+        self.model_id = model_id
+        self.name = "jev"
+        self.budget_usd = budget_usd
+        self.usage = Usage()
+        self._client = client
+        self.last: dict = {}
+
+    def _get_client(self):
+        if self._client is None:
+            from typesafe_sdk import TypeSafeClient
+
+            self._client = TypeSafeClient(model=self.model_id)
+        return self._client
+
+    def select(self, cset: CandidateSet, axis: str, context: dict | None = None) -> Selection:
+        import time
+
+        from typesafe_sdk import Choice
+
+        from medimate.llm import prompt_span_select as P
+        from medimate.llm.providers import BudgetExceeded
+
+        if self.usage.cost_usd(self.model_id) >= self.budget_usd:
+            raise BudgetExceeded(f"{self.model_id}: ${self.budget_usd} 상한 도달")
+        t0 = time.perf_counter()
+        r = self._get_client().system_one(
+            state=P.jev_state(cset, axis),
+            questions={
+                "value": Choice(
+                    instructions=P.JEV_INSTRUCTIONS.get(axis, ""), criteria=P.jev_criteria(cset)
+                )
+            },
+        )
+        lat = time.perf_counter() - t0
+        ans = r.answers["value"]
+        got = str(getattr(ans, "choice", "")).strip()
+        conf = getattr(ans, "confidence", None)
+        probs = getattr(ans, "probabilities", None)
+        i = getattr(r.usage, "input_tokens", 0) or 0
+        o = getattr(r.usage, "output_tokens", 0) or 0
+        self.usage.calls += 1
+        self.usage.input_tokens += i
+        self.usage.output_tokens += o
+        choice, note = NONE, ""
+        if got in cset.ids() or got == NONE:
+            choice = got
+        else:
+            note = f"후보 밖 ID: {got!r}"
+        self.last = {
+            "text": got,
+            "confidence": conf,
+            "probabilities": dict(probs) if probs else None,
+            "input_tokens": i,
+            "output_tokens": o,
+            "latency_s": round(lat, 3),
+            "prompt_version": P.PROMPT_VERSION,
+        }
+        return Selection(choice, confidence=conf, selector=self.name, note=note)
