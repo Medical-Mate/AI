@@ -38,6 +38,13 @@ CASUAL: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"몰라"), "몰라"),
     (re.compile(r"(?<![가-힣])아픈듯"), "아픈 듯"),
     (re.compile(r"괜찬"), "괜찮"),  # PM10·PM15 실데이터 오타. 의미 아니라 표기
+    # 어미 오타 — 메신저 표기. E2 파생 그룹(derive_span_groups.TYPOS)과 짝
+    (re.compile(r"(?<=[가-힣])레요"), "래요"),
+    (re.compile(r"(?<=[가-힣])어여(?![가-힣])"), "어요"),
+    (re.compile(r"햇(?=[어다고])"), "했"),
+    (re.compile(r"(?<=[가-힣])이라구"), "이라고"),
+    (re.compile(r"(?<=[가-힣])다구(?![가-힣])"), "다고"),
+    (re.compile(r"됬"), "됐"),
     (re.compile(r"안됨"), "안 됨"),
     (re.compile(r"안함"), "안 함"),
     (re.compile(r"안먹"), "안 먹"),

@@ -22,7 +22,9 @@ TYPE_TO_AXIS = {
     "finding": "findings",
     "medication": "medication_instructions",
     "test": "tests",
-    "procedure": "tests",
+    # 시술·처치는 약 칸이다(schema/postvisit.py: "약 — 처방, 복용법, 주사·처치"). gold 검토에서도
+    # `물리치료 6회`가 약 칸에 적혔다(2026-09-21)
+    "procedure": "medication_instructions",
 }
 
 

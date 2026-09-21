@@ -10,7 +10,8 @@
 - phrase          chunk + 조사 + chunk (약은 2주분)
 - tail:<type>     어휘집 매치에서 chunk 끝까지 (위산약 2주치 — chunk와 같으면 kind가 합쳐진다)
 - derived         지금의 tidy_value 결과. **부분 문자열이 아닐 수 있다** — derived=True로 표시
-- whole           조각 전체(끝 구두점만 뗌). 항상 마지막
+- whole           조각 전체(끝 구두점만 뗌). 다른 후보와 같으면 그 후보에 kind로 붙는다
+- canon           템플릿 후보(canon.py). 원문 조각을 재배열·정해진 표로 축약. derived=True
 
 순서는 원문 등장 순(start, 긴 것 먼저). ID는 그 순서로 C01…. 선택기가 순서에 민감할 수 있어
 (Jev 문서) 여기서 고정한다.
@@ -21,6 +22,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from medimate.text.chatnorm import normalize
 from medimate.text.lexicon import Lexicon, load_lexicon
 from medimate.text.tokenize import NOMINAL_TAGS, Tok, build_kiwi, tokens
 
@@ -67,9 +69,10 @@ class Candidate:
 
 @dataclass
 class CandidateSet:
-    segment: str
+    segment: str  # 후보의 좌표가 가리키는 텍스트. 정규화가 일어났으면 정규화문
     candidates: list[Candidate]
     overflow: list[str] = field(default_factory=list)  # 상한에 걸려 버린 것
+    raw: str | None = None  # 정규화 전 원문. None이면 segment가 원문
 
     def ids(self) -> list[str]:
         return [c.id for c in self.candidates]
@@ -93,8 +96,11 @@ class CandidateGenerator:
         self.kiwi = kiwi if kiwi is not None else build_kiwi(self.lexicon)[0]
 
     def generate(self, segment: str, axis: str | None = None) -> CandidateSet:
+        # 채팅 정규화(오타·표지·초성)는 표로만 바꾼다. 바뀌었으면 정규화문 위에서 후보를 만든다.
+        # `감기레요`를 Kiwi가 `감기레/NNG`로 읽는 것을 막는 유일한 자리다. 원문은 CandidateSet.raw에
+        norm = normalize(segment)
+        seg = norm.text if norm.changed else segment
         raw: list[tuple[int, int, str]] = []  # (start, end, kind)
-        seg = segment
 
         for m in self.lexicon.match(seg):
             raw.append((m.start, m.end, f"lexicon:{m.term.type}"))
@@ -125,7 +131,16 @@ class CandidateGenerator:
 
         whole = _TRAIL.sub("", _LEAD.sub("", seg))
         whole_c = _WS.sub("", whole)
-        subs = [(s, e, k) for s, e, k in merged if _WS.sub("", seg[s:e]) != whole_c]
+        # 조각 전체와 같은 후보(`항생제 5일.`의 chunk `항생제 5일`)는 빼지 않고 kind에 whole을
+        # 더한다. 빼 버리면 선택기가 chunk를 찾아도 없어서 약 이름만 고른다(gold 검토 2026-09-21)
+        subs = []
+        whole_merged = False
+        for s, e, k in merged:
+            if _WS.sub("", seg[s:e]) == whole_c:
+                subs.append((s, e, k + ("whole",)))
+                whole_merged = True
+            else:
+                subs.append((s, e, k))
 
         overflow: list[str] = []
         if len(subs) > MAX_SUBSTRING:
@@ -141,21 +156,21 @@ class CandidateGenerator:
         derived = _derived(seg, axis)
         if derived and _WS.sub("", derived) not in {c.compact for c in cands} | {whole_c}:
             cands.append(Candidate("", derived, -1, -1, ("derived",), derived=True))
-        cands.append(
-            Candidate(
-                "",
-                whole,
-                seg.index(whole) if whole in seg else 0,
-                (seg.index(whole) if whole in seg else 0) + len(whole),
-                ("whole",),
-            )
-        )
+        if not whole_merged:
+            start = seg.index(whole) if whole in seg else 0
+            cands.append(Candidate("", whole, start, start + len(whole), ("whole",)))
+
+        cset = CandidateSet(seg, cands, overflow)
+        if axis:
+            from medimate.span.canon import canon_candidates  # 순환 import 회피
+
+            cands = cands + canon_candidates(cset, axis, self.lexicon)
 
         out = [
             Candidate(f"C{i + 1:02d}", c.text, c.start, c.end, c.kinds, c.derived)
             for i, c in enumerate(cands)
         ]
-        return CandidateSet(segment, out, overflow)
+        return CandidateSet(seg, out, overflow, raw=segment if norm.changed else None)
 
 
 def _chunks(toks: list[Tok]) -> list[tuple[int, int]]:
@@ -171,8 +186,13 @@ def _chunks(toks: list[Tok]) -> list[tuple[int, int]]:
             cur = None
     if cur:
         out.append(cur)
-    # 한 글자 chunk(`약`, `물`)는 후보로 두지 않는다 — 어휘집이 한 글자를 안 받는 것과 같은 선
-    return [(s, e) for s, e in out if e - s >= 2]
+    # 한 글자 chunk(`물`, `열`)는 후보로 두지 않는다 — 어휘집이 한 글자를 안 받는 것과 같은 선.
+    # `약`만 예외다. "약은 2주분", "2주분 약"의 약은 내용이다(gold 검토 2026-09-21)
+    return [(s, e) for s, e in out if e - s >= 2 or toks_text(toks, s, e) == "약"]
+
+
+def toks_text(toks: list[Tok], s: int, e: int) -> str:
+    return "".join(t.form for t in toks if t.start >= s and t.end <= e)
 
 
 def _merge(seg: str, raw: list[tuple[int, int, str]]) -> list[tuple[int, int, tuple[str, ...]]]:

@@ -40,8 +40,8 @@ def test_every_substring_candidate_is_in_segment(gen):
     for c in cset.candidates:
         if not c.derived:
             assert seg[c.start : c.end] == c.text
-    assert cset.candidates[-1].kinds == ("whole",)
-    assert cset.candidates[-1].text == "약은 2주분이고 커피랑 매운 거 줄이래요"
+    whole = [c for c in cset.candidates if "whole" in c.kinds]
+    assert len(whole) == 1 and whole[0].text == "약은 2주분이고 커피랑 매운 거 줄이래요"
 
 
 def test_ids_follow_source_order(gen):

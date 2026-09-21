@@ -36,6 +36,21 @@ OUT = Path("evals/span_cases.jsonl")
 REVIEW = Path("evals/span_review.md")
 SKIP_LABELS = {"lifestyle_instructions", "none"}
 
+# 라벨 고침 (2026-09-21 gold 검토). 4라벨 시절 `약`으로 붙은 생활 지시는 지침으로, 검사 문장에 든 소견은 소견으로.
+# 키는 (케이스 id, 조각 번호). 벡터 파일은 폰 짝이라 건드리지 않고 여기서 덮는다
+LABEL_FIX: dict[tuple[str, int], str] = {
+    ("PM16", 1): "findings",  # "초음파 봤는데 파열은 아니래요" — 값은 소견(파열 아님)
+    ("PN01", 3): "lifestyle_instructions",  # 치실 매일 쓰라고
+    ("PN03", 3): "lifestyle_instructions",  # 이어폰 오래 끼지 말라고
+    ("PN04", 3): "lifestyle_instructions",  # 탈수 안 되게 물 자주 먹이라고
+    ("PN05", 4): "lifestyle_instructions",  # 검사 날 렌즈 끼고 오지 말라고
+    ("PN07", 3): "lifestyle_instructions",  # 손 높이 들고 있으라고
+    ("PN09", 2): "lifestyle_instructions",  # 물 하루 2리터 이상
+    ("PN10", 1): "lifestyle_instructions",  # 전날 저녁 9시부터 금식
+    ("PM24", 3): "lifestyle_instructions",  # 커피랑 매운 거 줄이라고
+    ("PN02", 3): "lifestyle_instructions",  # 긁지 말 것
+}
+
 EXTRA = [
     {
         "id": "SB01",
@@ -84,7 +99,10 @@ def cases_from_vectors() -> list[dict]:
         if not ln.strip():
             continue
         v = json.loads(ln)
-        segs = [(s, OVERRIDE.get(s, lab)) for s, lab in zip(v["sentences"], v["expected_labels"])]
+        segs = [
+            (s, LABEL_FIX.get((v["id"], i), OVERRIDE.get(s, lab)))
+            for i, (s, lab) in enumerate(zip(v["sentences"], v["expected_labels"]))
+        ]
         out.append(
             {
                 "id": v["id"],

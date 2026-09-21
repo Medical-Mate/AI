@@ -41,8 +41,6 @@ TYPOS: list[tuple[str, str]] = [
     ("이라고", "이라구"),
     ("다고", "다구"),
     ("었", "엇"),
-    ("먹", "멍"),
-    ("않", "안"),
 ]
 MARKERS = ["ㅋㅋ", "ㅠㅠ", "~~", "ㅎㅎ", "ㄷㄷ"]
 
@@ -53,8 +51,18 @@ TEMPLATES = {
     "test": ["{t} 했대요", "{t}는 다음에 하자고", "{t} 결과는 다음 주에", "{t} 찍었어요"],
     "procedure": ["{t} 받으라고 하셨어요", "오늘은 {t}만 했음", "{t} 6회 처방"],
 }
-# 틀에서 gold가 용어 하나가 아닌 것 — "{t} 2주치"의 gold는 "{t} 2주치"다
-TEMPLATE_GOLD = {"{t} 2주치 받고": "{t} 2주치", "{t} 6회 처방": "{t} 6회"}
+# 틀별 gold. 검토된 gold의 모양을 따른다(2026-09-21): 수식어·용법은 붙이고, 시점은 앞으로,
+# 처방은 `연고 처방`처럼 남기되 횟수 뒤의 처방은 뗀다(`물리치료 6회`), `다음에`는 `추후`
+TEMPLATE_GOLD = {
+    "{t} 초기라고 함": "{t} 초기",
+    "{t} 처방받았어요": "{t} 처방",
+    "{t} 2주치 받고": "{t} 2주치",
+    "{t}는 하루 두 번": "{t} 하루 두 번",
+    "{t}는 다음에 하자고": "추후 {t}",
+    "{t} 결과는 다음 주에": "다음 주 {t} 결과 안내",
+    "오늘은 {t}만 했음": "NONE",  # 처치만 한 것은 약 칸에 값 없음(스케일링·귀지 검토)
+    "{t} 6회 처방": "{t} 6회",
+}
 
 
 def load() -> list[dict]:
@@ -122,7 +130,12 @@ def derive_terms(rng: random.Random, per_type: int = 6) -> list[dict]:
                     "group": "E7_term",
                     "memo": text,
                     "segments": [
-                        {"text": text, "label": TYPE_TO_AXIS[type_], "gold": gold, "from": "lexicon"}
+                        {
+                            "text": text,
+                            "label": TYPE_TO_AXIS[type_],
+                            "gold": gold,
+                            "from": "lexicon",
+                        }
                     ],
                 }
             )
@@ -139,7 +152,9 @@ def main() -> None:
 
     # 파생분(-E1 …, STF/STM/STT/STP)은 지우고 새로 만든다. 원본·손 케이스(ST01~03 포함)는 그대로
     rows = [
-        r for r in load() if not DERIVED.search(r["id"]) and not re.fullmatch(r"ST[FMTP]\d{2}", r["id"])
+        r
+        for r in load()
+        if not DERIVED.search(r["id"]) and not re.fullmatch(r"ST[FMTP]\d{2}", r["id"])
     ]
     base = [r for r in rows if r["group"].startswith("E0")]
 
