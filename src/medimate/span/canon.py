@@ -119,6 +119,8 @@ def canon_candidates(cset: CandidateSet, axis: str, lexicon: Lexicon) -> list[Ca
             term_c = _TRAIL.sub("", term)
             for time in times[:2] or [""]:
                 time_c = re.sub(r"(?:에|에는)$", "", time.strip())
+                # 재배열(압축)할 때만 `뒤`를 `후`로. 재방문 축의 `2주 뒤`는 원문 그대로 둔다(결정 4)
+                time_c = re.sub(r"뒤$", "후", time_c)
                 if time_c and compact(time_c) in compact(term_c):
                     continue  # 시점이 검사 chunk 안에 이미 있다
                 base = f"{time_c} {term_c}".strip()

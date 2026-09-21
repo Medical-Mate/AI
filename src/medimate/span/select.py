@@ -78,8 +78,13 @@ class RuleSelector:
             if _med_negated(seg):
                 return Selection(NONE, selector=self.name, note="약 없음·보류")
             has_med = any("lexicon:medication" in c.kinds for c in subs)
+            has_proc = any("lexicon:procedure" in c.kinds for c in subs)
             has_num = any("duration" in c.kinds for c in subs)
-            if not has_med and not has_num and "약" not in seg:
+            if re.search(r"주사.*맞", seg):
+                return Selection(NONE, selector=self.name, note="주사 맞음 — 값 없음")
+            if has_proc and not has_med and re.search(r"(?:했|냈)(?:음|어요|다|고)?", seg):
+                return Selection(NONE, selector=self.name, note="처치를 했음 — 값 없음")
+            if not has_med and not has_num and not has_proc and "약" not in seg:
                 return Selection(NONE, selector=self.name, note="약·용법 없음")
             # 약 이름과 용법이 한 chunk에 이어져 있으면 그것(항생제 5일). 조건·시점이 앞에 있으면
             # 템플릿(아침에 혈압약). 그 외 약 이름
@@ -100,12 +105,21 @@ class RuleSelector:
                 or (cond_canon[0] if cond_canon else None)
                 or (canon[0] if canon else None)
                 or _longest(subs, "lexicon:medication")
+                or _longest_containing(subs, "lexicon:procedure", ("chunk",), prefer_not_whole=True)
+                or _longest(subs, "lexicon:procedure")
                 or _longest(subs, "chunk")
             )
+            # `처방`은 전부 뗀다(결정 3) — 뗀 형이 후보에 있으면 그것
+            if pick and pick.text.rstrip().endswith("처방"):
+                shorter = cset.contains(pick.text.rstrip()[: -len("처방")])
+                pick = shorter or pick
 
         elif axis == "tests":
             if _result_statement(seg):
                 pick = next((c for c in subs if "whole" in c.kinds), None)
+            # 검사를 했으면 검사명만. 결과 얘기만 있으면 템플릿(추후 피검사 결과 안내). 결정 1
+            if pick is None and _test_done(seg):
+                pick = _longest(subs, "lexicon:test") or _longest(subs, "lexicon:procedure")
             # 시점으로 시작하는 chunk가 검사를 품고 있으면 그것(`10월 2일 시야검사 예약`)
             lead = [
                 c
@@ -136,6 +150,7 @@ class RuleSelector:
         return Selection(pick.id if pick else NONE, selector=self.name)
 
 
+_STAGE_TAIL = re.compile(r"|초기|말기|의심|전단계")
 _MEASURE = re.compile(
     r"(?:높음|낮음|늘어났음|찼음|부었음|뭉침|아님|커졌음|작아졌음|올랐음|떨어졌음)$"
 )
@@ -167,6 +182,11 @@ def _med_negated(seg: str) -> bool:
     return bool(
         re.search(r"약(?:은|만|을)?\s*(?:안|아직|아니|없)|약\s*먹을\s*정도는\s*아니|약만\s*주", seg)
     )
+
+
+def _test_done(seg: str) -> bool:
+    """검사를 이미 했다는 말(했고·찍었고·봤는데·받았어요)."""
+    return bool(re.search(r"(?<!기로 )(?<!기로)(?:했|찍었|봤|받았)", seg))
 
 
 def _result_statement(seg: str) -> bool:
@@ -220,6 +240,8 @@ def _earliest_containing(
         and first.end <= c.end
         # 수치(`4mm`)까지 늘리지 않는다 — `요로결석 4mm`는 요로결석
         and not any(d.start >= c.start and d.end <= c.end for d in durs)
+        # 용어 뒤는 단계 낱말까지만(위염 초기 ○, 회전근개 쪽 문제 ×). 앞은 자유(오른쪽 발목 염좌)
+        and _STAGE_TAIL.fullmatch(c.text[first.end - c.start :].strip())
     ]
     return max(outers, key=lambda c: len(c.compact)) if outers else first
 

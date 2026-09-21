@@ -49,6 +49,7 @@ LABEL_FIX: dict[tuple[str, int], str] = {
     ("PN10", 1): "lifestyle_instructions",  # 전날 저녁 9시부터 금식
     ("PM24", 3): "lifestyle_instructions",  # 커피랑 매운 거 줄이라고
     ("PN02", 3): "lifestyle_instructions",  # 긁지 말 것
+    ("PM09", 2): "lifestyle_instructions",  # 식후에 바로 눌지 말고 (검토표에 [지침]으로 표시됨)
 }
 
 EXTRA = [
