@@ -264,6 +264,27 @@ class MemoRequest(BaseModel):
     split_version: str | None = Field(default=None, max_length=40)
 
 
+class MemoAudit(BaseModel):
+    """진료 후 메모 판정 로그 한 덩이 — previsit `TurnAudit`과 같은 자리(#113, 2026-09-21).
+
+    백엔드가 가공 없이 JSON으로 적재한다. 심사 기간 실사용 메모를 회귀 eval 재료로 쓰려는 것이라
+    **모델이 낸 원본 출력**(`raw_output`)과 **접히기 전 경로**를 남긴다. 식별자는 없다 — 메모 원문
+    안에 환자가 적은 것 외에는 아무것도 들어가지 않는다.
+    """
+
+    memo: str  # 실제로 처리한 메모 원문
+    sentences: list[str]  # 조각(주소). 규칙 분리든 LLM 조각이든 되보낸 것이든 최종 사용분
+    labels: dict[str, str]  # 번호 → 라벨. 지침 축이 접혀 있으면 접힌 뒤 값(응답 labels와 같다)
+    raw_output: str | None = None  # 모델이 낸 원본 텍스트(분류기 또는 세그멘터). client 경로는 None
+    dropped: list[dict[str, Any]] = Field(default_factory=list)
+    source: str  # server | client | none
+    prompt_version: str  # memo-v6(조각) | memo-small-v5(규칙+분류) | client-labels | …
+    model_id: str
+    lifestyle_axis: bool  # 지침 축이 따로 나갔는가(false면 약 칸에 접힘)
+    split_version: str = SPLIT_VERSION
+    usage: TurnUsage
+
+
 class MemoResponse(BaseModel):
     card: dict[str, Any]  # 백엔드 형식 카드(card_type=postvisit)
     sentences: list[str]  # 우리가 나눈 문장. 1q-2 수정 화면이 이 번호로 라벨을 바꾼다
@@ -273,6 +294,8 @@ class MemoResponse(BaseModel):
     # 이 `sentences` 번호를 만든 분리 규칙. 라벨을 되보낼 때 그대로 실어 보낸다
     split_version: str = SPLIT_VERSION
     usage: TurnUsage
+    # 판정 로그. previsit의 `audit`과 같은 자리 — 백엔드가 그대로 적재한다(#113)
+    audit: MemoAudit | None = None
     request_id: str | None = None
 
 
@@ -856,14 +879,29 @@ def create_app(
                 out_t += int(u.output_tokens)
                 cost += float(u.cost_usd(obj.model_id))
             tu = TurnUsage(input_tokens=in_t, output_tokens=out_t, cost_usd=round(cost, 6))
+        labels_out = {str(i): res.labels.get(i, "none") for i in range(len(res.sentences))}
+        raw_text = getattr(prov_obj, "last_text", None) or None
+        audit = MemoAudit(
+            memo=body.memo,
+            sentences=res.sentences,
+            labels=labels_out,
+            raw_output=raw_text,
+            dropped=res.dropped,
+            source=source,
+            prompt_version=card.provenance.prompt_version if card.provenance else "",
+            model_id=card.provenance.model_id if card.provenance else "",
+            lifestyle_axis=lifestyle_axis_enabled(),
+            usage=tu,
+        )
         return MemoResponse(
             card=to_backend_payload(card),
             sentences=res.sentences,
-            labels={str(i): res.labels.get(i, "none") for i in range(len(res.sentences))},
+            labels=labels_out,
             dropped=res.dropped,
             source=source,
             split_version=SPLIT_VERSION,
             usage=tu,
+            audit=audit,
             request_id=body.request_id,
         )
 
