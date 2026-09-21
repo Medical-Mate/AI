@@ -86,7 +86,12 @@ def cases_from_vectors() -> list[dict]:
         v = json.loads(ln)
         segs = [(s, OVERRIDE.get(s, lab)) for s, lab in zip(v["sentences"], v["expected_labels"])]
         out.append(
-            {"id": v["id"], "group": "E0_normal", "memo": " ".join(v["sentences"]), "segments": segs}
+            {
+                "id": v["id"],
+                "group": "E0_normal",
+                "memo": " ".join(v["sentences"]),
+                "segments": segs,
+            }
         )
     return out
 
@@ -120,7 +125,9 @@ def build() -> None:
                 entry["proposed"] = resolve(cset, rule.select(cset, label))
             entry["gold"] = existing.get((case["id"], i))
             segs.append(entry)
-        rows.append({"id": case["id"], "group": case["group"], "memo": case["memo"], "segments": segs})
+        rows.append(
+            {"id": case["id"], "group": case["group"], "memo": case["memo"], "segments": segs}
+        )
 
     with OUT.open("w", encoding="utf-8") as f:
         for r in rows:
@@ -153,7 +160,12 @@ def build() -> None:
     print(f"조각 {n_seg}개 → {OUT}  검토표 {REVIEW}")
 
 
-_SHORT = {"findings": "소견", "medication_instructions": "약", "tests": "검사", "follow_up": "재방문"}
+_SHORT = {
+    "findings": "소견",
+    "medication_instructions": "약",
+    "tests": "검사",
+    "follow_up": "재방문",
+}
 
 
 def _short(label: str) -> str:
