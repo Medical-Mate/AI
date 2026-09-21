@@ -112,11 +112,11 @@ def run(selector: Selector, *, use_proposed: bool = False, show_misses: bool = F
                 )
 
     print(f"선택기 {selector.name} · 조각 {total.n}개 (gold 없음 {skipped}개 제외)\n")
-    print("| 그룹 | n | CR | BASE(tidy_value) | EM | NONE |\n|---|---|---|---|---|---|")
+    print("| 그룹 | n | CR | BASE(tidy_value) | EM | NONE | SUB✗ |\n|---|---|---|---|---|---|---|")
     for g in sorted(by_group):
         print(by_group[g].row(g))
     print(total.row("전체"))
-    print("\n| 축 | n | CR | BASE | EM | NONE |\n|---|---|---|---|---|---|")
+    print("\n| 축 | n | CR | BASE | EM | NONE | SUB✗ |\n|---|---|---|---|---|---|---|")
     for a in ("findings", "tests", "medication_instructions", "follow_up"):
         if a in by_axis:
             print(by_axis[a].row(a))

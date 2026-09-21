@@ -138,8 +138,9 @@ def build() -> None:
     with REVIEW.open("w", encoding="utf-8") as f:
         f.write("# 값 span 정답 검토표\n\n")
         f.write(
-            "`gold` 열을 채운다. 후보 ID(`C03`)나 글자 그대로 둘 다 된다. 후보에 없는 값을 적어도 된다"
-            "(그게 후보 누락 기록이다). 비우면 채점에서 빠진다. 다 채우면\n"
+            "`gold` 열을 채운다. **후보를 보지 말고 정답이라 생각하는 값을 그대로** 적는다. 후보에 없어도"
+            " 된다(그게 후보 누락 기록이다). 값이 없는 조각은 `NONE`. 후보 ID(`C03`)도 받는다."
+            " 비우면 채점에서 빠진다. 다 채우면\n"
             "`uv run python scripts/build_span_sheet.py --import`.\n\n"
         )
         f.write(f"조각 {n_seg}개 (지침·none {n_skip}개는 제외)\n\n")
