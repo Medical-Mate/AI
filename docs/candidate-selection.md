@@ -190,17 +190,25 @@ export TYPESAFE_API_KEY=...    # 키는 console.typesafe.ai/keys
 
 ```python
 from typesafe_sdk import Choice, TypeSafeClient
+
 client = TypeSafeClient()
 r = client.system_one(
     state={"segment": "위산약 2주치 받고,", "label": "약", "normalized": "..."},
-    questions={"value": Choice(
-        instructions="카드의 약 칸에 들어갈 값. 약 이름과 수량만. 어미·동사·조사 제외",
-        criteria={"C01": "위산약", "C02": "위산약 2주치", "C03": "2주치", "NONE": "맞는 후보 없음"},
-    )},
+    questions={
+        "value": Choice(
+            instructions="카드의 약 칸에 들어갈 값. 약 이름과 수량만. 어미·동사·조사 제외",
+            criteria={
+                "C01": "위산약",
+                "C02": "위산약 2주치",
+                "C03": "2주치",
+                "NONE": "맞는 후보 없음",
+            },
+        )
+    },
 )
-r.answers["value"].choice          # "C02"
-r.answers["value"].probabilities   # {"C01": .., "C02": .., ...}  합 1.0
-r.answers["value"].confidence      # 0~1. 문서 권고: 0.3~0.5 미만은 사람/폴백
+r.answers["value"].choice  # "C02"
+r.answers["value"].probabilities  # {"C01": .., "C02": .., ...}  합 1.0
+r.answers["value"].confidence  # 0~1. 문서 권고: 0.3~0.5 미만은 사람/폴백
 ```
 
 - state는 문자열·JSON 객체·문자열 배열. 조각·라벨·정규화문을 JSON 객체로 묶는다.
