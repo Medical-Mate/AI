@@ -1,0 +1,27 @@
+surface,type,source,note
+위산약,medication,팀 수집 2026-09-21 (eval 케이스),Kiwi 기본이 위산/약(MM)으로 쪼갠다
+위산 억제제,medication,팀 수집 2026-09-21 (eval 케이스),
+위산분비억제제,medication,팀 수집 2026-09-21 (eval 케이스),
+프로톤펌프억제제,medication,팀 수집 2026-09-21 (eval 케이스),Kiwi 기본이 프로톤/펌프/억제제로 쪼갠다
+제산제,medication,팀 수집 2026-09-21 (eval 케이스),
+소염제,medication,팀 수집 2026-09-21 (eval 케이스),
+소염진통제,medication,팀 수집 2026-09-21 (eval 케이스),
+진통제,medication,팀 수집 2026-09-21 (eval 케이스),
+해열제,medication,팀 수집 2026-09-21 (eval 케이스),
+항생제,medication,팀 수집 2026-09-21 (eval 케이스),
+항히스타민제,medication,팀 수집 2026-09-21 (eval 케이스),
+스테로이드,medication,팀 수집 2026-09-21 (eval 케이스),
+연고,medication,팀 수집 2026-09-21 (eval 케이스),
+파스,medication,팀 수집 2026-09-21 (eval 케이스),
+붕대,medication,팀 수집 2026-09-21 (eval 케이스),처치 재료. 약 칸에 적힌다
+반깁스,medication,팀 수집 2026-09-21 (eval 케이스),처치. 약 칸에 적힌다
+인공눈물,medication,팀 수집 2026-09-21 (eval 케이스),Kiwi 기본이 인공/눈물로 쪼갠다
+멜라토닌,medication,팀 수집 2026-09-21 (eval 케이스),
+수면제,medication,팀 수집 2026-09-21 (eval 케이스),
+혈압약,medication,팀 수집 2026-09-21 (eval 케이스),
+당뇨약,medication,팀 수집 2026-09-21 (eval 케이스),
+나프록센,medication,팀 수집 2026-09-21 (eval 케이스),성분명
+이부프로펜,medication,팀 수집 2026-09-21 (eval 케이스),성분명
+아세트아미노펜,medication,팀 수집 2026-09-21 (eval 케이스),성분명
+타이레놀,medication,팀 수집 2026-09-21 (eval 케이스),상품명. 환자가 이렇게 말한다
+주사,medication,팀 수집 2026-09-21 (eval 케이스),병원에서 한 처치. 약 칸
