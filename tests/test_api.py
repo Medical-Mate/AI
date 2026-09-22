@@ -363,7 +363,7 @@ def test_health_says_which_model_and_prompt_the_server_will_use(monkeypatch):
     assert client.get("/health").json()["extractor"] == {
         "provider": "bedrock",
         "model_id": "apac.amazon.nova-pro-v1:0",
-        "prompt_version": "extract-v4-nova",
+        "prompt_version": "extract-v5-nova",
         "pricing_known": True,
         "lifestyle_axis": False,  # 테스트 기본은 꺼짐
     }
@@ -388,7 +388,7 @@ def test_whitespace_in_the_model_env_is_removed_not_just_reported(monkeypatch):
 
     monkeypatch.setenv("MEDIMATE_MODEL", "  apac.amazon.nova-pro-v1:0  ")
     client, _ = make_client([])
-    assert client.get("/health").json()["extractor"]["prompt_version"] == "extract-v4-nova"
+    assert client.get("/health").json()["extractor"]["prompt_version"] == "extract-v5-nova"
     assert extractor_env()[1] == "apac.amazon.nova-pro-v1:0"
 
     monkeypatch.setenv("MEDIMATE_MODEL", "   ")  # 빈 값은 기본값으로 — 기본값이 곧 운영값(Nova)
@@ -447,4 +447,4 @@ def test_the_default_is_nova_so_a_missing_env_cannot_fall_back_to_another_vendor
     client, _ = make_client([])
     ex = client.get("/health").json()["extractor"]
     assert (ex["provider"], ex["model_id"]) == ("bedrock", "apac.amazon.nova-pro-v1:0")
-    assert ex["prompt_version"] == "extract-v4-nova"
+    assert ex["prompt_version"] == "extract-v5-nova"

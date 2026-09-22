@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from medimate.llm.base import AxisUpdate, TurnExtraction
+from medimate.schema.card import FieldStatus
 
 
 @dataclass(frozen=True)
@@ -42,6 +43,11 @@ class GuardConfig:
     no_severity_from_question: bool = True
     # 글자·숫자가 하나도 없는 발화("ㅠㅠㅠㅠ 😭😭")에서는 어떤 축도 채우지 않는다
     no_value_from_letterless: bool = True
+    # 짧은 긍정만 온 답("네", "응", "ㅇㅇ", "그렇다")은 값이 아니라 되물을 신호다. 물은 축의
+    # filled를 ambiguous로 바꿔 엔진이 되묻게 한다(CLARIFY). 2026-09-22: "퍼지나요?"의 ㅇㅇ를
+    # Nova가 프롬프트 둘·표기 둘(응·네)에서 모두 `안 퍼짐`으로 냈다. 부정을 카드에 넣는 길을
+    # 프롬프트가 아니라 여기서 닫는다
+    bare_affirmative_asks_back: bool = True
 
     @classmethod
     def ondevice(cls) -> GuardConfig:
@@ -56,6 +62,11 @@ class GuardResult:
 
 # 한글 음절·영문자·숫자가 하나라도 있는가. 자음만("ㅠㅠ")·이모지·구두점은 글자로 세지 않는다
 _HAS_LETTER = re.compile(r"[가-힣A-Za-z0-9]")
+# 짧은 긍정만 있는 답. 표기 복원 뒤의 문장 전체가 이것뿐일 때(다른 내용어가 없을 때)만
+_BARE_AFFIRM = re.compile(
+    r"^\s*(?:네|예|응|어|그래|그렇다|그렇습니다|그런 것 같다|맞다|맞아요|맞습니다"
+    r"|그런데요|그래요|네요|ㅇㅇ|ㅇㅋ|오케이)[\s.!~ㅋㅎㅠㅜ]*$"
+)
 
 
 def _norm(s: str) -> str:
@@ -86,6 +97,12 @@ def guard_extraction(
     def in_utt(s: str) -> bool:
         ns = _norm(s)
         return bool(ns) and (ns in nu or (bool(nn) and ns in nn))
+
+    bare_affirm = (
+        cfg.bare_affirmative_asks_back
+        and asked_axis is not None
+        and bool(_BARE_AFFIRM.match(normalized or utterance))
+    )
 
     # 되묻기: 강도를 물었는데 물음표로 끝나고 숫자가 하나도 없다
     asking_back = (
@@ -118,6 +135,19 @@ def guard_extraction(
             if bad:
                 reason = f"number_not_in_utterance:{','.join(bad)}"
         if reason is None:
+            if bare_affirm and u.axis == asked_axis and u.status == FieldStatus.FILLED:
+                # 값은 버리고 축은 살린다 — 엔진이 되묻는다. 무엇을 버렸는지는 dropped에 남긴다
+                dropped.append(
+                    {
+                        "axis": u.axis.value,
+                        "reason": "bare_affirmative_asks_back",
+                        "value": u.value,
+                        "evidence": u.evidence,
+                    }
+                )
+                u = AxisUpdate(
+                    axis=u.axis, status=FieldStatus.AMBIGUOUS, value=None, evidence=u.evidence
+                )
             kept.append(u)
             continue
         dropped.append(

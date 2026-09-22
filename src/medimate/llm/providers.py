@@ -26,7 +26,8 @@ PROMPTS = {
 # 모델 id → 프롬프트 계열. **여기 없는 모델은 v3**다.
 # Nova에만 v4를 붙이는 이유: v3 88케이스에서 Terra 85 · Sonnet 83 · Nova 76이었고 Nova의
 # 실패가 전부 "값 창작" 계열이었다. v3를 고치면 그 비교 표가 무효가 되고 재실행은 사비다.
-_MODEL_PROMPT = {"apac.amazon.nova-pro-v1:0": "v4-nova"}
+# 2026-09-22 v5-nova로 올림(#117): 채팅 12→20/20, 회귀 79→85/88, 망친 것 0. v4는 비교 기준
+_MODEL_PROMPT = {"apac.amazon.nova-pro-v1:0": "v5-nova"}
 
 
 _AUTO = "auto"

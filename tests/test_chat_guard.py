@@ -81,12 +81,12 @@ def test_score_d4_accepts_normalized_substring():
     assert score(case, "{}", parsed2, None, []).checks["D4"] is False  # 지어낸 근거는 여전히 실패
 
 
-@pytest.mark.parametrize("flag,expected", [("", None), ("on", "아니")])
+@pytest.mark.parametrize("flag,expected", [("off", None), ("on", "아니")])
 def test_engine_flag_controls_normalized(monkeypatch, flag, expected):
     from medimate.dialog import engine as eng
 
     monkeypatch.setenv("MEDIMATE_CHAT_NORMALIZE", flag)
-    assert eng.chat_normalize_enabled() == bool(flag)
+    assert eng.chat_normalize_enabled() == (flag != "off")
     got = eng._chat_normalized("ㄴㄴ") if eng.chat_normalize_enabled() else None
     assert got == expected
 
@@ -94,3 +94,29 @@ def test_engine_flag_controls_normalized(monkeypatch, flag, expected):
 def test_guard_config_unchanged_defaults():
     cfg = GuardConfig()
     assert cfg.no_value_from_letterless and cfg.evidence_substring
+
+
+@pytest.mark.parametrize("utt", ["ㅇㅇ", "네", "응 ㅋㅋ", "그렇다"])
+def test_bare_affirmative_becomes_ambiguous_instead_of_a_value(utt):
+    # "퍼지나요?"에 ㅇㅇ → 모델이 `안 퍼짐`을 내도 카드에는 안 들어간다. 되묻는다
+    ext = TurnExtraction(updates=[up(Axis.RADIATION, "안 퍼짐", utt)])
+    n = normalize(utt)
+    g = guard_extraction(ext, utt, Axis.RADIATION, normalized=n.text if n.changed else None)
+    assert len(g.extraction.updates) == 1
+    u = g.extraction.updates[0]
+    assert u.status == FieldStatus.AMBIGUOUS and u.value is None and u.evidence == utt
+    assert g.dropped[0]["reason"] == "bare_affirmative_asks_back"
+
+
+def test_affirmative_with_content_is_kept():
+    # "네 허벅지로요"는 값이 있다 — 되묻지 않는다
+    ext = TurnExtraction(updates=[up(Axis.RADIATION, "허벅지", "네 허벅지로요")])
+    g = guard_extraction(ext, "네 허벅지로요", Axis.RADIATION)
+    assert g.extraction.updates[0].status == FieldStatus.FILLED and g.dropped == []
+
+
+def test_bare_negative_is_still_a_value():
+    # ㄴㄴ(아니)는 "안 퍼짐"이라는 값이다 — NG01 결정. 되묻지 않는다
+    ext = TurnExtraction(updates=[up(Axis.RADIATION, "안 퍼짐", "ㄴㄴ")])
+    g = guard_extraction(ext, "ㄴㄴ", Axis.RADIATION, normalized=normalize("ㄴㄴ").text)
+    assert g.extraction.updates[0].status == FieldStatus.FILLED
