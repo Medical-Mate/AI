@@ -98,8 +98,18 @@ def main() -> None:
                 ):
                     r = sp.correct(s["text"])
                     tracing.score("accepted", 1.0 if r.accepted else 0.0, comment=r.reason)
-                row = {**s, "model_text": r.model_text, "accepted": r.accepted, "reason": r.reason,
-                       "corrected": r.text, "ops": r.ops, **sp.last, "prompt_version": PROMPT_VERSION}
+                row = {
+                    **s,
+                    "model_text": r.model_text,
+                    "accepted": r.accepted,
+                    "reason": r.reason,
+                    "corrected": r.text,
+                    "ops": r.ops,
+                    "raw_response": sp.last.get("text"),
+                    "input_tokens": sp.last.get("input_tokens"),
+                    "output_tokens": sp.last.get("output_tokens"),
+                    "prompt_version": PROMPT_VERSION,
+                }
                 rows.append(row)
                 f.write(json.dumps(row, ensure_ascii=False) + "\n")
                 print(".", end="", flush=True)
@@ -110,7 +120,9 @@ def main() -> None:
     protected = [t.surface for t in load_lexicon().terms]
     by_kind = {"typo": Counter(), "clean": Counter()}
     shown: list[str] = []
+    originals = {x["id"]: x["text"] for x in sents}  # 이전 저장분은 text가 응답으로 덮여 있어 id로 되찾는다
     for r in rows:
+        r["text"] = originals.get(r["id"], r["text"])
         g = guard(r["text"], r.get("model_text") or "", protected)
         k = r["kind"]
         by_kind[k]["n"] += 1
