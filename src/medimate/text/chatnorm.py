@@ -12,9 +12,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-# 초성 축약·구어 표기 → 표준 표기. 한 표에 다 둔다. 의미(예/아니오)는 여기 없다 — `ㅇㅇ`은 `응`이다
+# 초성 축약·구어 표기 → 표준 표기. 한 표에 다 둔다. 의미 판단은 여기 없다 — 표기 복원만
 ABBREV: dict[str, str] = {
-    "ㅇㅇ": "응",
+    # `응`으로 두면 Nova가 부정처럼 읽었다(2026-09-22 CA05). 같은 긍정의 다른 표기다
+    "ㅇㅇ": "네",
     "ㄴㄴ": "아니",
     "ㄱㅊ": "괜찮다",
     "ㅁㄹ": "모르겠다",

@@ -19,6 +19,24 @@ from medimate.dialog.spec import PREVISIT_SPEC, SPECS, InterviewSpec
 from medimate.dialog.state import HistoryTurn, SessionState
 from medimate.llm.base import Extractor, TurnExtraction
 from medimate.schema.card import FieldStatus, InterviewCard, Provenance
+from medimate.text.chatnorm import normalize as _normalize_chat
+
+
+def chat_normalize_enabled() -> bool:
+    """env `MEDIMATE_CHAT_NORMALIZE`. 기본 **켜짐**(2026-09-22, #117 eval 뒤). `off`로 끈다."""
+    import os
+
+    return os.getenv("MEDIMATE_CHAT_NORMALIZE", "on").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+    )
+
+
+def _chat_normalized(utterance: str) -> str | None:
+    n = _normalize_chat(utterance)
+    return n.text if n.changed else None
 
 
 @dataclass
@@ -252,7 +270,10 @@ class Session:
             raw = self.extractor.extract(utterance, self.asked_axis, self.history)
         else:
             raw = TurnExtraction()  # 선택지만 온 턴
-        g = guard_extraction(raw, utterance, self.asked_axis, self.guard)
+        # 채팅 표기 복원(#117). 기본 켜짐(2026-09-22). MEDIMATE_CHAT_NORMALIZE=off로 끈다.
+        # 켜면 `ㄴㄴ`·`ㄱㅊ`처럼 자음만 있는 답이 글자 없음 필터를 통과할 수 있다(복원문 기준)
+        normalized = _chat_normalized(utterance) if chat_normalize_enabled() else None
+        g = guard_extraction(raw, utterance, self.asked_axis, self.guard, normalized=normalized)
         ext = g.extraction
         self.turn += 1
         self.logs.append(TurnLog(self.turn, self.asked_axis, utterance, ext, raw, g.dropped))
