@@ -61,7 +61,8 @@ class RuleSelector:
         if axis == "findings":
             if reassurance(seg):
                 return Selection(NONE, selector=self.name, note="안심·부정 소견")
-            # 수치·변화 서술(높음·늘어났음·찼음·아님)이면 서술문 그대로. 병명·용어가 있으면 용어만
+            # 수치·변화 서술이면 서술문. 어휘집 용어가 없으면(`무릎 인대가 늘어난 것 같음`,
+            # `꽃가루 때문일 가능성이 큼`) 명사형 서술문이 값이다(#122). 용어가 있으면 용어 우선
             stmt = [c for c in canon if _MEASURE.search(c.text)]
             pick = (
                 (stmt[0] if stmt else None)
@@ -82,13 +83,17 @@ class RuleSelector:
             has_num = any("duration" in c.kinds for c in subs)
             if re.search(r"주사.*맞", seg):
                 return Selection(NONE, selector=self.name, note="주사 맞음 — 값 없음")
-            if has_proc and not has_med and re.search(r"(?:했|냈)(?:음|어요|다|고)?", seg):
+            if has_proc and not has_med and re.search(r"(?:했|냈|받았)(?:음|어요|다|고)?", seg):
                 return Selection(NONE, selector=self.name, note="처치를 했음 — 값 없음")
             if not has_med and not has_num and not has_proc and "약" not in seg:
                 return Selection(NONE, selector=self.name, note="약·용법 없음")
             # 약 이름과 용법이 한 chunk에 이어져 있으면 그것(항생제 5일). 조건·시점이 앞에 있으면
             # 템플릿(아침에 혈압약). 그 외 약 이름
-            cond_canon = [c for c in canon if not _starts_with_med(c.text, subs)]
+            # 조건·시점이 앞에 오는 템플릿 중 가장 긴 것(`저녁에 약 한 알` > `저녁에 약`)
+            cond_canon = sorted(
+                (c for c in canon if not _starts_with_med(c.text, subs)),
+                key=lambda c: -len(c.compact),
+            )
             # 약 낱말(`약`)과 용법이 한 chunk에 있으면 그것(`2주분 약`, `2주 약`)
             yak = [
                 c
@@ -151,8 +156,21 @@ class RuleSelector:
 
 
 _STAGE_TAIL = re.compile(r"|초기|말기|의심|전단계")
+
+
+def _ends_nominal(s: str) -> bool:
+    """`-음`/ㅁ 받침으로 끝나는 명사형인가."""
+    if not s:
+        return False
+    if s.endswith("음"):
+        return True
+    code = ord(s[-1]) - 0xAC00
+    return 0 <= code < 11172 and code % 28 == 16
+
+
 _MEASURE = re.compile(
-    r"(?:높음|낮음|늘어났음|찼음|부었음|뭉침|아님|커졌음|작아졌음|올랐음|떨어졌음)$"
+    r"(?:높음|낮음|늘어났음|찼음|부었음|뭉침|아님|커졌음|작아졌음|올랐음|떨어졌음"
+    r"|가까움|약함|강함|빠름|느림|없음)$"
 )
 
 

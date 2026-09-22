@@ -47,10 +47,16 @@ _DURATION = re.compile(
 _DATE = re.compile(
     r"\d{1,2}\s*월\s*\d{1,2}\s*일"
     r"|다음\s*달\s*\d{1,2}\s*일"
+    r"|다?다음\s*달"
     r"|다?다음\s*주(?:\s*(?:월|화|수|목|금|토|일)요일)?"
     r"|(?:월|화|수|목|금|토|일)요일"
 )
 _PARTICLES = frozenset({"JX", "JKS", "JKO", "JKG", "JKB", "JC"})
+# 출처 접두 절: `산부인과에서`, `건강검진 결과 상담에서`, `응급실에서`, `한의원에서맥이…`(무공백)
+_SOURCE_PREFIX = re.compile(
+    r"^\s*(?:[가-힣A-Za-z]+\s*){0,2}?[가-힣A-Za-z]*"
+    r"(?:과|의원|병원|응급실|센터|약국|검진|상담|진료실|외래|클리닉)\s*(?:에서|에선)\s*"
+)
 
 
 @dataclass(frozen=True)
@@ -100,6 +106,15 @@ class CandidateGenerator:
         # `감기레요`를 Kiwi가 `감기레/NNG`로 읽는 것을 막는 유일한 자리다. 원문은 CandidateSet.raw에
         norm = normalize(segment)
         seg = norm.text if norm.changed else segment
+        # 조각 앞의 `[진료과·장소]에서`는 출처이지 값이 아니다(#122). 처음 보는 메모 34조각 중 9개가
+        # 여기서 후보를 잃었다. 뗀 뒤의 텍스트 위에서 후보를 만들고, 원문은 raw에 남는다
+        seg = _SOURCE_PREFIX.sub("", seg, count=1) or seg
+        # 띄어쓰기 없는 조각(`새약은반알부터먹고`)은 Kiwi로 띄운다(#122). 비교는 공백을 무시하므로
+        # 채점에는 영향이 없고, chunk 경계가 살아난다. 8자 미만은 그대로(짧은 초성·용어)
+        if " " not in seg and len(seg) >= 8:
+            respaced = self.kiwi.join([(t.form, t.tag) for t in self.kiwi.tokenize(seg)])
+            if _WS.sub("", respaced) == _WS.sub("", seg):
+                seg = respaced
         raw: list[tuple[int, int, str]] = []  # (start, end, kind)
 
         for m in self.lexicon.match(seg):
@@ -170,7 +185,7 @@ class CandidateGenerator:
             Candidate(f"C{i + 1:02d}", c.text, c.start, c.end, c.kinds, c.derived)
             for i, c in enumerate(cands)
         ]
-        return CandidateSet(seg, out, overflow, raw=segment if norm.changed else None)
+        return CandidateSet(seg, out, overflow, raw=segment if seg != segment else None)
 
 
 def _chunks(toks: list[Tok]) -> list[tuple[int, int]]:
