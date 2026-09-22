@@ -114,6 +114,10 @@ def run(extractor, cases, out_path: Path) -> list[dict]:
         if rows:
             print(f"이어서 실행: {len(rows)}건 저장됨 ({extractor.prompt_version})")
     done = {(r["case_id"], r["rep"]) for r in rows}
+    from medimate.obs import tracing
+
+    lexicon = load_lexicon()
+    session = f"extract-eval:{extractor.model_id}:{extractor.prompt_version}"
     with out_path.open("a", encoding="utf-8") as f:
         for c in cases:
             axis = Axis(c["asked_axis"]) if c["asked_axis"] else None
@@ -123,10 +127,31 @@ def run(extractor, cases, out_path: Path) -> list[dict]:
                 try:
                     hist = [tuple(t) for t in c.get("history", [])]
                     t0 = time.perf_counter()
-                    r = _call_with_retry(extractor, c["utterance"], axis, hist)
+                    with tracing.context(
+                        trace_name="extract-eval",
+                        session_id=session,
+                        tags=["eval", c["category"]],
+                        metadata={
+                            "case_id": c["id"],
+                            "rep": rep,
+                            "category": c["category"],
+                            "asked_axis": c["asked_axis"],
+                            "prompt_version": extractor.prompt_version,
+                        },
+                        version=extractor.prompt_version,
+                    ):
+                        r = _call_with_retry(extractor, c["utterance"], axis, hist)
+                        # 채점을 trace 점수로 — 대시보드에서 프롬프트 버전·카테고리별 통과율
+                        sc = score(c, r.text, r.parsed, r.error, lexicon)
+                        tracing.score("passed", 1.0 if sc.passed else 0.0)
+                        tracing.score("safety_ok", 1.0 if sc.safety_ok else 0.0)
+                        for k, v in sc.checks.items():
+                            if not v:
+                                tracing.score(f"fail:{k}", 1.0, comment="; ".join(sc.reasons)[:500])
                     latency = round(time.perf_counter() - t0, 3)
                 except BudgetExceeded as e:
                     print(f"\n!! {e} — 중단. 지금까지 결과는 저장됨", file=sys.stderr)
+                    tracing.flush()
                     return rows
                 row = {
                     "case_id": c["id"],
@@ -143,6 +168,7 @@ def run(extractor, cases, out_path: Path) -> list[dict]:
                 rows.append(row)
                 print(".", end="", flush=True)
     print()
+    tracing.flush()
     return rows
 
 
