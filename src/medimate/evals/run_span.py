@@ -92,6 +92,7 @@ def run(
     save: Path | None = None,
     limit: int = 0,
     groups: set[str] | None = None,
+    sheet: Path = SHEET,
 ) -> dict:
     gen = CandidateGenerator()
     saved: list[dict] = []
@@ -102,7 +103,7 @@ def run(
     misses: list[str] = []
     skipped = 0
 
-    for case in load_sheet():
+    for case in load_sheet(sheet):
         if groups and case["group"] not in groups:
             continue
         for idx, seg in enumerate(case["segments"]):
@@ -223,6 +224,7 @@ def main() -> None:
     a.add_argument(
         "--groups", default="", help="이 그룹만(쉼표 구분). 예: E3_raw,E4_abbrev,E5_casual"
     )
+    a.add_argument("--sheet", type=Path, default=SHEET, help="다른 시트(처음 보는 메모 등)")
     a.add_argument("--budget", type=float, default=0.40)
     a.add_argument("--yes", action="store_true", help="비용 확인 없이 실행")
     a.add_argument("--report", type=Path, help="저장 결과로 재채점(호출 0)")
@@ -237,10 +239,16 @@ def main() -> None:
             for ln in args.report.read_text(encoding="utf-8").splitlines()
             if ln.strip()
         ]
-        run(ReplaySelector(rows), show_misses=args.misses, groups=groups)
+        run(ReplaySelector(rows), show_misses=args.misses, groups=groups, sheet=args.sheet)
         return
     if args.selector == "rule":
-        run(RuleSelector(), use_proposed=args.proposed, show_misses=args.misses, groups=groups)
+        run(
+            RuleSelector(),
+            use_proposed=args.proposed,
+            show_misses=args.misses,
+            groups=groups,
+            sheet=args.sheet,
+        )
         return
 
     from medimate.llm.providers import require_price
@@ -254,7 +262,7 @@ def main() -> None:
     model = args.model or ("jev-1.13.0" if args.selector == "jev" else "apac.amazon.nova-pro-v1:0")
     n = sum(
         1
-        for c in load_sheet()
+        for c in load_sheet(args.sheet)
         if not groups or c["group"] in groups
         for s_ in c["segments"]
         if not s_.get("skip") and s_.get("gold")
@@ -277,8 +285,10 @@ def main() -> None:
     suffix = (f"-first{args.limit}" if args.limit else "") + (
         f"-{'+'.join(sorted(groups))}" if groups else ""
     )
+    if args.sheet != SHEET:
+        suffix += f"-{args.sheet.stem}"
     out = RESULTS / f"span-{model.replace(':', '_')}{suffix}.jsonl"
-    run(sel, show_misses=args.misses, save=out, limit=args.limit, groups=groups)
+    run(sel, show_misses=args.misses, save=out, limit=args.limit, groups=groups, sheet=args.sheet)
 
 
 if __name__ == "__main__":

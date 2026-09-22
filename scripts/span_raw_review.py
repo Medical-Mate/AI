@@ -20,9 +20,11 @@ sys.path.insert(0, "src")
 from medimate.span.candidates import CandidateGenerator  # noqa: E402
 from medimate.span.select import RuleSelector, resolve  # noqa: E402
 
+JEV: Path | None = None
 SHEET = Path("evals/span_raw_cases.jsonl")
 REVIEW = Path("evals/span_raw_review.md")
 NOVA = Path("evals/results/span-apac.amazon.nova-pro-v1_0-E3_raw+E4_abbrev+E5_casual.jsonl")
+# --sheet/--out/--nova 로 바꿀 수 있다(처음 보는 메모 시트 등)
 _SHORT = {"findings": "소견", "medication_instructions": "약", "tests": "검사", "follow_up": "재방문"}
 _ROW = re.compile(r"^\|\s*(\d+)\s*\|(.*)\|\s*$")
 
@@ -39,6 +41,12 @@ def build() -> None:
             if ln.strip():
                 r = json.loads(ln)
                 nova[(r["case_id"], r["idx"])] = r
+    jev: dict[tuple[str, int], dict] = {}
+    if JEV and JEV.exists():
+        for ln in JEV.read_text(encoding="utf-8").splitlines():
+            if ln.strip():
+                r = json.loads(ln)
+                jev[(r["case_id"], r["idx"])] = r
     rows = load()
     with REVIEW.open("w", encoding="utf-8") as f:
         f.write("# 날것 메모 검토표 (E3 구어 · E4 초성 · E5 붙여쓰기)\n\n")
@@ -49,20 +57,23 @@ def build() -> None:
         )
         for c in rows:
             f.write(f"## {c['id']} · {c['group']}\n\n{c['memo']}\n\n_{c.get('note', '')}_\n\n")
-            f.write("| # | 조각 | 축 | 후보 | rule | Nova | gold |\n|---|---|---|---|---|---|---|\n")
+            f.write("| # | 조각 | 축 | 후보 | rule | Nova | Jev | gold |\n|---|---|---|---|---|---|---|---|\n")
             for i, s in enumerate(c["segments"]):
                 if s.get("skip"):
-                    f.write(f"| {i} | {s['text']} | 지침 | (제외) | | | |\n")
+                    f.write(f"| {i} | {s['text']} | 지침 | (제외) | | | | |\n")
                     continue
                 cset = gen.generate(s["text"], s["label"])
                 cands = "<br>".join(f"{x.id} {x.text}{' *' if x.derived else ''}" for x in cset.candidates)
                 r = resolve(cset, rule.select(cset, s["label"])) or "NONE"
                 n = nova.get((c["id"], i))
                 nv = (n["choice_text"] or "NONE") if n else "-"
+                j = jev.get((c["id"], i))
+                jv = (j["choice_text"] or "NONE") if j else "-"
                 g = s.get("gold") or ""
                 mark = lambda v: v if v.replace(" ", "") == g.replace(" ", "") else f"~~{v}~~"  # noqa: E731
                 f.write(
-                    f"| {i} | {s['text']} | {_SHORT[s['label']]} | {cands} | {mark(r)} | {mark(nv) if n else '-'} | {g} |\n"
+                    f"| {i} | {s['text']} | {_SHORT[s['label']]} | {cands} | {mark(r)} "
+                    f"| {mark(nv) if n else '-'} | {mark(jv) if j else '-'} | {g} |\n"
                 )
             f.write("\n")
     print(f"→ {REVIEW}")
@@ -97,4 +108,16 @@ if __name__ == "__main__":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
     a = argparse.ArgumentParser()
     a.add_argument("--import", dest="do_import", action="store_true")
-    import_gold() if a.parse_args().do_import else build()
+    a.add_argument("--sheet", type=Path)
+    a.add_argument("--out", type=Path)
+    a.add_argument("--nova", type=Path)
+    a.add_argument("--jev", type=Path)
+    args = a.parse_args()
+    if args.sheet:
+        SHEET = args.sheet
+    if args.out:
+        REVIEW = args.out
+    if args.nova:
+        NOVA = args.nova
+    JEV = args.jev
+    import_gold() if args.do_import else build()
