@@ -171,6 +171,31 @@ class LLMExtractor:
 
     # ------------------------------------------------------------------
     def _call(self, system: str, user: str) -> tuple[str, int, int]:
+        """공급자 호출 한 번 = Langfuse generation 하나(키 없으면 무동작). 모든 프롬프트가 지남."""
+        from medimate.obs import tracing
+
+        with tracing.generation(
+            self.prompt_version or self.prompt_family,
+            model=self.model_id,
+            input={"system": system, "user": user},
+            metadata={"provider": self.provider, "prompt_family": self.prompt_family},
+            version=self.prompt_version or None,
+        ) as g:
+            try:
+                text, i, o = self._dispatch(system, user)
+            except Exception as e:
+                g.done(level="ERROR", status_message=f"{type(e).__name__}: {str(e)[:200]}")
+                raise
+            pi, po = PRICES.get(self.model_id, (0.0, 0.0))
+            g.done(
+                output=text,
+                input_tokens=i,
+                output_tokens=o,
+                cost_usd=(i * pi + o * po) / 1_000_000,
+            )
+            return text, i, o
+
+    def _dispatch(self, system: str, user: str) -> tuple[str, int, int]:
         if self.provider == "anthropic":
             return self._anthropic(system, user)
         if self.provider == "openai":

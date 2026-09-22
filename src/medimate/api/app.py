@@ -61,6 +61,7 @@ from medimate.llm.providers import (
     LLMExtractor,
     prompt_family_for,
 )
+from medimate.obs import tracing
 from medimate.ontology import load_ontology
 from medimate.schema.card import (
     Axis,
@@ -627,7 +628,14 @@ def create_app(
             s.card.provenance.prompt_version = body.extraction_meta.prompt_version
         selections = [(sel.axis, sel.value) for sel in body.selections]
         try:
-            reply = s.step(body.utterance, extraction=body.extraction, selections=selections)
+            # Langfuse trace 하나 = 턴 하나. 본문은 MEDIMATE_TRACE_CONTENT=on 전까지 가림(#111)
+            with tracing.context(
+                trace_name="previsit-turn",
+                session_id=body.request_id or None,
+                tags=["api", "previsit"],
+                metadata={"turn": s.turn, "asked_axis": s.asked_axis},
+            ):
+                reply = s.step(body.utterance, extraction=body.extraction, selections=selections)
         except BudgetExceeded as e:
             raise HTTPException(status_code=503, detail=str(e)) from e
         except ValueError as e:
@@ -771,6 +779,14 @@ def create_app(
     @app.post("/v1/postvisit/memo", response_model=MemoResponse)
     def postvisit_memo(body: MemoRequest, request: Request) -> MemoResponse:
         """메모 → 4묶음 카드. labels가 오면 LLM 없이 조립(폰 분류·1q-2 수정 모두 이 경로)."""
+        with tracing.context(
+            trace_name="postvisit-memo",
+            session_id=body.request_id or None,
+            tags=["api", "postvisit"],
+        ):
+            return _postvisit_memo(body, request)
+
+    def _postvisit_memo(body: MemoRequest, request: Request) -> MemoResponse:
         # 라벨의 번호는 우리가 나눈 문장의 주소다. 그 사이 분리 규칙이 바뀌었으면 같은 메모가
         # 다르게 나뉘어 **예전 번호가 다른 문장을 가리킨다.** 200에 카드도 멀쩡해 보이므로
         # 여기서 끊는다. 다시 분류하면 되는 일이라 4xx이고, 상태 충돌이라 409다

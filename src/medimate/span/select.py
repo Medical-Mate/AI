@@ -356,22 +356,39 @@ class JevSelector:
 
         if self.usage.cost_usd(self.model_id) >= self.budget_usd:
             raise BudgetExceeded(f"{self.model_id}: ${self.budget_usd} 상한 도달")
+        from medimate.obs import tracing
+
+        state, criteria = P.jev_state(cset, axis), P.jev_criteria(cset)
         t0 = time.perf_counter()
-        r = self._get_client().system_one(
-            state=P.jev_state(cset, axis),
-            questions={
-                "value": Choice(
-                    instructions=P.JEV_INSTRUCTIONS.get(axis, ""), criteria=P.jev_criteria(cset)
-                )
-            },
-        )
-        lat = time.perf_counter() - t0
-        ans = r.answers["value"]
-        got = str(getattr(ans, "choice", "")).strip()
-        conf = getattr(ans, "confidence", None)
-        probs = getattr(ans, "probabilities", None)
-        i = getattr(r.usage, "input_tokens", 0) or 0
-        o = getattr(r.usage, "output_tokens", 0) or 0
+        with tracing.generation(
+            "jev-select",
+            model=self.model_id,
+            input={"state": state, "criteria": criteria, "axis": axis},
+            metadata={"selector": self.name, "axis": axis},
+            version=P.PROMPT_VERSION,
+        ) as g:
+            r = self._get_client().system_one(
+                state=state,
+                questions={
+                    "value": Choice(
+                        instructions=P.JEV_INSTRUCTIONS.get(axis, ""), criteria=criteria
+                    )
+                },
+            )
+            lat = time.perf_counter() - t0
+            ans = r.answers["value"]
+            got = str(getattr(ans, "choice", "")).strip()
+            conf = getattr(ans, "confidence", None)
+            probs = getattr(ans, "probabilities", None)
+            i = getattr(r.usage, "input_tokens", 0) or 0
+            o = getattr(r.usage, "output_tokens", 0) or 0
+            g.done(
+                output={"choice": got, "confidence": conf},
+                input_tokens=i,
+                output_tokens=o,
+                cost_usd=i * 0.042 / 1_000_000,
+                metadata={"probabilities": dict(probs) if probs else None},
+            )
         self.usage.calls += 1
         self.usage.input_tokens += i
         self.usage.output_tokens += o

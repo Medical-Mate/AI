@@ -29,6 +29,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from medimate.dialog.memo import tidy_value
+from medimate.obs import tracing
 from medimate.schema.postvisit import PostAxis
 from medimate.span.candidates import CandidateGenerator, compact
 from medimate.span.select import (
@@ -116,8 +117,28 @@ def run(
             seen += 1
             axis = seg["label"]
             cset = gen.generate(seg["text"], axis)
-            sel = selector.select(cset, axis, {"case_id": case["id"], "idx": idx})
-            picked = resolve(cset, sel)
+            with tracing.context(
+                trace_name="span-select-eval",
+                session_id=f"span-eval:{getattr(selector, 'model_id', selector.name)}",
+                tags=["eval", case["group"], axis, selector.name],
+                metadata={
+                    "case_id": case["id"],
+                    "idx": idx,
+                    "group": case["group"],
+                    "axis": axis,
+                    "selector": selector.name,
+                    "gold": gold,
+                },
+            ):
+                sel = selector.select(cset, axis, {"case_id": case["id"], "idx": idx})
+                picked = resolve(cset, sel)
+                if gold.strip().upper() == NONE:
+                    em_now = sel.candidate_id == NONE
+                else:
+                    em_now = same(picked, gold)
+                tracing.score("em", 1.0 if em_now else 0.0, comment=f"gold={gold} picked={picked}")
+                if sel.confidence is not None:
+                    tracing.score("confidence", float(sel.confidence))
             if save is not None:
                 saved.append(
                     {
@@ -166,6 +187,7 @@ def run(
                     f"      후보: {[c.text for c in cset.candidates]}"
                 )
 
+    tracing.flush()
     print(f"선택기 {selector.name} · 조각 {total.n}개 (gold 없음 {skipped}개 제외)\n")
     print("| 그룹 | n | CR | BASE(tidy_value) | EM | NONE | SUB✗ |\n|---|---|---|---|---|---|---|")
     for g in sorted(by_group):
