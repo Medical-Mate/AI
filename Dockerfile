@@ -12,13 +12,14 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /app
 # 의존성 먼저 (캐시)
+# obs = Langfuse. 키(LANGFUSE_*)가 없으면 무동작이고, 있어도 본문은 가림(MEDIMATE_TRACE_CONTENT=on 전까지)
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --group providers --group api --no-install-project
+RUN uv sync --frozen --no-dev --group providers --group api --group obs --no-install-project
 
 # 코드 + 데이터(온톨로지 CSV는 부위 마스터 API가 읽는다)
 COPY src ./src
 COPY data/ontology ./data/ontology
-RUN uv sync --frozen --no-dev --group providers --group api
+RUN uv sync --frozen --no-dev --group providers --group api --group obs
 
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=3s CMD ["uv", "run", "python", "-c", \
