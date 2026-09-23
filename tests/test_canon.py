@@ -70,3 +70,55 @@ def test_canon_is_marked_derived(gen):
     cset = gen.generate("안 좋아지면 바로 오래요.", "follow_up")
     canon = [c for c in cset.candidates if "canon" in c.kinds]
     assert canon and all(c.derived for c in canon)
+
+
+@pytest.mark.parametrize(
+    "value, want",
+    [
+        # 용어가 머리인 서술문 → 용어만
+        ("어금니에 충치가 두 개 있음", "충치"),
+        ("식도염은 이전과 비슷함", "식도염"),
+        ("열은 바이러스성임", "바이러스성"),
+        ("안구건조증이 좀 있음", "안구건조증"),
+        ("요로결석 4mm", "요로결석"),
+        ("역류성 식도염 소견은 이전과 비슷함", "역류성 식도염"),
+        # 앞 수식(크기·좌우)은 남기고, 단계 낱말은 남긴다
+        ("작은 근종이 보임", "작은 근종"),
+        ("허리 디스크 초기", "허리 디스크 초기"),
+        ("오른쪽 발목 염좌", "오른쪽 발목 염좌"),
+        # 건드리지 않는 것: 수치 소견, 용어가 머리가 아닌 것, 용어 없는 서술문
+        ("혈당이 경계에 가까움", "혈당이 경계에 가까움"),
+        ("갑상선 수치가 조금 흔들림", "갑상선 수치가 조금 흔들림"),
+        ("감기 뒤 피로가 남은 거 같음", "감기 뒤 피로가 남은 거 같음"),
+        ("허리 근육이 많이 뭉침", "허리 근육이 많이 뭉침"),
+    ],
+)
+def test_term_only(value, want):
+    from medimate.span.canon import term_only
+    from medimate.text.lexicon import load_lexicon
+
+    assert term_only(value, load_lexicon()) == want
+
+
+def test_term_only_is_idempotent_on_eval_gold():
+    """확정 시트의 소견 gold는 후처리의 고정점이어야 한다 — gold를 바꾸는 규칙은 규칙이 틀린 것."""
+    import json
+    from pathlib import Path
+
+    from medimate.span.canon import term_only
+    from medimate.text.lexicon import load_lexicon
+
+    lex = load_lexicon()
+    for path in (
+        "evals/span_cases.jsonl",
+        "evals/span_raw_cases.jsonl",
+        "evals/span_unseen_cases.jsonl",
+        "evals/span_unseen_r3_cases.jsonl",
+    ):
+        for ln in Path(path).read_text(encoding="utf-8").splitlines():
+            if not ln.strip():
+                continue
+            for s in json.loads(ln)["segments"]:
+                g = s.get("gold")
+                if s["label"] == "findings" and g and g != "NONE":
+                    assert term_only(g, lex) == g, (path, g)

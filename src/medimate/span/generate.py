@@ -15,6 +15,7 @@ import time
 from dataclasses import dataclass
 
 from medimate.span.candidates import CandidateGenerator
+from medimate.span.canon import term_only
 from medimate.span.select import NONE, RuleSelector, resolve
 from medimate.span.verify import Verdict, verify_value
 from medimate.text.lexicon import Lexicon, load_lexicon
@@ -116,6 +117,8 @@ class ValueGenerator:
         got = polish(str(got))
         if not got:
             return Generated(None, "none", None, Verdict(True))
+        if axis == "findings":
+            got = term_only(got, self.lexicon)  # 용어가 머리인 서술문 → 용어만
         v = verify_value(got, segment, axis, self.lexicon)
         if v.ok:
             return Generated(got, "generated", got, v)
