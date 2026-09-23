@@ -4,10 +4,12 @@
     uv run python scripts/eval_value_gen.py --yes                           # Nova 실호출, 저장
     uv run python scripts/eval_value_gen.py --report evals/results/valgen-<model>.jsonl  # 재채점(호출 0)
     uv run python scripts/eval_value_gen.py --dry-run --misses              # (재채점과 함께) 틀린 조각
+    uv run python scripts/eval_value_gen.py --sheet unseen_r4 --yes         # 한 시트만(결과 파일에 시트 이름이 붙는다)
 
-시트 네 장을 한 번에 돈다. 그룹은 시트별로 나눠 센다:
+기본은 시트 다섯 장을 한 번에 돈다(프롬프트를 고치면 전부). 그룹은 시트별로 나눠 센다:
 - unseen_r1  evals/span_unseen_cases.jsonl     Codex 1라운드(코드가 이 메모를 보고 고쳐졌음 — 비교선 76/53)
-- unseen_r3  evals/span_unseen_r3_cases.jsonl  Codex 3라운드(코드 미접촉 — 비교선 rule 29%, Nova 선택 31%)
+- unseen_r3  evals/span_unseen_r3_cases.jsonl  Codex 3라운드(v2 프롬프트를 고칠 때 봤음 — 비교선 rule 29%, Nova 선택 31%)
+- unseen_r4  evals/span_unseen_r4_cases.jsonl  Codex 4라운드(코드·프롬프트 미접촉, 동결 2d3f064 — 비교선 rule 37%)
 - raw        evals/span_raw_cases.jsonl        날것 메모 43조각
 - normal     evals/span_cases.jsonl E0_normal   정상 메모(회귀 — rule 98%)
 
@@ -38,14 +40,17 @@ RESULTS = Path("evals/results")
 SHEETS = [
     ("unseen_r1", "evals/span_unseen_cases.jsonl", None),
     ("unseen_r3", "evals/span_unseen_r3_cases.jsonl", None),
+    ("unseen_r4", "evals/span_unseen_r4_cases.jsonl", None),
     ("raw", "evals/span_raw_cases.jsonl", None),
     ("normal", "evals/span_cases.jsonl", {"E0_normal"}),
 ]
 
 
-def segments() -> list[dict]:
+def segments(only: set[str] | None = None) -> list[dict]:
     out: list[dict] = []
     for name, path, groups in SHEETS:
+        if only and name not in only:
+            continue
         for ln in Path(path).read_text(encoding="utf-8").splitlines():
             if not ln.strip():
                 continue
@@ -85,9 +90,11 @@ def main() -> None:
     a.add_argument("--yes", action="store_true")
     a.add_argument("--report", type=Path)
     a.add_argument("--misses", action="store_true")
+    a.add_argument("--sheet", action="append", choices=[n for n, _, _ in SHEETS], help="이 시트만(여러 번 가능)")
     args = a.parse_args()
 
-    segs = segments()
+    only = set(args.sheet or [])
+    segs = segments(only)
     if args.limit:
         segs = segs[: args.limit]
     per_sheet = Counter(s["sheet"] for s in segs)
@@ -120,7 +127,9 @@ def main() -> None:
         from medimate.obs import tracing
 
         gen = ValueGenerator(args.provider, args.model, budget_usd=args.budget)
-        out = RESULTS / f"valgen-{args.model.replace(':', '_')}{f'-first{args.limit}' if args.limit else ''}.jsonl"
+        # 시트를 골랐으면 이름을 붙인다 — 전체 결과 파일을 덮어쓰지 않게
+        suffix = "".join(f"-{n}" for n, _, _ in SHEETS if n in only) + (f"-first{args.limit}" if args.limit else "")
+        out = RESULTS / f"valgen-{args.model.replace(':', '_')}{suffix}.jsonl"
         out.parent.mkdir(parents=True, exist_ok=True)
         rows = []
         with out.open("w", encoding="utf-8") as f:
@@ -204,7 +213,7 @@ def main() -> None:
         "\n| 시트 | n | EM(최종) | GEN-EM(검증 전) | 모델 NONE | 통과 | 통과✗ | 거절 | 거절이 gold | 거절이 구함 |"
         "\n|---|---|---|---|---|---|---|---|---|---|"
     )
-    for k in ("unseen_r1", "unseen_r3", "raw", "normal"):
+    for k in (n for n, _, _ in SHEETS):
         if k in by:
             print(row(k, by[k]))
     print(row("전체", total))
