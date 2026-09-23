@@ -493,6 +493,10 @@ def create_app(
             # 여기 나오는 것은 **설정값**(이 서버가 쓸 것)이다. 그 턴이 실제로 무엇으로
             # 돌았는지는 `card.provenance`가 낸다. 둘 다 필요하다.
             "extractor": _extractor_config(),
+            # 트레이싱이 켜졌는지, **본문이 나가는지**(#127). `hmac_required`와 같은 이유 —
+            # 스위치를 `.env`에만 넣고 compose에 빠뜨리면 켠 줄 알고 넘어간다. `content`가
+            # true면 증상 본문이 Langfuse(host)로 나가고 있다는 뜻이다(#111 안내와 맞춰 볼 값)
+            "tracing": tracing.status(),
         }
 
     def _extractor_config() -> dict[str, object]:
