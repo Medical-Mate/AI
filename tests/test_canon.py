@@ -91,6 +91,9 @@ def test_canon_is_marked_derived(gen):
         ("갑상선 수치가 조금 흔들림", "갑상선 수치가 조금 흔들림"),
         ("감기 뒤 피로가 남은 거 같음", "감기 뒤 피로가 남은 거 같음"),
         ("허리 근육이 많이 뭉침", "허리 근육이 많이 뭉침"),
+        # 부정이 있으면 자르지 않는다 — 잘라내면 부정이 사라진다(2026-09-23)
+        ("충치는 깊지 않음", "충치는 깊지 않음"),
+        ("파열은 아님", "파열은 아님"),
     ],
 )
 def test_term_only(value, want):
@@ -105,7 +108,7 @@ def test_term_only_is_idempotent_on_eval_gold():
     import json
     from pathlib import Path
 
-    from medimate.span.canon import term_only
+    from medimate.span.canon import geo_nominal, term_only
     from medimate.text.lexicon import load_lexicon
 
     lex = load_lexicon()
@@ -114,6 +117,7 @@ def test_term_only_is_idempotent_on_eval_gold():
         "evals/span_raw_cases.jsonl",
         "evals/span_unseen_cases.jsonl",
         "evals/span_unseen_r3_cases.jsonl",
+        "evals/span_unseen_r4_cases.jsonl",
     ):
         for ln in Path(path).read_text(encoding="utf-8").splitlines():
             if not ln.strip():
@@ -122,3 +126,22 @@ def test_term_only_is_idempotent_on_eval_gold():
                 g = s.get("gold")
                 if s["label"] == "findings" and g and g != "NONE":
                     assert term_only(g, lex) == g, (path, g)
+                    assert geo_nominal(g) == g, (path, g)
+
+
+@pytest.mark.parametrize(
+    "value,want",
+    [
+        ("인대가 놀란 거래", "인대가 놀람"),
+        ("기침은 기관지가 예민해진 거래", "기침은 기관지가 예민해짐"),
+        ("어깨 근육이 뭉친 거", "어깨 근육이 뭉침"),
+        # `것 같음`·`상태`처럼 뒤에 다른 말이 오면 그대로
+        ("무릎 인대가 늘어난 것 같음", "무릎 인대가 늘어난 것 같음"),
+        ("허리 근육이 많이 뭉친 상태", "허리 근육이 많이 뭉친 상태"),
+        ("발목은 심하게 접질린 건 아님", "발목은 심하게 접질린 건 아님"),
+    ],
+)
+def test_geo_nominal(value, want):
+    from medimate.span.canon import geo_nominal
+
+    assert geo_nominal(value) == want

@@ -15,9 +15,9 @@ import time
 from dataclasses import dataclass
 
 from medimate.span.candidates import CandidateGenerator
-from medimate.span.canon import term_only
+from medimate.span.canon import geo_nominal, term_only
 from medimate.span.select import NONE, RuleSelector, resolve
-from medimate.span.verify import Verdict, verify_value
+from medimate.span.verify import Verdict, drops_negation, verify_value
 from medimate.text.lexicon import Lexicon, load_lexicon
 
 # soft hyphen · zero-width space/non-joiner · BOM · 대괄호 · 따옴표
@@ -81,7 +81,10 @@ class ValueGenerator:
 
     def _fallback(self, segment: str, axis: str) -> str | None:
         cset = self.gen.generate(segment, axis)
-        return resolve(cset, self.rule.select(cset, axis))
+        fb = resolve(cset, self.rule.select(cset, axis))
+        # 폴백도 부정은 지킨다 — 모델 값을 부정 때문에 버렸는데 rule이 `축농증`을 내면 같은 오류다.
+        # 값 없음이 뒤집힌 값보다 낫다(원문 문장은 묶음에 그대로 있다)
+        return None if drops_negation(fb, segment) else fb
 
     def generate(self, segment: str, axis: str) -> Generated:
         from medimate.llm import prompt_value_gen as P
@@ -118,7 +121,9 @@ class ValueGenerator:
         if not got:
             return Generated(None, "none", None, Verdict(True))
         if axis == "findings":
-            got = term_only(got, self.lexicon)  # 용어가 머리인 서술문 → 용어만
+            got = geo_nominal(got)  # `-ㄴ 거래` → `-ㅁ`
+            # 용어가 머리인 서술문 → 용어만(부정이 있으면 그대로)
+            got = term_only(got, self.lexicon)
         v = verify_value(got, segment, axis, self.lexicon)
         if v.ok:
             return Generated(got, "generated", got, v)
