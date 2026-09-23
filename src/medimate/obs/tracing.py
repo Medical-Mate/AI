@@ -75,6 +75,24 @@ def client():
     return _client
 
 
+def status() -> dict[str, Any]:
+    """`/health`용 — 트레이싱이 **실제로** 무엇을 하고 있는가(#127, 백엔드 요청).
+
+    - `enabled`: 키가 있는가가 아니라 **클라이언트가 만들어졌는가**. 키가 있어도 SDK가 없거나
+      초기화에 실패하면 false다(#125 전 이미지가 그랬다 — 키를 넣어도 무동작)
+    - `content`: **본문이 실제로 나가는가**. 스위치(`MEDIMATE_TRACE_CONTENT`)가 켜져 있어도
+      트레이싱이 꺼져 있으면 false. 국외 이전 안내(#111)와 맞는지 밖에서 보는 유일한 신호다
+    - `env`·`host`: 어느 Langfuse 환경·주소로 가는가. 비밀이 아니다
+    """
+    on = client() is not None
+    return {
+        "enabled": on,
+        "content": on and content_allowed(),
+        "env": os.getenv("MEDIMATE_ENV", "local") if on else None,
+        "host": (os.getenv("LANGFUSE_BASE_URL") or None) if on else None,
+    }
+
+
 def reset_for_tests() -> None:
     global _client, _tried
     _client, _tried = None, False

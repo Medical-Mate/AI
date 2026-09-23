@@ -104,3 +104,34 @@ def test_llm_extractor_call_goes_through_tracing(monkeypatch):
     up = fake.span.updates[-1]
     assert up["usage_details"] == {"input": 100, "output": 5}
     assert abs(up["cost_details"]["total"] - (100 * 0.80 + 5 * 3.20) / 1e6) < 1e-12
+
+
+def test_status_is_all_off_without_keys(monkeypatch):
+    monkeypatch.setenv("MEDIMATE_TRACE_CONTENT", "on")  # 스위치만 켜도
+    assert tracing.status() == {"enabled": False, "content": False, "env": None, "host": None}
+
+
+def test_status_reports_content_only_when_actually_sent(monkeypatch):
+    """`/health.tracing.content`는 본문이 실제로 나가는지다 — 국외 이전 안내와 맞춰 볼 값(#127)."""
+    monkeypatch.setattr(tracing, "_client", FakeClient())
+    monkeypatch.setattr(tracing, "_tried", True)
+    monkeypatch.setenv("MEDIMATE_ENV", "prod")
+    monkeypatch.setenv("LANGFUSE_BASE_URL", "https://us.cloud.langfuse.com")
+    monkeypatch.delenv("MEDIMATE_TRACE_CONTENT", raising=False)
+    assert tracing.status() == {
+        "enabled": True,
+        "content": False,
+        "env": "prod",
+        "host": "https://us.cloud.langfuse.com",
+    }
+    monkeypatch.setenv("MEDIMATE_TRACE_CONTENT", "on")
+    assert tracing.status()["content"] is True
+
+
+def test_health_carries_tracing_status():
+    from fastapi.testclient import TestClient
+
+    from medimate.api.app import create_app
+
+    body = TestClient(create_app()).get("/health").json()
+    assert body["tracing"] == {"enabled": False, "content": False, "env": None, "host": None}

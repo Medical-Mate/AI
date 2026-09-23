@@ -125,6 +125,10 @@ MEDIMATE_CORS_ORIGINS=         # 웹이 우리를 직접 부를 때만. 쉼표 �
   백엔드가 프록시하면 요청이 서버에서 오므로 이 변수는 필요 없다
 - **켜졌는지는 `/health`로 확인한다** — `llm_budget: {cap_usd, spent_today_usd, resets_at, persisted}`,
   `cors_origins`(개수). 꺼져 있으면 둘 다 `null`. `hmac_required`와 같은 이유로 낸다
+- **트레이싱(Langfuse)** — `LANGFUSE_PUBLIC_KEY`·`LANGFUSE_SECRET_KEY`·`LANGFUSE_BASE_URL`, `MEDIMATE_ENV`(`prod`),
+  `MEDIMATE_TRACE_CONTENT`(`on`이면 **본문이 Langfuse 호스트로 나간다** — 국외 이전 안내 #111과 함께), `MEDIMATE_TRACING=off`(끔).
+  `.env`와 compose `environment:` **양쪽에**. 켜졌는지는 `/health.tracing: {enabled, content, env, host}` —
+  `enabled`는 클라이언트가 실제로 만들어졌는지, `content`는 본문이 실제로 나가는지다(스위치만 켜고 키가 없으면 false)
 
 ## IAM 정책 — 서울 ARN만 넣으면 깨진다
 
