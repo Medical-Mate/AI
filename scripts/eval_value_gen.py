@@ -109,6 +109,15 @@ def main() -> None:
 
         gen.lexicon, gen.gen, gen.rule, gen.model_id = load_lexicon(), CandidateGenerator(), RuleSelector(), model
         cost = None
+        # gold는 지금 시트에서 읽는다 — 시트를 고친 뒤(중이염 → 귀지 때문) 재채점이 옛 gold로 세지 않게
+        now = {(s["sheet"], s["case_id"], s["idx"]): s["gold"] for s in segments()}
+        changed = 0
+        for r in rows:
+            g = now.get((r["sheet"], r["case_id"], r["idx"]))
+            if g is not None and g != r["gold"]:
+                r["gold"], changed = g, changed + 1
+        if changed:
+            print(f"저장 뒤 시트에서 gold가 바뀐 조각 {changed}개 — 지금 gold로 센다")
     else:
         i, o = require_price(args.model)
         est = (len(segs) * 1300 * i + len(segs) * 20 * o) / 1e6
