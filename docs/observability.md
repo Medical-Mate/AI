@@ -35,6 +35,19 @@ MEDIMATE_ENV=eval|prod      # Langfuse environment. 기본 local
 가린 채 토큰·지연·버전·request_id만 남기고, eval 러너는 우리가 만든 케이스라 `MEDIMATE_TRACE_CONTENT=on`으로 켠다.
 운영에서 본문을 켜려면 동의문·안내문에 Langfuse(미국)를 넣고 팀이 결정한 뒤에.
 
+## 프로젝트 둘 — eval과 운영 (2026-09-23, #127)
+
+| 프로젝트 | 무엇이 쌓이나 | 키가 있는 곳 |
+|---|---|---|
+| eval(기존) | 우리 케이스로 돌린 eval·스모크. 본문 켬 | 로컬 `.env`의 `LANGFUSE_PUBLIC_KEY`/`SECRET_KEY` |
+| `medical-mate-prod` | 운영 서버의 실제 문답·메모 | 운영 서버 env(백엔드) · 로컬 조회용은 `.env`의 `LANGFUSE_PROD_PUBLIC_KEY`/`SECRET_KEY` |
+
+- 트레이싱 코드는 `_PROD_` 이름을 **읽지 않는다.** 로컬에서 운영 키를 기본 이름에 넣으면 eval이 운영 프로젝트에 섞인다
+- 운영이 켜졌는지·본문이 나가는지는 `/health.tracing: {enabled, content, env, host}`(#128)
+- 운영 본문 수집 순서: 웹 안내문 반영 → 앱 개인정보처리방침 → 백엔드 `MEDIMATE_TRACE_CONTENT=on`. 이전받는 자는 **ClickHouse, Inc.**(Langfuse 운영사,
+  무료 요금제 기준. 유료 Pay-as-you-go면 약관상 Langfuse GmbH)
+- 2027-01-15에 `medical-mate-prod` 프로젝트째 삭제(#115)
+
 `user_id`는 쓰지 않는다. 개인 식별자를 밖으로 보내지 않는다. 세션은 request_id까지만.
 
 ## 확인 방법 (호출 0)
