@@ -165,6 +165,28 @@ def test_bedrock_adapter_puts_schema_in_the_system_prompt():
     assert "JSON" in sent and '"properties"' in sent
 
 
+def test_bedrock_output_limit_is_per_call():
+    """값 생성은 출력 한도를 작게 준다(폭주 차단). 다른 호출의 한도(8192)는 그대로다."""
+    from medimate.llm.providers import LLMExtractor
+
+    limits: list[int] = []
+
+    class FakeClient:
+        def converse(self, **kw):
+            limits.append(kw["inferenceConfig"]["maxTokens"])
+            return {
+                "output": {"message": {"content": [{"text": "{}"}]}},
+                "usage": {"inputTokens": 1, "outputTokens": 1},
+            }
+
+    ex = LLMExtractor("bedrock", "apac.amazon.nova-pro-v1:0", budget_usd=1.0)
+    ex._client = FakeClient()
+    ex.complete_json("시스템", "조각", {"type": "object"}, max_tokens=256)
+    ex.complete_json("시스템", "조각", {"type": "object"})
+    assert limits == [256, 8192]
+    assert ex.max_output_tokens is None
+
+
 def test_every_bedrock_candidate_has_a_price():
     """가격표에 없으면 비용이 0으로 계산돼 --budget 가드가 무력화된다."""
     from medimate.llm.providers import PRICES

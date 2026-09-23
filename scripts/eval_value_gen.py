@@ -34,7 +34,7 @@ sys.path.insert(0, "src")
 from medimate.llm.prompt_value_gen import PROMPT_VERSION  # noqa: E402
 from medimate.llm.providers import require_price  # noqa: E402
 from medimate.span.candidates import compact  # noqa: E402
-from medimate.span.generate import ValueGenerator  # noqa: E402
+from medimate.span.generate import ValueGenerator, screen  # noqa: E402
 
 RESULTS = Path("evals/results")
 SHEETS = [
@@ -120,7 +120,8 @@ def main() -> None:
             print(f"저장 뒤 시트에서 gold가 바뀐 조각 {changed}개 — 지금 gold로 센다")
     else:
         i, o = require_price(args.model)
-        est = (len(segs) * 1300 * i + len(segs) * 20 * o) / 1e6
+        # 입력은 시스템 프롬프트+스키마로 조각당 ~3000~3500토큰(v2·v3 실측). 출력은 정상 ~16, 한도 256
+        est = (len(segs) * 3500 * i + len(segs) * 40 * o) / 1e6
         print(
             f"조각 {len(segs)} ({dict(per_sheet)}) · 호출 {len(segs)} · 예상 ${est:.3f} (상한 ${args.budget})"
         )
@@ -186,7 +187,13 @@ def main() -> None:
     misses: list[str] = []
     for r in rows:
         got = None if r.get("model_none") else r.get("model_value")
-        g = gen.check(got, r["segment"], r["axis"])
+        # 응답 거르기(이스케이프·잘림)도 코드라 저장된 원문에 다시 적용한다
+        bad = screen(r.get("raw_response"), r.get("output_tokens"))
+        g = (
+            gen.rejected_response(bad, r["segment"], r["axis"])
+            if bad
+            else gen.check(got, r["segment"], r["axis"])
+        )
         gold_none = r["gold"].strip().upper() == "NONE"
         em = (g.value is None) if gold_none else same(g.value, r["gold"])
         gen_em = (got is None) if gold_none else same(got, r["gold"])

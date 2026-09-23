@@ -20,6 +20,26 @@ from medimate.span.select import NONE, RuleSelector, resolve
 from medimate.span.verify import Verdict, drops_negation, verify_value
 from medimate.text.lexicon import Lexicon, load_lexicon
 
+# 값 생성 호출의 출력 한도. 정상 답은 최대 48토큰(425회 실측, 2026-09-23), 값은 30자
+# (verify.MAX_CHARS). 한도에 닿는 것은 멈추지 않는 응답뿐이다 — Nova가 한글을 `\uXXXX`로
+# 쓰다 같은 글자를 8192토큰까지 반복한다
+MAX_OUTPUT_TOKENS = 256
+_ESCAPE = re.compile(r"\\u[0-9a-fA-F]{4}")
+
+
+def screen(text: str | None, output_tokens: int | None) -> str | None:
+    """모델 응답을 쓰기 전에 거른다. 이스케이프·잘림이면 그 이유, 아니면 None.
+
+    이스케이프된 값은 코드포인트부터 엉뚱한 글자다(`전 전 주`, `이전두`) — 풀어도 못 쓴다.
+    v2 264회 중 26, v3 161회 중 32(RESULTS.md "value-gen-v3").
+    """
+    if output_tokens is not None and output_tokens >= MAX_OUTPUT_TOKENS:
+        return "truncated"
+    if text and _ESCAPE.search(text):
+        return "escape"
+    return None
+
+
 # soft hyphen · zero-width space/non-joiner · BOM · 대괄호 · 따옴표
 _JUNK = re.compile("[" + "".join(map(chr, (0xAD, 0x200B, 0x200C, 0xFEFF))) + r"\[\]\"'`]")
 
@@ -94,7 +114,10 @@ class ValueGenerator:
         t0 = time.perf_counter()
         norm = normalize(segment).text
         text, i, o = self.ex.complete_json(
-            P.system_prompt(), P.user_message(segment, axis, norm), P.SCHEMA
+            P.system_prompt(),
+            P.user_message(segment, axis, norm),
+            P.SCHEMA,
+            max_tokens=MAX_OUTPUT_TOKENS,
         )
         lat = time.perf_counter() - t0
         self.last = {
@@ -104,6 +127,9 @@ class ValueGenerator:
             "latency_s": round(lat, 3),
             "prompt_version": P.PROMPT_VERSION,
         }
+        bad = screen(text, o)
+        if bad:
+            return self.rejected_response(bad, segment, axis)
         try:
             got = parse_json_text(text).get("value")
         except Exception as e:  # noqa: BLE001 — 파싱 실패는 폴백 사유
@@ -112,6 +138,11 @@ class ValueGenerator:
                 fb, "fallback", None, Verdict(False, ["parse"]), f"parse:{type(e).__name__}"
             )
         return self.check(got, segment, axis)
+
+    def rejected_response(self, reason: str, segment: str, axis: str) -> Generated:
+        """응답 자체를 못 쓸 때(이스케이프·잘림) — 값을 보지 않고 폴백."""
+        fb = self._fallback(segment, axis)
+        return Generated(fb, "fallback", None, Verdict(False, [reason]), reason)
 
     def check(self, got, segment: str, axis: str) -> Generated:
         """모델 값 하나를 다듬고·검증·폴백한다. 재채점(호출 0)도 여기를 탄다."""

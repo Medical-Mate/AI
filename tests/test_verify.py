@@ -158,3 +158,30 @@ def test_changed_negation_form_is_not_added():
     """`아니` → `않`은 부정을 바꾼 게 아니다. 개수로 센다."""
     v = verify_value("발목은 심하게 접질리지 않음", "발목은심하게접질린건아니래", "findings", LEX)
     assert "negation_added" not in v.reasons
+
+
+@pytest.mark.parametrize(
+    "text,tokens,want",
+    [
+        ('{"value": "혈압이 좀 높음"}', 12, None),
+        ('{"value": null}', 5, None),
+        (r'{"value": "\uc804 \uc804 \uc8fc"}', 20, "escape"),
+        (r'{"value": "\uac00\uac00', 256, "truncated"),
+        (r'{"value": "\uac00\uac00', 8192, "truncated"),
+    ],
+)
+def test_screen_rejects_escape_and_truncation(text, tokens, want):
+    """Nova 이스케이프 응답은 코드포인트부터 엉뚱하다 — 값을 보지 않고 폴백한다."""
+    from medimate.span.generate import screen
+
+    assert screen(text, tokens) == want
+
+
+def test_escaped_response_falls_back():
+    from medimate.span.generate import screen
+
+    gen = _offline_generator()
+    seg = "혈압 좀 높다네 ㄷㄷ"
+    bad = screen(r'{"value": "\uc804 \uc804"}', 20)
+    g = gen.rejected_response(bad, seg, "findings")
+    assert g.source == "fallback" and g.verdict.reasons == ["escape"]
