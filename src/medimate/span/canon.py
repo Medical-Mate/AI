@@ -36,9 +36,9 @@ _TRAIL = re.compile(r"[\s·,.。!?]+$")
 # 재방문 축 꼬리 — 이 말을 떼고 `재방문 필요`를 붙인다
 _RETURN_TAIL = re.compile(
     # 붙여 쓴 `다시오라고`도 받는다. `재보자고`의 보자고는 앞 글자 검사로 막는다
-    r"(?<![가-힣])\s*(?:바로\s*)?(?:다시\s*)?"
-    r"(?:오래요|오라고(?:\s*(?:했어요|하셨어요|했다|하셨다))?|오세요|오라|"
-    r"보자고(?:\s*(?:하셨다|하셨어요|했어요))?|보자|봐요|뵙|"
+    r"(?<![가-힣])\s*(?:참지\s*말고\s*)?(?:바로\s*)?(?:다시\s*)?"
+    r"(?:오래요|오래|오라고(?:\s*(?:했어요|하셨어요|했다|하셨다|했음|하셨음|함))?|오세요|오라|"
+    r"보자고(?:\s*(?:하셨다|하셨어요|했어요|했음|하셨음|함))?|보자|봐요|보기|뵙|"
     r"재진|재방문\s*하래요|재방문|방문하래요|경과\s*보자고|경과\s*보러\s*오라고(?:\s*했다)?)"
     r"[\s.。!?]*$"
 )
@@ -46,7 +46,8 @@ _COND = re.compile(r"(?:면|시)\s*$")  # 조건절 끝
 
 # 검사 축
 _RESULT = re.compile(r"결과.*(?:알려|보자|안내|나오|준다|줄)")
-_PLAN = re.compile(r"(?:하자고|해보자고|찍어보자고|찍기로|하기로|해보자)")
+# Kiwi가 띄운 조각(`찍어 보자고`)도 받는다
+_PLAN = re.compile(r"(?:하자고|해\s*보자고|찍어\s*보자고|찍기로|하기로|해\s*보자)")
 _TIME_WORDS = re.compile(r"(?:다음에|그때|추후)")
 
 # 약 축 — 조건·시점 절
@@ -75,11 +76,44 @@ def _statement_nominal(seg: str, axis: PostAxis) -> str | None:
             return None
     # 앞 절이 배경이면(`초음파 봤는데 파열은 아니다`) 뒤 절만 — 소견은 뒤 절이다
     t = re.split(r"(?:는데|은데|ㄴ데)\s+", t)[-1]
+    if not t.endswith("다"):
+        return t
+    joined = _kiwi_nominal(t)
+    if joined:
+        return joined
     m = re.search(r"([가-힣]+)다$", t)
     if m:
-        stem = m.group(1)
-        return t[: m.start()] + _nominal(stem)
+        return t[: m.start()] + _nominal(m.group(1))
     return t
+
+
+def _kiwi_nominal(clause: str) -> str | None:
+    """`-다`로 끝나는 절 → `-음` 명사형을 Kiwi join으로. 불규칙(ㅂ·ㅅ)을 Kiwi가 안다(#122).
+
+    `혈당이 경계에 가깝다` → 가깝/VA-I + 음/ETN → `혈당이 경계에 가까움`. 손으로 짠 _nominal은 폴백.
+    """
+    from medimate.text.tokenize import base_kiwi
+
+    try:
+        kiwi = base_kiwi()
+        toks = list(kiwi.tokenize(clause))
+        while toks and toks[-1].tag in ("EF", "EC", "SF", "SP", "SE"):
+            toks.pop()
+        # `뭉친 상태`·`뭉친 거`·`늘어난 것` → 관형형 + 형식명사는 그 동사의 명사형이다
+        if (
+            len(toks) >= 2
+            and toks[-1].tag in ("NNG", "NNB")
+            and toks[-1].form in ("상태", "거", "것", "중")
+            and toks[-2].tag == "ETM"
+        ):
+            toks = toks[:-2]
+        if not toks or not toks[-1].tag.startswith(
+            ("VV", "VA", "VX", "VCP", "VCN", "XSA", "XSV", "EP")
+        ):
+            return None
+        return kiwi.join([(t.form, t.tag) for t in toks] + [("음", "ETN")])
+    except Exception:  # noqa: BLE001 — 실패하면 정규식 폴백
+        return None
 
 
 def canon_candidates(cset: CandidateSet, axis: str, lexicon: Lexicon) -> list[Candidate]:
@@ -105,11 +139,31 @@ def canon_candidates(cset: CandidateSet, axis: str, lexicon: Lexicon) -> list[Ca
         tw = _TIME_WORDS.search(seg)
         if tw:
             times.append(_abbrev(tw.group(0)))
-        terms = [
-            c.text for c in subs if any(k in ("lexicon:test", "lexicon:procedure") for k in c.kinds)
+        lex_terms = [
+            c for c in subs if any(k in ("lexicon:test", "lexicon:procedure") for k in c.kinds)
         ]
+        terms = [c.text for c in lex_terms]
+        # 용어를 품은 chunk(`뇌 MRI`)를 앞에 — 수식어 붙은 검사명이 값이다(#122). 시점 든 chunk 제외
+        for lt in lex_terms:
+            for c in subs:
+                if (
+                    "chunk" in c.kinds
+                    and c is not lt
+                    and c.start <= lt.start
+                    and c.end >= lt.end
+                    and "duration" not in c.kinds
+                    and not _TIME_WORDS.match(c.text)
+                    and "결과" not in c.text
+                    and not any(
+                        d.start >= c.start and d.end <= c.end for d in subs if "duration" in d.kinds
+                    )
+                ):
+                    terms.insert(0, c.text)
         if not terms:
             terms = [c.text for c in subs if "chunk" in c.kinds and "검사" in c.text]
+        # `공복혈당을 다시 검사하기로` — 검사한다는 동사가 있고 용어에 `검사`가 없으면 붙인다
+        if re.search(r"검사\s*(?:하|받|다시)", seg):
+            terms = [t if "검사" in t else f"{t} 검사" for t in terms]
         suffix = ""
         if _RESULT.search(seg):
             suffix = "결과 안내"
@@ -128,7 +182,7 @@ def canon_candidates(cset: CandidateSet, axis: str, lexicon: Lexicon) -> list[Ca
                 base = f"{time_c} {term_c}".strip()
                 if suffix == "결과 안내":
                     out.append(f"{base} 결과 안내".replace("결과 결과", "결과"))
-                elif suffix:
+                elif suffix and not base.endswith(suffix):
                     out.append(f"{base} {suffix}")
                 out.append(base)
 
@@ -152,6 +206,9 @@ def canon_candidates(cset: CandidateSet, axis: str, lexicon: Lexicon) -> list[Ca
             for cond in conds:
                 if compact(cond) not in compact(med):
                     out.append(f"{cond} {med}")
+                    for d in durs[:2]:  # `저녁에 약 한 알` — 시점 + 약 + 용량(#122)
+                        if compact(d) not in compact(med) and compact(d) not in compact(cond):
+                            out.append(f"{cond} {med} {d}")
             for d in durs[:2]:
                 if compact(d) not in compact(med) and compact(med) not in compact(d):
                     out.append(f"{med} {d}")
