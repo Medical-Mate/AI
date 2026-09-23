@@ -91,10 +91,14 @@ def main() -> None:
     a.add_argument("--report", type=Path)
     a.add_argument("--misses", action="store_true")
     a.add_argument("--sheet", action="append", choices=[n for n, _, _ in SHEETS], help="이 시트만(여러 번 가능)")
+    a.add_argument("--keys", type=Path, help="이 조각만(한 줄에 sheet<TAB>case_id<TAB>idx). 분리 실험용")
     args = a.parse_args()
 
     only = set(args.sheet or [])
     segs = segments(only)
+    if args.keys:
+        want = {tuple(ln.split("	")) for ln in args.keys.read_text(encoding="utf-8").splitlines() if ln.strip()}
+        segs = [s for s in segs if (s["sheet"], s["case_id"], str(s["idx"])) in want]
     if args.limit:
         segs = segs[: args.limit]
     per_sheet = Counter(s["sheet"] for s in segs)
@@ -139,6 +143,8 @@ def main() -> None:
         gen = ValueGenerator(args.provider, args.model, budget_usd=args.budget)
         # 시트를 골랐으면 이름을 붙인다 — 전체 결과 파일을 덮어쓰지 않게
         suffix = "".join(f"-{n}" for n, _, _ in SHEETS if n in only) + (f"-first{args.limit}" if args.limit else "")
+        if args.keys:
+            suffix += f"-{args.keys.stem}"
         # v3부터 프롬프트 버전을 파일 이름에 — v2 결과(`valgen-<model>.jsonl`)를 덮지 않게
         out = RESULTS / f"valgen-{args.model.replace(':', '_')}-{PROMPT_VERSION}{suffix}.jsonl"
         out.parent.mkdir(parents=True, exist_ok=True)
