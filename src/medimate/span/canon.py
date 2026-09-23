@@ -228,3 +228,101 @@ def canon_candidates(cset: CandidateSet, axis: str, lexicon: Lexicon) -> list[Ca
 def reassurance(seg: str) -> bool:
     """안심·부정 소견 — gold 검토에서 값 없음(NONE)으로 정해졌다."""
     return bool(_REASSURE.search(seg))
+
+
+# ── 소견 용어 후처리 ────────────────────────────────────────────────────────────
+# 용어 뒤가 이렇게 시작하면 용어가 문장의 머리다(`충치가 두 개 있음`, `식도염은 이전과 비슷함`,
+# `바이러스성임`, `요로결석 4mm`, `역류성 식도염 소견은 …`). `감기 뒤 피로`처럼 다른 명사가 이어지면
+# 용어는 수식일 뿐이라 건드리지 않는다
+_TERM_HEAD_TAIL = re.compile(r"^(?:\s*소견)?(?:[이가은는도만]|이?[라란]|임|이었|였|인|\s*\d)")
+_STAGE = re.compile(r"^\s*(초기|중기|말기|전단계)")
+# 값 속 부정. `코 안은`의 `안`(명사)은 뒤에 조사가 붙어 걸리지 않는다
+_NEG_IN_VALUE = re.compile(r"않|없|아니|아님|(?:^|\s)(?:안|못)\s|지\s*마")
+
+
+def _is_measure_term(term) -> bool:
+    """수치 소견(혈압·혈당·간수치·갑상선 수치)은 `높음`·`흔들림` 같은 서술이 곧 값이다."""
+    return "수치" in term.note or "수치" in term.surface
+
+
+def _strip_topic_prefix(prefix: str) -> str:
+    """용어 앞 수식에서 조사로 끝나는 말(`어금니에`, `열은`)까지 버린다.
+
+    `작은`·`오른쪽` 같은 수식은 남긴다.
+    """
+    prefix = prefix.strip()
+    if not prefix:
+        return ""
+    try:
+        from medimate.text.tokenize import base_kiwi
+
+        toks = list(base_kiwi().tokenize(prefix))
+    except Exception:  # noqa: BLE001 — Kiwi 없으면 수식은 그대로
+        return prefix
+    last_j = max((i for i, t in enumerate(toks) if t.tag.startswith("J")), default=-1)
+    if last_j < 0:
+        return prefix
+    cut = toks[last_j].start + toks[last_j].len
+    return prefix[cut:].strip()
+
+
+_GEO_TAIL = {"VCP", "EF", "SF"}
+
+
+def geo_nominal(value: str) -> str:
+    """소견 값 끝의 `-ㄴ 거(래)`를 `-ㅁ`으로: `인대가 놀란 거래` → `인대가 놀람`(#122, r4).
+
+    gold 모양 "서술문은 -음"(`어깨 근육이 뭉친 거` → `어깨 근육이 뭉침`)을 코드로. 모델이 조각의
+    `-ㄴ 거래`를 그대로 옮긴 값에만 탄다. `것 같음`처럼 `거/것` 뒤에 다른 말이 오면 건드리지 않는다.
+    """
+    try:
+        from medimate.text.tokenize import base_kiwi
+
+        k = base_kiwi()
+        toks = list(k.tokenize(value))
+    except Exception:  # noqa: BLE001 — Kiwi 없으면 그대로
+        return value
+    for i in range(1, len(toks) - 1):
+        etm, nnb = toks[i], toks[i + 1]
+        if not (etm.tag == "ETM" and nnb.tag == "NNB" and nnb.form in ("거", "것")):
+            continue
+        if not all(t.tag in _GEO_TAIL for t in toks[i + 2 :]):
+            return value
+        # 서술어가 든 어절만 다시 붙인다 — 앞말의 띄어쓰기는 원문 그대로
+        cut = value.rfind(" ", 0, etm.start) + 1
+        stem = [(t.form, t.tag) for t in toks[:i] if t.start >= cut]
+        if not stem or not stem[-1][1].startswith(("VV", "VA", "VX", "XSA", "XSV")):
+            return value
+        return (value[:cut] + k.join(stem + [("ᆷ", "ETN")])).strip()
+    return value
+
+
+def term_only(value: str, lexicon: Lexicon) -> str:
+    """소견 값이 어휘집 용어를 머리로 한 서술문이면 용어(+앞 수식·단계 낱말)만 남긴다(#122).
+
+    gold 검토의 모양 "병명·용어가 있으면 용어만"을 코드로 강제한다.
+    모델이 `어금니에 충치가 두 개 있음`이라 써도 카드에는 `충치`.
+    낱말을 지우기만 하므로 검증기가 통과시킨 값은 그대로 통과한다.
+
+    건드리지 않는 것: 용어 없는 서술문(`허리 근육이 많이 뭉침`), 수치 소견(`혈당이 경계에 가까움`),
+    용어가 머리가 아닌 것(`감기 뒤 피로`), 이미 용어(+단계)인 값(`허리디스크 초기`),
+    부정이 있는 값(`충치는 깊지 않음`, `파열은 아님`) — 잘라내면 부정이 사라진다
+    (2026-09-23 부정 정의)
+    """
+    if _NEG_IN_VALUE.search(value):
+        return value
+    hits = [m for m in lexicon.match(value) if m.term.type == "finding"]
+    if not hits or any(_is_measure_term(m.term) for m in hits):
+        return value
+    m = hits[0]
+    tail = value[m.end :]
+    st = _STAGE.match(tail)
+    if st:
+        end, tail = m.end + st.end(), tail[st.end() :]
+    else:
+        end = m.end
+    if not tail.strip() or not _TERM_HEAD_TAIL.match(tail):
+        return value
+    head = _strip_topic_prefix(value[: m.start])
+    out = f"{head} {value[m.start : end]}".strip()
+    return out or value

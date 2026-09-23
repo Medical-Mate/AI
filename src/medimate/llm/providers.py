@@ -128,6 +128,9 @@ class LLMExtractor:
     prompt_version: str = ""  # 비우면 계열의 PROMPT_VERSION
     # local 공급자용 요청별 JSON 스키마. None이면 MEDIMATE_LOCAL_JSON_SCHEMA 파일을 쓴다
     response_schema: dict | None = None
+    # 요청별 출력 한도(Bedrock만). None이면 8192. 사고 토큰이 한도에 드는 공급자
+    # (Anthropic·Gemini)에는 적용하지 않는다 — 작게 주면 본문이 빈다
+    max_output_tokens: int | None = None
     usage: Usage = field(default_factory=Usage)
     _client: object = field(default=None, repr=False)
 
@@ -160,16 +163,22 @@ class LLMExtractor:
         except Exception as e:  # noqa: BLE001 — 파싱 실패 자체가 채점 대상
             return RawResult(text, None, f"{type(e).__name__}: {e}", i, o)
 
-    def complete_json(self, system: str, user: str, schema: dict) -> tuple[str, int, int]:
-        """추출 프롬프트가 아닌 일반 JSON 호출(질문 후보·할 일 등). 상한·사용량 집계는 같다."""
+    def complete_json(
+        self, system: str, user: str, schema: dict, max_tokens: int | None = None
+    ) -> tuple[str, int, int]:
+        """추출 프롬프트가 아닌 일반 JSON 호출(질문 후보·할 일 등). 상한·사용량 집계는 같다.
+
+        max_tokens: 답이 짧은 호출의 출력 한도(Bedrock만). 한도는 상한이라 정상 답은 알아서 끝나고,
+        멈추지 않는 응답(Nova `\\u` 이스케이프 폭주, 8192토큰)만 여기서 끊긴다.
+        """
         if self.usage.cost_usd(self.model_id) >= self.budget_usd:
             raise BudgetExceeded(f"{self.model_id}: ${self.budget_usd} 상한 도달")
-        prev = self.response_schema
-        self.response_schema = schema
+        prev, prev_max = self.response_schema, self.max_output_tokens
+        self.response_schema, self.max_output_tokens = schema, max_tokens
         try:
             text, i, o = self._call(system, user)
         finally:
-            self.response_schema = prev
+            self.response_schema, self.max_output_tokens = prev, prev_max
         self.usage.calls += 1
         self.usage.input_tokens += i
         self.usage.output_tokens += o
@@ -244,7 +253,7 @@ class LLMExtractor:
             modelId=self.model_id,
             system=[{"text": system}],
             messages=[{"role": "user", "content": [{"text": user}]}],
-            inferenceConfig={"maxTokens": 8192, "temperature": 0},
+            inferenceConfig={"maxTokens": self.max_output_tokens or 8192, "temperature": 0},
             **kwargs,
         )
         text = "".join(b["text"] for b in r["output"]["message"]["content"] if "text" in b)

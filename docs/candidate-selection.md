@@ -292,8 +292,9 @@ soft hyphen·따옴표·대괄호 제거 → chatnorm 표기 정규화(`안 낫�
 | Codex 3라운드(미접촉) 35조각 | 29% | 31% | **63%** |
 | 정상 103조각 | 98%(시트 보고 만든 규칙) | — | 76% |
 
-검증기는 25를 거절해 23을 살렸고 gold를 버린 것은 0. 통과했지만 틀린 41 중 창작 2, 나머지는 값 모양·NONE 남발. 다음은 cascade(모델 NONE → rule)와
-findings 용어 후처리 — 둘 다 호출 0, 저장 결과로 잰다.
+검증기는 25를 거절해 23을 살렸고 gold를 버린 것은 0. 통과했지만 틀린 41 중 창작 2, 나머지는 값 모양·NONE 남발.
+호출 0으로 잰 둘: cascade(모델 NONE → rule) +2. **findings 용어 후처리**(`canon.term_only`, 용어가 머리인 서술문 → 용어만) **+7**, 전체 75→79%,
+정상 76→81%, 되돌린 정답 0(RESULTS.md "findings 용어 후처리"). r3는 그대로 63% — 남은 r3 오답은 용어 없는 서술문이다.
 
 ### 10.5 운영 연결(방향)
 `MEDIMATE_SPAN_SELECT=gen`이면 memo 요청의 값 추출이 이 경로를 탄다. 호출 1회/조각 추가(Nova $0.003). dropped는 Langfuse generation metadata에.

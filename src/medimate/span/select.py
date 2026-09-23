@@ -52,10 +52,14 @@ class RuleSelector:
 
     def select(self, cset: CandidateSet, axis: str, context: dict | None = None) -> Selection:
         from medimate.span.canon import reassurance
+        from medimate.span.verify import drops_negation
 
         seg = cset.segment
-        subs = [c for c in cset.candidates if not c.derived]
-        canon = [c for c in cset.candidates if "canon" in c.kinds]
+        # 부정이 걸린 절에서 부정만 빼고 가져온 후보는 고르지 않는다(2026-09-23 부정 정의).
+        # `중이염은 아니고 귀지 때문`에서 `중이염`은 뜻이 뒤집힌 값이다
+        keep = [c for c in cset.candidates if not drops_negation(c.text, seg)]
+        subs = [c for c in keep if not c.derived]
+        canon = [c for c in keep if "canon" in c.kinds]
         pick: Candidate | None = None
 
         if axis == "findings":
@@ -244,7 +248,7 @@ def _longest_containing(
 def _earliest_containing(
     cands: list[Candidate], inner_kind: str, outer_kinds: tuple[str, ...]
 ) -> Candidate | None:
-    """가장 **먼저 나오는** inner를 품는 후보 중 긴 것 — `중이염은 아니고 귀지 때문`은 중이염."""
+    """가장 **먼저 나오는** inner를 품는 후보 중 긴 것 — `위염 초기라고`는 위염 초기."""
     inners = sorted((c for c in cands if inner_kind in c.kinds), key=lambda c: c.start)
     if not inners:
         return None
