@@ -138,7 +138,8 @@ def main() -> None:
         gen = ValueGenerator(args.provider, args.model, budget_usd=args.budget)
         # 시트를 골랐으면 이름을 붙인다 — 전체 결과 파일을 덮어쓰지 않게
         suffix = "".join(f"-{n}" for n, _, _ in SHEETS if n in only) + (f"-first{args.limit}" if args.limit else "")
-        out = RESULTS / f"valgen-{args.model.replace(':', '_')}{suffix}.jsonl"
+        # v3부터 프롬프트 버전을 파일 이름에 — v2 결과(`valgen-<model>.jsonl`)를 덮지 않게
+        out = RESULTS / f"valgen-{args.model.replace(':', '_')}-{PROMPT_VERSION}{suffix}.jsonl"
         out.parent.mkdir(parents=True, exist_ok=True)
         rows = []
         with out.open("w", encoding="utf-8") as f:
