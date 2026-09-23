@@ -1,6 +1,6 @@
 """값 생성기 — LLM이 값을 쓰고, 검증기가 확인하고, 실패하면 폴백(rule)한다(#122 B안).
 
-프롬프트는 llm/prompt_value_gen.py(`value-gen-v3`), 검증기는 span/verify.py.
+프롬프트는 llm/prompt_value_gen.py(`value-gen-v2`), 검증기는 span/verify.py.
 
 호출자에게 돌아가는 값은 세 가지 중 하나다:
 - `generated`  모델이 쓴 값이 검증을 통과
