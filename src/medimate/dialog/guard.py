@@ -47,6 +47,10 @@ class GuardConfig:
     # filled를 ambiguous로 바꿔 엔진이 되묻게 한다(CLARIFY). 2026-09-22: "퍼지나요?"의 ㅇㅇ를
     # Nova가 프롬프트 둘·표기 둘(응·네)에서 모두 `안 퍼짐`으로 냈다. 부정을 카드에 넣는 길을
     # 프롬프트가 아니라 여기서 닫는다
+    # 2026-09-25: filled만 바꿔서는 부족했다. "같이 나타나는 증상 있나요?"의 ㅇㅇ에
+    # 모델이 칸을 **비우자** 엔진이 skipped로 닫고 넘어갔고, 웹 카드에 "잘 모르겠어요"가
+    # 찍혔다(운영 시연에서 확인 — "네"가 "모름"이 됐다). 이제 물은 축은 모델이 채웠든
+    # 비웠든 unknown/skipped로 냈든 ambiguous다
     bare_affirmative_asks_back: bool = True
 
     @classmethod
@@ -135,8 +139,9 @@ def guard_extraction(
             if bad:
                 reason = f"number_not_in_utterance:{','.join(bad)}"
         if reason is None:
-            if bare_affirm and u.axis == asked_axis and u.status == FieldStatus.FILLED:
-                # 값은 버리고 축은 살린다 — 엔진이 되묻는다. 무엇을 버렸는지는 dropped에 남긴다
+            if bare_affirm and u.axis == asked_axis and u.status != FieldStatus.AMBIGUOUS:
+                # 값은 버리고 축은 살린다 — 엔진이 되묻는다. 무엇을 버렸는지는 dropped에 남긴다.
+                # filled뿐 아니라 unknown·skipped도 — "네"는 "모름"도 "건너뜀"도 아니다
                 dropped.append(
                     {
                         "axis": u.axis.value,
@@ -157,6 +162,25 @@ def guard_extraction(
         if reason == "not_asked_axis" and in_utt(u.evidence):
             if u.evidence not in notes:
                 notes.append(u.evidence)
+
+    # 모델이 물은 축을 비웠어도(또는 다른 규칙이 버렸어도) 짧은 긍정이면 되물음을 넣는다.
+    # 없으면 엔진이 skipped로 닫고 넘어가 카드에 "잘 모르겠어요"가 찍힌다(2026-09-25 운영 확인).
+    # 근거는 원문 그대로. 되물은 뒤에도 또 짧은 긍정이면 엔진이 그때는 skipped로 닫는다
+    # (한 번만 되묻기)
+    if bare_affirm and not any(u.axis == asked_axis for u in kept):
+        kept.append(
+            AxisUpdate(
+                axis=asked_axis, status=FieldStatus.AMBIGUOUS, value=None, evidence=utterance
+            )
+        )
+        dropped.append(
+            {
+                "axis": getattr(asked_axis, "value", asked_axis),
+                "reason": "bare_affirmative_asks_back",
+                "value": None,
+                "evidence": utterance,
+            }
+        )
 
     # chief_complaint에도 숫자 규칙을 적용한다 (첫 발화 요약에 숫자를 만들어 넣는 것 방지)
     cc = ext.chief_complaint
