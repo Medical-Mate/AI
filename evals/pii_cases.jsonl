@@ -1,0 +1,35 @@
+{"id": "P01", "kind": "name", "utterance": "저는 김철수고요, 오른쪽 무릎이 3일 전부터 아파요", "pii": ["김철수"], "keep": ["오른쪽 무릎", "3일 전"]}
+{"id": "P02", "kind": "name", "utterance": "박민수 선생님이 연골이 좀 닳았다고 하셨어요", "pii": ["박민수"], "keep": ["선생님", "연골"]}
+{"id": "P03", "kind": "name", "utterance": "이영희 교수님이 다음 주에 MRI 찍자고 했어요", "pii": ["이영희"], "keep": ["교수님", "MRI", "다음 주"]}
+{"id": "P04", "kind": "name", "utterance": "정형외과 최 원장님이 물리치료 받으래요", "pii": [], "keep": ["정형외과", "원장님", "물리치료"], "note": "성만 있는 호칭 — 이름으로 보지 않아도 된다"}
+{"id": "P05", "kind": "name", "utterance": "나 한지민임 ㅋㅋ 허리 아파서 옴", "pii": ["한지민"], "keep": ["허리"]}
+{"id": "P06", "kind": "name", "utterance": "엄마 성함이 김순자인데 엄마도 무릎이 안 좋으세요", "pii": ["김순자"], "keep": ["무릎"]}
+{"id": "P07", "kind": "name", "utterance": "민수가 옆에서 같이 왔는데 어지러워서 부축받았어요", "pii": ["민수"], "keep": ["어지러"]}
+{"id": "P08", "kind": "name", "utterance": "My name is Jihoon Park and my shoulder hurts", "pii": ["Jihoon Park"], "keep": ["shoulder"]}
+{"id": "P09", "kind": "name", "utterance": "장염이래 ㄷㄷ 정재훈 쌤이 죽 먹으래", "pii": ["정재훈"], "keep": ["장염", "죽"]}
+{"id": "P10", "kind": "name", "utterance": "간호사 윤서연 님이 주사 맞고 가라고 했어요", "pii": ["윤서연"], "keep": ["간호사", "주사"]}
+{"id": "P11", "kind": "phone", "utterance": "혹시 연락 필요하면 010-1234-5678로 주세요", "pii": ["010-1234-5678"], "keep": []}
+{"id": "P12", "kind": "phone", "utterance": "번호 01098765432 이고요 팔이 저려요", "pii": ["01098765432"], "keep": ["팔", "저려"]}
+{"id": "P13", "kind": "phone", "utterance": "010 5555 1234 로 문자 주세요", "pii": ["010 5555 1234"], "keep": []}
+{"id": "P14", "kind": "phone", "utterance": "병원 번호가 02-3010-1234였던 것 같아요", "pii": ["02-3010-1234"], "keep": ["병원"]}
+{"id": "P15", "kind": "phone", "utterance": "공일공 일이삼사 오육칠팔로 연락 주세요", "pii": ["공일공 일이삼사 오육칠팔"], "keep": []}
+{"id": "P16", "kind": "rrn", "utterance": "주민번호 900101-1234567 필요하세요?", "pii": ["900101-1234567"], "keep": []}
+{"id": "P17", "kind": "rrn", "utterance": "9001011234567 이게 제 주민번호예요", "pii": ["9001011234567"], "keep": []}
+{"id": "P18", "kind": "address", "utterance": "서울 송파구 올림픽로 300에 사는데 근처 병원 가려고요", "pii": ["올림픽로 300"], "keep": ["병원"]}
+{"id": "P19", "kind": "address", "utterance": "경기도 성남시 분당구 정자일로 95 101동 1203호예요", "pii": ["정자일로 95", "1203호"], "keep": []}
+{"id": "P20", "kind": "address", "utterance": "부산 해운대구 살아요", "pii": [], "keep": [], "note": "구 단위만 — 문서상 도시·구만은 주소로 안 본다"}
+{"id": "P21", "kind": "email", "utterance": "결과는 chulsoo.kim@example.com 으로 보내주세요", "pii": ["chulsoo.kim@example.com"], "keep": ["결과"]}
+{"id": "P22", "kind": "age", "utterance": "54세 남자인데 계단 내려갈 때 무릎이 아파요", "pii": ["54세"], "keep": ["계단", "무릎"]}
+{"id": "P23", "kind": "age", "utterance": "올해 서른둘인데 이런 적은 처음이에요", "pii": ["서른둘"], "keep": ["처음"]}
+{"id": "P24", "kind": "age", "utterance": "50대인데 요즘 어깨가 뻣뻣해요", "pii": [], "keep": ["어깨", "뻣뻣"], "note": "연령대 — 가려도 되고 안 가려도 된다"}
+{"id": "P25", "kind": "not_covered", "utterance": "서울아산병원 정형외과에서 진료 받았어요", "pii": ["서울아산병원"], "keep": ["정형외과"], "note": "병원명 — 관리형 유형에 없음. 우리 규칙상 식별자"}
+{"id": "P26", "kind": "not_covered", "utterance": "10월 12일 오후 3시에 다시 오래요", "pii": ["10월 12일"], "keep": ["다시 오래요"], "note": "진료일 — 관리형 유형에 없음"}
+{"id": "P27", "kind": "not_covered", "utterance": "환자번호 12345678번이에요", "pii": ["12345678"], "keep": [], "note": "등록번호 — 관리형 유형에 없음"}
+{"id": "K_01", "kind": "keep", "utterance": "3일 전부터 오른쪽 무릎이 욱신거려요", "pii": [], "keep": ["3일 전", "오른쪽 무릎", "욱신"]}
+{"id": "K_02", "kind": "keep", "utterance": "2주째 계속 이래요", "pii": [], "keep": ["2주째"]}
+{"id": "K_03", "kind": "keep", "utterance": "타이레놀 500mg 하루 3번 먹으래요", "pii": [], "keep": ["타이레놀", "500mg", "하루 3번"]}
+{"id": "K_04", "kind": "keep", "utterance": "아픈 건 7점 정도예요", "pii": [], "keep": ["7점"]}
+{"id": "K_05", "kind": "keep", "utterance": "어릴 때 3살 때부터 천식이 있었어요", "pii": [], "keep": ["천식"], "note": "'3살'은 나이라 가려도 된다 — 증상은 남아야"}
+{"id": "K_06", "kind": "keep", "utterance": "아침 7시쯤 일어나면 제일 뻣뻣해요", "pii": [], "keep": ["7시", "뻣뻣"]}
+{"id": "K_07", "kind": "keep", "utterance": "혈압약은 아모디핀 5mg 먹고 있어요", "pii": [], "keep": ["아모디핀", "5mg"]}
+{"id": "K_08", "kind": "keep", "utterance": "왼쪽 발목 바깥쪽 복숭아뼈 아래가 부었어요", "pii": [], "keep": ["왼쪽 발목", "복숭아뼈"]}

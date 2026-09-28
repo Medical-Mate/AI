@@ -26,7 +26,27 @@ LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY / LANGFUSE_BASE_URL   # 없으면 트�
 MEDIMATE_TRACING=off        # 키가 있어도 끈다
 MEDIMATE_TRACE_CONTENT=on   # 입력·출력 본문을 보낸다. 기본은 가림(길이만)
 MEDIMATE_ENV=eval|prod      # Langfuse environment. 기본 local
+MEDIMATE_TRACE_PII_GUARDRAIL=<id>          # 본문을 보낼 때 이름·주소·나이까지 가린다. 없으면 정규식만
+MEDIMATE_TRACE_PII_GUARDRAIL_VERSION=1     # 기본 DRAFT
+MEDIMATE_TRACE_PII=off      # 가림을 끈다(우리 케이스만 보내는 eval에서)
 ```
+
+## 본문을 보낼 때의 식별자 가림 (2026-09-28)
+
+`MEDIMATE_TRACE_CONTENT=on`이면 트레이스에 실리기 전에 식별자를 `{NAME}` `{PHONE}`처럼 바꾼다(`obs/pii.py`).
+**트레이스에만 쓴다.** 카드·모델 입력은 원문 그대로다 — 근거는 원문이어야 하고, Guardrails는 한국어 낱말을
+이름으로 봐서 증상어를 깬다(`욱신` → `{NAME}신`). 트레이스에서 그만큼 잃는 것은 감수한다.
+
+| 층 | 무엇을 | 비용 |
+|---|---|---|
+| 정규식(항상) | 전화(휴대폰·일반) · 주민번호 · 이메일 · 병원명(`…병원/의원`, 붙여 쓴 것) · 진료일(`N월 N일`) · 등록번호 | 0 |
+| Guardrails `medimate-trace-pii` v1 | 이름 · 주소 · 나이 — **교차 리전 없음, 서울에서 처리** | 호출당 약 $0.0001 |
+
+- 탐지는 시스템 프롬프트를 뺀 사용자 메시지만 넘긴다. 찾은 원문 조각(match)으로 입력·출력·근거의 같은 문자열을 전부 바꾼다
+- **Langfuse `mask`는 동기다.** 그래서 generation 입력을 시작이 아니라 `done()` 때 싣고, 탐지는 LLM 호출과 겹치게 먼저 건다.
+  탐지(p50 98ms)가 Nova(0.7초)보다 먼저 끝나 보통 기다리지 않는다. 1.5초 넘게 안 오거나 실패하면 그 호출은 **길이만** 남긴다
+- 실측(`evals/pii_cases.jsonl` 35 + 정상 86): **PII 23/25 · 증상 보존 43/45 · 정상 과잉 가림 2/86**. 놓치는 것: 한글로 읽은 전화번호, `서른둘`
+- 켜졌는지는 `/health.tracing.pii`: `"guardrails"` · `"regex"`(가드레일 id 없음 — 이름이 그대로 나간다) · `null`(본문 안 보냄)
 
 ## 본문 가림 — 왜 기본이 가림인가
 

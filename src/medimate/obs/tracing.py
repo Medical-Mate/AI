@@ -11,6 +11,9 @@
   호스트가 us.cloud.langfuse.com이라 환자 발화가 국외로 나간다(#111 국외 이전 안내, #113 동의).
   eval 러너는 우리가 만든 케이스라 켠다. 운영 API는 동의 논의 전까지 끈 채로 토큰·지연·버전만 남긴다
 - MEDIMATE_ENV — Langfuse environment 태그(eval / prod). 기본 "local"
+- 본문을 보낼 때는 식별자를 가린다(`obs/pii.py`, 2026-09-28). generation 입력은 시작이 아니라
+  `done()` 때 싣는다 — Langfuse `mask`는 호출 스레드에서 **동기로** 돌아서, 거기서 Guardrails를
+  부르면 LLM 호출마다 지연이 붙는다. 탐지는 Nova 호출과 겹치게 먼저 걸어 두고 끝날 때 받는다
 
 지키는 선: request_id·session_id는 트레이스에 실리지만 프롬프트에는 들어가지 않는다(기존 규칙).
 user_id는 쓰지 않는다 — 개인 식별자를 밖으로 보내지 않는다. 필요하면 세션 단위까지만.
@@ -23,6 +26,8 @@ import logging
 import os
 from collections.abc import Iterator
 from typing import Any
+
+from medimate.obs import pii
 
 logger = logging.getLogger("medimate.obs")
 
@@ -40,17 +45,28 @@ def content_allowed() -> bool:
     return os.getenv("MEDIMATE_TRACE_CONTENT", "").strip().lower() in ("1", "true", "yes", "on")
 
 
-def _mask(*, data: Any, **_: Any) -> Any:
-    """본문 가림. 문자열은 길이만, dict·list는 재귀. `MEDIMATE_TRACE_CONTENT=on`이면 그대로."""
-    if content_allowed():
-        return data
+def _length_only(data: Any) -> Any:
+    """문자열은 길이만, dict·list는 재귀."""
     if isinstance(data, str):
         return f"<masked {len(data)} chars>"
     if isinstance(data, dict):
-        return {k: _mask(data=v) for k, v in data.items()}
+        return {k: _length_only(v) for k, v in data.items()}
     if isinstance(data, list):
-        return [_mask(data=v) for v in data]
+        return [_length_only(v) for v in data]
     return data
+
+
+def _mask(*, data: Any, **_: Any) -> Any:
+    """SDK 훅. 본문 수집이 꺼져 있으면 길이만. 켜져 있으면 정규식 가림(호출 0) — Guardrails
+    조각 치환은 `_Gen.done()`이 먼저 해 두고, 여기는 빠진 자리를 막는 안전망이다."""
+    if not content_allowed():
+        return _length_only(data)
+    return pii.scrub(data, []) if pii.enabled() else data
+
+
+# 탐지 결과를 generation 끝에서 얼마나 기다리나. Nova 호출(중앙값 0.7초)보다 탐지(p50 146ms)가
+# 먼저 끝나므로 보통은 기다리지 않는다. 넘기면 그 generation은 길이만 남긴다
+PII_WAIT_S = 1.5
 
 
 def client():
@@ -83,11 +99,15 @@ def status() -> dict[str, Any]:
     - `content`: **본문이 실제로 나가는가**. 스위치(`MEDIMATE_TRACE_CONTENT`)가 켜져 있어도
       트레이싱이 꺼져 있으면 false. 국외 이전 안내(#111)와 맞는지 밖에서 보는 유일한 신호다
     - `env`·`host`: 어느 Langfuse 환경·주소로 가는가. 비밀이 아니다
+    - `pii`: 본문을 보낼 때 식별자 가림 — "guardrails"(이름·주소·나이까지) · "regex"(전화·주민번호
+      등만) · null(본문을 안 보내거나 가림을 끔)
     """
     on = client() is not None
+    sending = on and content_allowed()
     return {
         "enabled": on,
-        "content": on and content_allowed(),
+        "content": sending,
+        "pii": pii.mode() if sending else None,
         "env": os.getenv("MEDIMATE_ENV", "local") if on else None,
         "host": (os.getenv("LANGFUSE_BASE_URL") or None) if on else None,
     }
@@ -101,8 +121,11 @@ def reset_for_tests() -> None:
 class _Gen:
     """generation 핸들. `done()`으로 출력·토큰·비용을 채운다. 클라이언트가 없으면 무동작."""
 
-    def __init__(self, span):
+    def __init__(self, span, pending_input: Any = None, detection=None, deferred=False):
         self._span = span
+        self._pending = pending_input
+        self._detection = detection  # Future[list[(유형, 조각)]] 또는 None(정규식만)
+        self._deferred = deferred
 
     def done(
         self,
@@ -123,6 +146,16 @@ class _Gen:
         if output_tokens is not None:
             usage["output"] = output_tokens
         kw: dict[str, Any] = {"output": output}
+        if self._deferred:
+            try:
+                matches = self._detection.result(timeout=PII_WAIT_S) if self._detection else []
+                kw["input"] = pii.scrub(self._pending, matches)
+                kw["output"] = pii.scrub(output, matches)
+            except Exception as e:  # noqa: BLE001 — 가림 실패는 원문이 아니라 전부 가림으로
+                logger.warning("PII 탐지 실패, 이 호출은 길이만 남깁니다: %s", type(e).__name__)
+                kw["input"] = _length_only(self._pending)
+                kw["output"] = _length_only(output)
+                metadata = {**(metadata or {}), "pii": "failed"}
         if usage:
             kw["usage_details"] = usage
         if cost_usd is not None:
@@ -153,12 +186,20 @@ def generation(
     if lf is None:
         yield _Gen(None)
         return
+    # 본문을 보내면 입력은 done() 때 가려서 싣는다. 탐지는 지금 걸어 LLM 호출과 겹친다
+    deferred = content_allowed() and pii.enabled()
+    detection = None
+    if deferred and pii.guardrail_id():
+        try:
+            detection = pii.detect_async(pii.user_texts(input))
+        except Exception as e:  # noqa: BLE001
+            logger.warning("PII 탐지 시작 실패: %s", type(e).__name__)
     try:
         cm = lf.start_as_current_observation(
             as_type="generation",
             name=name,
             model=model,
-            input=input,
+            input=None if deferred else input,
             metadata=metadata,
             version=version,
         )
@@ -167,7 +208,7 @@ def generation(
         yield _Gen(None)
         return
     with cm as span:
-        yield _Gen(span)
+        yield _Gen(span, pending_input=input, detection=detection, deferred=deferred)
 
 
 @contextlib.contextmanager

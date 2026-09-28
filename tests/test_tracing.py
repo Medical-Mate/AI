@@ -108,7 +108,13 @@ def test_llm_extractor_call_goes_through_tracing(monkeypatch):
 
 def test_status_is_all_off_without_keys(monkeypatch):
     monkeypatch.setenv("MEDIMATE_TRACE_CONTENT", "on")  # 스위치만 켜도
-    assert tracing.status() == {"enabled": False, "content": False, "env": None, "host": None}
+    assert tracing.status() == {
+        "enabled": False,
+        "content": False,
+        "pii": None,
+        "env": None,
+        "host": None,
+    }
 
 
 def test_status_reports_content_only_when_actually_sent(monkeypatch):
@@ -121,6 +127,7 @@ def test_status_reports_content_only_when_actually_sent(monkeypatch):
     assert tracing.status() == {
         "enabled": True,
         "content": False,
+        "pii": None,
         "env": "prod",
         "host": "https://us.cloud.langfuse.com",
     }
@@ -134,4 +141,10 @@ def test_health_carries_tracing_status():
     from medimate.api.app import create_app
 
     body = TestClient(create_app()).get("/health").json()
-    assert body["tracing"] == {"enabled": False, "content": False, "env": None, "host": None}
+    assert body["tracing"] == {
+        "enabled": False,
+        "content": False,
+        "pii": None,
+        "env": None,
+        "host": None,
+    }
