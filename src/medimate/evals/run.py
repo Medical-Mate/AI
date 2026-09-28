@@ -280,9 +280,14 @@ def main() -> None:
         help="가드에 채팅 표기 복원문을 준다(MEDIMATE_CHAT_NORMALIZE=on과 같음, #117). --guard와",
     )
     ap.add_argument("--category", help="이 카테고리만(쉼표 구분). 예: chat_abbrev,chat_casual")
+    ap.add_argument(
+        "--case-file",
+        type=Path,
+        help="케이스 파일(기본 evals/cases.jsonl). 인젝션 세트처럼 따로 둔 세트를 돌릴 때",
+    )
     a = ap.parse_args()
 
-    cases = load_cases()
+    cases = load_cases(a.case_file) if a.case_file else load_cases()
     if a.category:
         cats = {x.strip() for x in a.category.split(",") if x.strip()}
         cases = [c for c in cases if c["category"] in cats]
