@@ -120,3 +120,46 @@ def test_bare_negative_is_still_a_value():
     ext = TurnExtraction(updates=[up(Axis.RADIATION, "안 퍼짐", "ㄴㄴ")])
     g = guard_extraction(ext, "ㄴㄴ", Axis.RADIATION, normalized=normalize("ㄴㄴ").text)
     assert g.extraction.updates[0].status == FieldStatus.FILLED
+
+
+@pytest.mark.parametrize(
+    "ext",
+    [
+        TurnExtraction(),  # 모델이 칸을 비움 — 2026-09-25 운영 시연에서 실제로 난 경우
+        TurnExtraction(updates=[up(Axis.ASSOCIATED, None, "ㅇㅇ", status=FieldStatus.UNKNOWN)]),
+        TurnExtraction(updates=[up(Axis.ASSOCIATED, None, "ㅇㅇ", status=FieldStatus.SKIPPED)]),
+    ],
+    ids=["empty", "unknown", "skipped"],
+)
+def test_bare_affirmative_asks_back_even_when_the_model_leaves_the_axis_empty(ext):
+    # "같이 나타나는 증상 있나요?" → ㅇㅇ. 모델이 비우거나 "모름"으로 내도 "네"는 되물을 신호다
+    g = guard_extraction(ext, "ㅇㅇ", Axis.ASSOCIATED, normalized=normalize("ㅇㅇ").text)
+    ups = [u for u in g.extraction.updates if u.axis == Axis.ASSOCIATED]
+    assert len(ups) == 1
+    assert (
+        ups[0].status == FieldStatus.AMBIGUOUS
+        and ups[0].value is None
+        and ups[0].evidence == "ㅇㅇ"
+    )
+    assert any(d["reason"] == "bare_affirmative_asks_back" for d in g.dropped)
+
+
+def test_bare_affirmative_asks_back_once_then_moves_on():
+    # 엔진 끝까지: ㅇㅇ → 되묻기 문장, 또 ㅇㅇ → 건너뜀으로 닫고 넘어감(같은 걸 두 번 되묻지 않는다)
+    from medimate.dialog.engine import Session
+    from medimate.dialog.questions import CLARIFY
+    from tests.fakes import ScriptedExtractor
+
+    s = Session(ScriptedExtractor([TurnExtraction(), TurnExtraction()]))
+    s.asked_axis = Axis.ASSOCIATED
+    assert s.step("ㅇㅇ") == CLARIFY[Axis.ASSOCIATED]
+    assert s.card.axes[Axis.ASSOCIATED].status == FieldStatus.AMBIGUOUS
+    reply = s.step("ㅇㅇ")
+    assert reply != CLARIFY[Axis.ASSOCIATED]
+    assert s.card.axes[Axis.ASSOCIATED].status == FieldStatus.SKIPPED
+
+
+def test_bare_affirmative_on_other_axis_is_not_injected():
+    # 물은 축이 없으면(첫 턴) 아무것도 넣지 않는다
+    g = guard_extraction(TurnExtraction(), "네", None)
+    assert g.extraction.updates == []
