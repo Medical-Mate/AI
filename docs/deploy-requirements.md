@@ -129,6 +129,9 @@ MEDIMATE_CORS_ORIGINS=         # 웹이 우리를 직접 부를 때만. 쉼표 �
   `MEDIMATE_TRACE_CONTENT`(`on`이면 **본문이 Langfuse 호스트로 나간다** — 국외 이전 안내 #111과 함께), `MEDIMATE_TRACING=off`(끔).
   `.env`와 compose `environment:` **양쪽에**. 켜졌는지는 `/health.tracing: {enabled, content, env, host}` —
   `enabled`는 클라이언트가 실제로 만들어졌는지, `content`는 본문이 실제로 나가는지다(스위치만 켜고 키가 없으면 false)
+- **트레이스 식별자 가림** — `MEDIMATE_TRACE_PII_GUARDRAIL`(가드레일 id) · `MEDIMATE_TRACE_PII_GUARDRAIL_VERSION`(`1`).
+  본문을 보낼 때 이름·주소·나이를 가린다. 없으면 정규식만(이름이 그대로 나간다). `/health.tracing.pii`가 `"guardrails"`인지 본다.
+  IAM에 아래 `bedrock:ApplyGuardrail` 문장이 있어야 한다 — 없으면 탐지가 실패해 그 트레이스는 길이만 남는다(원문은 안 샌다)
 
 ## IAM 정책 — 서울 ARN만 넣으면 깨진다
 
@@ -151,6 +154,16 @@ MEDIMATE_CORS_ORIGINS=         # 웹이 우리를 직접 부를 때만. 쉼표 �
       "arn:aws:bedrock:ap-south-1::foundation-model/amazon.nova-pro-v1:0"
     ]
   }]
+}
+```
+
+트레이스 식별자 가림(2026-09-28)을 쓰면 문장 하나를 더한다. 가드레일은 교차 리전 없이 만들었으므로 서울 ARN 하나면 된다.
+
+```json
+{
+  "Effect": "Allow",
+  "Action": ["bedrock:ApplyGuardrail"],
+  "Resource": ["arn:aws:bedrock:ap-northeast-2:<AWS_ACCOUNT_ID>:guardrail/<GUARDRAIL_ID>"]
 }
 ```
 
