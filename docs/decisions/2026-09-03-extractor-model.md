@@ -3,6 +3,11 @@
 - 날짜: 2026-09-03
 - 작성: AI 담당
 - 상태: **결정** — GPT-5.6 Terra 1차 채택, Claude Sonnet 5 동등 대안
+- **갱신 (2026-09-30 기록): 운영 모델은 2026-09-11부터 AWS Bedrock `apac.amazon.nova-pro-v1:0`(Nova Pro)이다.**
+  운영을 AWS(Lightsail + Bedrock)에 두기로 했고, Terra·Sonnet은 Bedrock 카탈로그에 있어도 신규 계정 등급으로 호출이 막혔다.
+  질문 후보 비교에서 Nova Pro가 Terra보다 나은 수치를 냈다(`docs/deploy-requirements.md` "모델 — Nova Pro").
+  추출은 Nova 전용 프롬프트 `extract-v4-nova`(9/14) → `extract-v5-nova`(9/22)로 맞췄다(`evals/RESULTS.md`).
+  **이 문서의 Terra·Sonnet 수치는 지금 비교 기준으로만 쓴다.** 운영에 자동 폴백으로 붙어 있지 않다
 - 관련: `evals/RESULTS.md`, `evals/precondition-sheet.md`, `evals/cases.jsonl`
 
 ---

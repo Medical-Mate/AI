@@ -1,10 +1,12 @@
 # AI 서버 배포 요구사항
 
 2026-09-11 갱신. 배포 구성이 확정된 뒤의 최종본이다. 관련 이슈 #7, 백엔드 PR #45.
+이후 부분 갱신: 추출 프롬프트 `extract-v5-nova`(2026-09-22), 트레이싱·본문 식별자 가림(2026-09-28).
 
 ## 한 줄
 
-**컨테이너 하나, 1 vCPU · 512MB~1GB, GPU 없음, 세션 무상태.** 외부 호출은 Bedrock 하나뿐이다.
+**컨테이너 하나, 1 vCPU · 512MB~1GB, GPU 없음, 세션 무상태.** 외부 호출은 Bedrock(모델 호출, 트레이스 식별자 탐지)과
+Langfuse(트레이싱 — 키가 있을 때만, [`observability.md`](./observability.md))다.
 
 ## 확정된 구성
 
@@ -225,6 +227,9 @@ MEDIMATE_CORS_ORIGINS=         # 웹이 우리를 직접 부를 때만. 쉼표 �
 
 **어떻게 쟀나**: 저장된 eval 원본(88호출)의 토큰 수에 가격표를 곱했다. 재호출 없이
 `--report`로 다시 계산할 수 있다.
+
+> **갱신(2026-09-22)**: 운영 프롬프트는 이제 `extract-v5-nova`다(v4 + 채팅 표기 참고 한 줄). 호출당 $0.0027 → $0.0030(+11%,
+> `evals/RESULTS.md` "문답 날것 발화 · extract-v5-nova"). 아래 표와 세션 비용은 v4 실측 그대로다.
 
 운영은 **`extract-v4-nova`**로 돈다(Nova 전용 프롬프트. 모델 id로 고른다 —
 `providers.prompt_family_for`. 카드의 `provenance.prompt_version`에 그 이름이 찍힌다).
