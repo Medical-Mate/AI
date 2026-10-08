@@ -249,6 +249,12 @@ _Q_SYSTEM_V8 = (
     )
 )
 
+# v8-noex (2026-10-08, 온디바이스 실험): v8에서 **끝의 예시 카드 하나만** 뺀다.
+# Qwen3-1.7B로 v8을 돌리자 예시 카드의 "이사하고 나서"를 이사 얘기가 없는 카드 59장(64항목)에
+# 끼워 넣었다 — 환자가 하지 않은 말이다(Nova v8은 0). 예시가 출처인지 보려고 그것만 뺀다.
+# 출력 모양은 local 공급자의 JSON 스키마(문법 제약)가 잡는다. 운영 기본(v8)은 그대로다.
+_Q_SYSTEM_V8_NOEX = _Q_SYSTEM_V8[: _Q_SYSTEM_V8.rindex("예시. 카드:")].rstrip() + "\n"
+
 QUESTIONS_PROMPTS = {
     "questions-v1": _Q_SYSTEM,
     "questions-v2": _Q_SYSTEM_V2,
@@ -258,6 +264,7 @@ QUESTIONS_PROMPTS = {
     "questions-v6": _Q_SYSTEM_V6,
     "questions-v7": _Q_SYSTEM_V7,
     "questions-v8": _Q_SYSTEM_V8,
+    "questions-v8-noex": _Q_SYSTEM_V8_NOEX,
 }
 
 
@@ -273,6 +280,8 @@ def example_texts(version: str = QUESTIONS_VERSION) -> list[str]:
     프롬프트에서 뽑아 쓰므로 예시를 바꾸면 검사도 따라 바뀐다.
     """
     sysp = questions_system(version)
+    if "예시. 카드:" not in sysp:  # 예시 없는 변형(v8-noex)
+        return []
     i = sysp.rindex('{"items"')
     return [t["text"] for t in json.loads(sysp[i:])["items"]]
 
