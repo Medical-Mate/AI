@@ -34,7 +34,8 @@ ENGINE = "llama.cpp b10819 (PC, winget) — 폰 엔진과 다른 빌드"
 def main() -> None:
     assert VERSION == "memo-small-v5", VERSION
     system = prompt_memo_small.system_prompt()
-    (OD / f"prompt-{VERSION}.system.txt").write_text(system, encoding="utf-8")
+    # 폰 자산은 LF — 윈도우 기본(CRLF)으로 쓰면 프롬프트 바이트가 달라진다
+    (OD / f"prompt-{VERSION}.system.txt").write_text(system, encoding="utf-8", newline="\n")
 
     schema = MemoLabels.keyed_schema_for(4)
     schema = {
@@ -44,14 +45,14 @@ def main() -> None:
         **schema,
     }
     (OD / f"memo_labels-{VERSION}.schema.json").write_text(
-        json.dumps(schema, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        json.dumps(schema, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n"
     )
 
     vecs = [json.loads(x) for x in VEC.read_text(encoding="utf-8").splitlines() if x.strip()]
     run = {json.loads(x)["id"]: json.loads(x) for x in RUN.read_text(encoding="utf-8").splitlines() if x.strip()}
     out = OD / f"vectors-memo-qwen3-1.7b-q4_0-{VERSION}.jsonl"
     ok = total = 0
-    with out.open("w", encoding="utf-8") as f:
+    with out.open("w", encoding="utf-8", newline="\n") as f:
         for v in vecs:
             sents = v["sentences"]
             r = run[v["id"]]
