@@ -1,0 +1,57 @@
+{
+  "$comment": "예시(N=4). 요청마다 문장 수 N에 맞춰 키 \"0\"..\"N-1\"을 전부 required로 생성한다 (src/medimate/dialog/memo.py MemoLabels.keyed_schema_for). memo-small-v5부터 라벨에 lifestyle_instructions(지침)가 있다 — v4 스키마(memo_labels.schema.json)는 그대로 둔다.",
+  "type": "object",
+  "properties": {
+    "0": {
+      "type": "string",
+      "enum": [
+        "findings",
+        "tests",
+        "medication_instructions",
+        "lifestyle_instructions",
+        "follow_up",
+        "none"
+      ]
+    },
+    "1": {
+      "type": "string",
+      "enum": [
+        "findings",
+        "tests",
+        "medication_instructions",
+        "lifestyle_instructions",
+        "follow_up",
+        "none"
+      ]
+    },
+    "2": {
+      "type": "string",
+      "enum": [
+        "findings",
+        "tests",
+        "medication_instructions",
+        "lifestyle_instructions",
+        "follow_up",
+        "none"
+      ]
+    },
+    "3": {
+      "type": "string",
+      "enum": [
+        "findings",
+        "tests",
+        "medication_instructions",
+        "lifestyle_instructions",
+        "follow_up",
+        "none"
+      ]
+    }
+  },
+  "required": [
+    "0",
+    "1",
+    "2",
+    "3"
+  ],
+  "additionalProperties": false
+}
