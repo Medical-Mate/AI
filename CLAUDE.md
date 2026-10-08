@@ -66,6 +66,59 @@ uv run python -m medimate.evals.run --provider openai --model gpt-5.6-terra  # �
 - `.env`, `evals/results/`, `*.obo`, 진료기록 원본은 커밋하지 않는다
 - ruff는 `scripts/`를 제외한다 (기존 추출 스크립트는 별도 정리)
 
+## 스택 · 평가셋 · 알려진 병목
+
+기술 결정 기록(`hyos0415/adr`)의 `jhs-decisions` 스킬이 이 절을 읽고, 이 스택에 영향을 주는 새 릴리스·모델만 골라낸다. 의존성이나 모델을 바꾸면 이 절도 같이 고친다.
+
+**지금 코드에 있는 것만** 적는다. manifest: `pyproject.toml` (+ Dockerfile). 운영 이미지는 `providers` · `api` · `obs` 그룹만 설치한다(`dev` · `nlp` 제외).
+
+### 의존성 → component
+
+| 의존성 | component |
+|---|---|
+| pydantic | schema · api · llm · dialog (환자 데이터 경로) |
+| fastapi · uvicorn | api (환자 데이터 경로) |
+| tzdata | api (일일 지출 상한의 KST 자정) |
+| boto3 | llm · obs (Bedrock 호출·트레이스 식별자 탐지, 환자 데이터 경로) · scripts |
+| langfuse | obs (트레이싱, 환자 데이터 경로 — 식별자 가림 뒤 전송) |
+| python-dotenv | api · eval (`.env` 읽기) |
+| anthropic · openai · google-genai | eval (비교 모델 어댑터. 운영 이미지에 설치되지만 운영 경로는 부르지 않음. openai는 로컬 llama-server 호출에도 씀) |
+| kiwipiepy | text · span (실험, 운영 이미지에 없음) |
+| typesafe-sdk | span (Jev 선택기, 기각된 실험, 운영 이미지에 없음) |
+| httpx | dev (fastapi TestClient) |
+| pytest · ruff | dev |
+| python (Dockerfile `python:3.12-slim`) | api |
+| uv (Dockerfile `ghcr.io/astral-sh/uv:latest`) | api (이미지 빌드·기동) |
+
+### 외부 모델·서비스
+
+| 모델·서비스 | component |
+|---|---|
+| Amazon Bedrock `apac.amazon.nova-pro-v1:0` (운영 기본 — 진료 전 추출·진료 후 메모 분류·질문 후보, 서울 apac 추론 프로파일, 환자 데이터 경로) | llm |
+| Amazon Bedrock Guardrails (운영 — 트레이스 식별자 탐지 `medimate-trace-pii`, 서울, 환자 데이터 경로) | obs |
+| Langfuse Cloud (운영·eval — US, `medical-mate-prod` · eval 프로젝트, 환자 데이터 경로 — 식별자 가림 뒤) | obs · eval |
+| Amazon Bedrock `apac.amazon.nova-lite-v1:0` · `global.anthropic.claude-haiku-4-5-20251001-v1:0` · `global.anthropic.claude-sonnet-4-6` (비교용) | eval |
+| OpenAI `gpt-5.6-terra` · `gpt-5.6-luna` (비교용) | eval |
+| Anthropic `claude-sonnet-5` · `claude-haiku-4-5-20251001` · `claude-opus-5` (비교용) | eval |
+| Google `gemini-3.5-flash` · `gemini-3.5-flash-lite` · `gemini-3.6-flash` · `gemini-3.1-pro` (비교용) | eval |
+| TypeSafe Jev `jev-1.13.0` (비교용, 기각된 실험) | span · eval |
+| Qwen3-1.7B Q4_0 — llama.cpp `llama-server` (로컬, 온디바이스 후보) | eval |
+
+### 평가셋
+
+- 진료 전 추출: `evals/cases.jsonl` 79케이스(회귀 59 · 88호출 + 채팅 20), 결정론 채점 D1~D10(`src/medimate/evals/score.py`), 전제 `evals/precondition-sheet.md`
+- 진료 후 메모: `evals/postvisit_cases.jsonl`(20) · `evals/postvisit_cases_v2.jsonl`(10), 짧은 값 `evals/span_*cases.jsonl`(처음 보는 메모 r3 · r4 포함)
+- 질문 후보: `evals/previsit_cards.jsonl` 카드 100장(`medimate.evals.run_assist`)
+- 가드레일 비교: 인젝션 `evals/injection_cases.jsonl`(25) · 식별자 `evals/pii_cases.jsonl`(35) · 정상 함정 `evals/guardrail_benign_hard.jsonl`(10)
+- 온디바이스: `evals/ondevice/`(폰 대조 벡터 · 기기 실행 결과)
+- 원본 응답 `evals/results/`는 gitignore. 기록은 `evals/RESULTS.md`
+
+### 알려진 병목
+
+- 진료 전 추출의 남은 실패는 **긴 발화에서 두 칸을 놓치는 것과 곁들인 칸**이다(L01 · L02 · XA01, v4부터 그대로 — 운영 구성 85/88)
+- 가드 빈틈: 환자가 **지시·추측한 병명**이 값에 들어간다(인젝션 K20). 옮긴 병명은 받아야 해서 둘을 가르는 규칙이 아직 없다
+- 진료 후 짧은 값은 **후보 생성이 천장**이라 처음 보는 메모에서 규칙만으로 무너진다 — 생성 + 검증기를 재고 있고 운영은 문장 원문 그대로다
+
 ## 결정 대기 (착수 근거로 쓰지 말 것)
 - 인체도 부위 단위는 2026-09-04 프로토타입(앵커 9 · 구역 25)으로 확정. 디자이너 그림이 이를 따른다. 허리·엉덩이(ANC:012) 분리 가능성만 남음
 - 국가건강정보포털 라이선스 회신, 의료인 자문 회신
