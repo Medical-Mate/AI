@@ -42,9 +42,14 @@ def test_markers_only_stay_letterless():
 
 
 def test_invented_evidence_still_dropped_with_normalized():
+    """지어낸 근거("3일 전부터")는 버린다. 다만 환자는 "모르겠다"(ㅁㄹ)고 했으므로 물은 축은
+    unknown으로 남는다(규칙 7, 2026-10-12) — 값은 없고 근거는 원문 `ㅁㄹ`이다."""
     ext = TurnExtraction(updates=[up(Axis.ONSET, "3일", "3일 전부터")])
     g = guard_extraction(ext, "ㅁㄹ", Axis.ONSET, normalized=normalize("ㅁㄹ").text)
-    assert g.extraction.updates == []
+    assert g.dropped[0]["reason"] == "evidence_not_in_utterance"
+    assert [(u.status.value, u.value, u.evidence) for u in g.extraction.updates] == [
+        ("unknown", None, "ㅁㄹ")
+    ]
 
 
 def test_v5_user_message_adds_reference_line_only_when_changed():
