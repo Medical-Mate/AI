@@ -102,3 +102,16 @@ def test_finalize_skips_template_the_model_already_said():
     assert out[0]["origin"] == "model"
     assert not any("누우면" in o["text"] for o in out[1:]), out
     assert len(out) == 3
+
+
+def test_duplicate_ignores_site_words_when_asking_the_same():
+    """PC77(2차 판독) — 부위를 붙였을 뿐 같은 것을 묻는 질문은 반복. 묻는 것이 다르면 둔다."""
+    same = [
+        {"text": "가끔 콕콕 찔리는 건 어떤 상태인가요?", "source": "character"},
+        {"text": "가슴 가운데가 콕콕 찔리는 건 어떤 상태인가요?", "source": "character"},
+    ]
+    kept, dropped = verify_items(CARDS["PC77"], same, LEX)
+    assert len(kept) == 1 and dropped[0]["reasons"] == ["duplicate"]
+    other = [same[0], {"text": "가슴 가운데가 콕콕 찔리면 다시 와야 하나요?", "source": "x"}]
+    kept, _ = verify_items(CARDS["PC77"], other, LEX)
+    assert len(kept) == 2

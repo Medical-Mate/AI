@@ -327,6 +327,7 @@ class Card:
     seg_forms: list[list[tuple[str, str]]]
     has_profile: dict[str, bool]
     derived: set[str] = field(default_factory=set)
+    site_only: set[str] = field(default_factory=set)
 
 
 def _neg(forms: list[tuple[str, str]]) -> list[str]:
@@ -382,6 +383,14 @@ def prepare_card(card: dict, kiwi=None) -> Card:
     seg_forms = [_forms(s, kiwi) for s in segs]
     content = {f for fs in seg_forms for f, _ in _content(fs)}
     text = " / ".join(segs)
+    # 부위에만 나오는 말("가슴 가운데") — 반복 판정에서 뺀다. 부위는 모든 질문의 주어라 붙였다고
+    # 다른 질문이 되지 않는다(PC77)
+    site = (card.get("axes") or {}).get("site")
+    site_only: set[str] = set()
+    if _usable(site):
+        sf = _forms(site.strip(), kiwi)
+        rest = [fs for s, fs in zip(segs, seg_forms, strict=True) if s != site.strip()]
+        site_only = {f for f, _ in _content(sf)} - {f for fs in rest for f, _ in _content(fs)}
     return Card(
         segs,
         text,
@@ -393,6 +402,7 @@ def prepare_card(card: dict, kiwi=None) -> Card:
             for k in ("medications", "conditions", "allergies")
         },
         _derived(seg_forms, kiwi),
+        site_only,
     )
 
 
@@ -512,6 +522,24 @@ def _key(text: str, card: Card, kiwi) -> set[str]:
     return {f for f, _ in _content(_forms(text, kiwi)) if _sourced(f, card)} - _GENERIC - FRAME
 
 
+# 묻는 뜻 — 재료가 같아도 묻는 것이 다르면 다른 질문이다("뜨끈뜨끈한 건 어떤 상태인가요" ↔
+# "뜨끈뜨끈한 건 언제까지 이러면 다시 와야 하나요"). 앞에서부터 처음 맞는 것
+_INTENT = [
+    ("visit", re.compile(r"다시\s*와|언제까지|병원에")),
+    ("related", re.compile(r"관련|원인|같은\s*증상")),
+    ("action", re.compile(r"어떻게\s*(?:하|해)|조심|피해야|쉬어야|해도\s*되|먹어도|써도|지켜봐도")),
+    ("state", re.compile(r"상태|걱정|괜찮|심각|이상한|문제가?\s*되|어때|정상|위험")),
+]
+
+
+def _intent(text: str) -> str | None:
+    return next((name for name, rx in _INTENT if rx.search(text)), None)
+
+
+def _same(a: set[str], b: set[str]) -> bool:
+    return bool(a) and bool(b) and len(a & b) / len(a | b) >= 0.6
+
+
 def verify_items(
     card: dict, items: list[dict] | None, lexicon: list[str] | None = None, kiwi=None
 ) -> tuple[list[dict], list[dict]]:
@@ -521,6 +549,9 @@ def verify_items(
     kept: list[dict] = []
     dropped: list[dict] = []
     keys: list[set[str]] = []
+    # 부위 말을 뺀 재료와 묻는 뜻 — 둘 다 같으면 반복이다(PC77 "가끔 콕콕 찔리는 건 어떤
+    # 상태인가요" ↔ "가슴 가운데가 콕콕 찔리는 건 어떤 상태인가요")
+    seen: list[tuple[set[str], str]] = []
     n_why = 0
     for it in items or []:
         text = str(it.get("text") or "")
@@ -530,12 +561,16 @@ def verify_items(
             k = _key(text, c, kiwi)
             if not k:
                 reasons.append("no_card_content")
-            elif any(len(k & p) / len(k | p) >= 0.6 for p in keys if p):
+            elif any(_same(k, p) for p in keys) or (
+                (i := _intent(text)) and any(_same(k - c.site_only, p) and i == j for p, j in seen)
+            ):
                 reasons.append("duplicate")
             elif _WHY.search(text) and n_why >= 1:
                 reasons.append("why_repeat")
             else:
                 keys.append(k)
+                if i := _intent(text):
+                    seen.append((k - c.site_only, i))
                 n_why += bool(_WHY.search(text))
         if reasons:
             dropped.append({**it, "reasons": reasons})
