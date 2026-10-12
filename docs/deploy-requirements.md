@@ -108,6 +108,7 @@ MEDIMATE_DAILY_BUDGET_USD=     # 웹 데모에서는 채운다. 비우면 상한
 MEDIMATE_BUDGET_RESET_TZ=Asia/Seoul
 MEDIMATE_BUDGET_STATE_FILE=    # 선택. 예: /var/lib/medimate/budget.json
 MEDIMATE_LIFESTYLE_AXIS=       # 비움=꺼짐. 앱이 "지침" 행을 그리면 1로. 켜기 전엔 지침이 약 칸에 접혀 나간다
+MEDIMATE_SPAN_SELECT=          # 비움=rule. gen이면 진료 후 카드 값을 생성+검증(C안)으로. 메모당 Nova 1→5~6회·≈$0.012·4~7초. /health span_select로 확인 (2026-10-12)
 MEDIMATE_CORS_ORIGINS=         # 웹이 우리를 직접 부를 때만. 쉼표 구분, `*` 금지
 ```
 

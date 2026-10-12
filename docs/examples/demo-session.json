@@ -2146,7 +2146,9 @@
             "input_tokens": 0,
             "output_tokens": 0,
             "cost_usd": 0.0
-          }
+          },
+          "span_select": "rule",
+          "values": null
         },
         "request_id": "demo-memo"
       }
