@@ -55,7 +55,7 @@ python scripts/snapdragon/build.py --target android --push        # 빌드 후 /
 adb push evals/ondevice/models/Qwen3-1.7B-Q4_0.gguf /data/local/tmp/llama.cpp/
 
 # 3) 기기에서 서버 실행 — NPU(HTP0) 지정, 프로파일 켜기
-python scripts/snapdragon/run.py --target android --devices HTP0 --hex-profile 1 --   llama-server -m /data/local/tmp/llama.cpp/Qwen3-1.7B-Q4_0.gguf --port 8080 -c 4096 --temp 0 --seed 42   --json-schema-file /data/local/tmp/llama.cpp/turn_extraction.schema.json --reasoning-budget 0
+python scripts/snapdragon/run.py --target android --devices HTP0 --hex-profile 1 --   llama-server -m /data/local/tmp/llama.cpp/Qwen3-1.7B-Q4_0.gguf --port 8080 -c 4096 --temp 0 --seed 42   --json-schema-file /data/local/tmp/llama.cpp/turn_extraction.schema.json --reasoning off
 
 # 4) PC 포트 연결 후 우리 러너가 기기 NPU를 부른다
 adb forward tcp:8080 tcp:8080
@@ -71,14 +71,15 @@ uv run python -m medimate.evals.run --provider local --model local/npu-qwen3-1.7
 ```
 # 1) 서버 (HF에서 직접 받는다. 첫 실행만 다운로드)
 llama-server -hf unsloth/Qwen3.5-0.8B-GGUF:Q4_K_M --port 8080 -c 4096 --temp 0 --seed 42 \
-  --json-schema-file evals/ondevice/turn_extraction.schema.json --reasoning-budget 0
+  --json-schema-file evals/ondevice/turn_extraction.schema.json --reasoning off
 
 # 2) eval (비용 0. model_id는 "local/<이름>"; 이름은 결과 파일명에만 쓰인다)
 uv run python -m medimate.evals.run --provider local --model local/qwen3.5-0.8b-q4 --yes
 uv run python -m medimate.evals.run --report evals/results/local/qwen3.5-0.8b-q4.jsonl
 ```
 
-- 사고(thinking) 모델은 서버에서 끈다(`--reasoning-budget 0` 또는 모델별 `/no_think`). 켜 두면 출력 한도를 사고가 먹는다(Gemini에서 본 문제)
+- 사고(thinking) 모델은 서버에서 끈다 — **`--reasoning off`**(= 템플릿 `enable_thinking=false`, 폰 번들 렌더와 동일). 켜 두면 출력 한도를 사고가 먹는다(Gemini에서 본 문제).
+  **`--reasoning-budget 0`만으로는 안 된다**(llama.cpp 0.4.0-dev build 10819): 템플릿이 `<think>`를 연 채라 문법이 `{`를 강제하면 모델이 `{}`로 닫는다. 2026-10-12에 108행 중 51행이 `{}`로 나와 회귀 63→43으로 보였다. `RESULTS.md` 2026-10-12 절
 - `--json-schema-file`을 켠 결과와 끈 결과를 둘 다 남긴다. 켰을 때 D2가 0이 되는 것은 당연하고, **D4(근거 그대로)·D5(숫자 출처)·D7(축 집합)**이 진짜 지표다
 - 결과 원본은 `evals/results/local/` (gitignore). 판정은 `RESULTS.md`에 적는다
 
