@@ -517,9 +517,14 @@ def verify_question(text: str, card: Card, lexicon: list[str] | None = None, kiw
     return QVerdict(not reasons, reasons, unsourced)
 
 
+_ACTIVE = {v: k for k, v in _PASSIVE.items()}
+
+
 def _key(text: str, card: Card, kiwi) -> set[str]:
-    """반복 판정용 — 질문이 카드에서 가져온 내용 형태소."""
-    return {f for f, _ in _content(_forms(text, kiwi)) if _sourced(f, card)} - _GENERIC - FRAME
+    """반복 판정용 — 질문이 카드에서 가져온 내용 형태소. 입음꼴은 카드의 말로 맞춘다(찔리→찌르) —
+    "콕콕 찔리는 건"과 템플릿 "콕콕 찌르는데"가 다른 재료로 세졌다(PC77)."""
+    forms = {_ACTIVE.get(f, f) for f, _ in _content(_forms(text, kiwi)) if _sourced(f, card)}
+    return forms - _GENERIC - FRAME
 
 
 # 묻는 뜻 — 재료가 같아도 묻는 것이 다르면 다른 질문이다("뜨끈뜨끈한 건 어떤 상태인가요" ↔
@@ -540,6 +545,11 @@ def _same(a: set[str], b: set[str]) -> bool:
     return bool(a) and bool(b) and len(a & b) / len(a | b) >= 0.6
 
 
+def _repeats(k: set[str], ks: set[str], i: str | None, p: set[str], ps: set[str], j) -> bool:
+    """재료가 겹치거나, 부위 말을 뺀 재료와 묻는 뜻이 둘 다 같으면 반복."""
+    return _same(k, p) or bool(i and i == j and _same(ks, ps))
+
+
 def verify_items(
     card: dict, items: list[dict] | None, lexicon: list[str] | None = None, kiwi=None
 ) -> tuple[list[dict], list[dict]]:
@@ -548,10 +558,10 @@ def verify_items(
     c = prepare_card(card, kiwi)
     kept: list[dict] = []
     dropped: list[dict] = []
-    keys: list[set[str]] = []
-    # 부위 말을 뺀 재료와 묻는 뜻 — 둘 다 같으면 반복이다(PC77 "가끔 콕콕 찔리는 건 어떤
-    # 상태인가요" ↔ "가슴 가운데가 콕콕 찔리는 건 어떤 상태인가요")
-    seen: list[tuple[set[str], str]] = []
+    # kept와 같은 순서로 (재료, 부위 말을 뺀 재료, 묻는 뜻, "왜" 여부). 재료가 겹치거나, 부위 말을
+    # 뺀 재료와 묻는 뜻이 둘 다 같으면 반복이다(PC77 "가끔 콕콕 찔리는 건 어떤 상태인가요" ↔
+    # "가슴 가운데가 콕콕 찔리는 건 어떤 상태인가요")
+    keys: list[tuple[set[str], set[str], str | None, bool]] = []
     n_why = 0
     for it in items or []:
         text = str(it.get("text") or "")
@@ -559,19 +569,32 @@ def verify_items(
         reasons = list(v.reasons)
         if not reasons:
             k = _key(text, c, kiwi)
+            ks, i, why = k - c.site_only, _intent(text), bool(_WHY.search(text))
+            m = next(
+                (n for n, (p, ps, j, _) in enumerate(keys) if _repeats(k, ks, i, p, ps, j)),
+                None,
+            )
             if not k:
                 reasons.append("no_card_content")
-            elif any(_same(k, p) for p in keys) or (
-                (i := _intent(text)) and any(_same(k - c.site_only, p) and i == j for p, j in seen)
-            ):
+            elif m is not None:
+                # 반복이면 부위가 들어간 쪽을 남긴다 — 앞의 것을 남기면 PC77에서 부위가 빠진
+                # "가끔 콕콕 찔리는 건"이 남았다(2026-10-12 팀원 판독). 자리는 앞의 것 그대로.
+                # "재료가 더 많은 쪽"으로 넓히면 두 칸을 섞은 질문("기운이 없는 건 … 느낌과
+                # 관련이 있나요")이 묻는 것이 다른데도 이겼다 — 부위 말 하나로만 가른다
+                p, _, _, pwhy = keys[m]
+                site, psite = bool(k & c.site_only), bool(p & c.site_only)
+                if site and not psite and not (why and n_why - pwhy >= 1):
+                    dropped.append({**kept[m], "reasons": ["duplicate"]})
+                    kept[m] = dict(it)
+                    keys[m] = (k, ks, i, why)
+                    n_why += why - pwhy
+                    continue
                 reasons.append("duplicate")
-            elif _WHY.search(text) and n_why >= 1:
+            elif why and n_why >= 1:
                 reasons.append("why_repeat")
             else:
-                keys.append(k)
-                if i := _intent(text):
-                    seen.append((k - c.site_only, i))
-                n_why += bool(_WHY.search(text))
+                keys.append((k, ks, i, why))
+                n_why += why
         if reasons:
             dropped.append({**it, "reasons": reasons})
         else:
@@ -596,20 +619,25 @@ def finalize(
     used = {it.get("source") for it in out}
     if len(out) < MIN_ITEMS:
         # 모델이 단 칸 이름은 틀릴 수 있다 — PC48 LoRA v1은 느낌 값("밤에 누우면 더 아픈")을
-        # 쓰고 악화라 달아, 같은 말의 느낌 템플릿이 또 들어갔다. 칸 이름과 함께 내용(반복 판정과
-        # 같은 선)으로도 건너뛴다
+        # 쓰고 악화라 달아, 같은 말의 느낌 템플릿이 또 들어갔다. 칸 이름과 함께 내용(모델 질문끼리의
+        # 반복 판정과 같은 규칙)으로도 건너뛴다
         c = prepare_card(card, kiwi)
-        keys = [k for it in out if (k := _key(it["text"], c, kiwi))]
+
+        def entry(text: str):
+            k = _key(text, c, kiwi)
+            return k, k - c.site_only, _intent(text)
+
+        keys = [e for it in out if (e := entry(it["text"]))[0]]
         for tpl in (templates or template_candidates)(card.get("axes") or {}, card.get("profile")):
             if len(out) >= MIN_ITEMS:
                 break
             if tpl["source"] in used:
                 continue
-            k = _key(tpl["text"], c, kiwi)
-            if k and any(len(k & p) / len(k | p) >= 0.6 for p in keys):
+            k, ks, i = e = entry(tpl["text"])
+            if k and any(_repeats(k, ks, i, p, ps, j) for p, ps, j in keys):
                 continue
             out.append({**tpl, "origin": "template"})
             used.add(tpl["source"])
             if k:
-                keys.append(k)
+                keys.append(e)
     return out, dropped

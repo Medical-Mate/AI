@@ -111,7 +111,25 @@ def test_duplicate_ignores_site_words_when_asking_the_same():
         {"text": "가슴 가운데가 콕콕 찔리는 건 어떤 상태인가요?", "source": "character"},
     ]
     kept, dropped = verify_items(CARDS["PC77"], same, LEX)
-    assert len(kept) == 1 and dropped[0]["reasons"] == ["duplicate"]
+    assert dropped[0]["reasons"] == ["duplicate"]
+    # 재료가 더 많은 쪽(부위가 들어간 쪽)을 남긴다 — 순서가 바뀌어도 같다
+    assert [k["text"] for k in kept] == [same[1]["text"]]
+    kept, _ = verify_items(CARDS["PC77"], same[::-1], LEX)
+    assert [k["text"] for k in kept] == [same[1]["text"]]
     other = [same[0], {"text": "가슴 가운데가 콕콕 찔리면 다시 와야 하나요?", "source": "x"}]
     kept, _ = verify_items(CARDS["PC77"], other, LEX)
     assert len(kept) == 2
+
+
+def test_finalize_keeps_site_question_and_skips_its_template_twin():
+    """PC77(3차 판독) — 부위가 들어간 모델 질문을 남기고, 같은 말의 템플릿("찌르는데")은
+    넣지 않는다."""
+    from medimate.dialog.question_templates_v2 import natural_candidates
+
+    items = [
+        {"text": "가끔 콕콕 찔리는 건 어떤 상태인가요?", "source": "character"},
+        {"text": "가슴 가운데가 콕콕 찔리는 건 어떤 상태인가요?", "source": "character"},
+    ]
+    out, _ = finalize(CARDS["PC77"], items, LEX, templates=natural_candidates)
+    assert out[0] == {**items[1], "origin": "model"}
+    assert not any("콕콕" in o["text"] for o in out[1:]), out
