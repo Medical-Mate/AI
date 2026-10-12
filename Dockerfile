@@ -26,6 +26,10 @@ COPY evals/lexicon ./evals/lexicon
 RUN uv sync --frozen --no-dev --group providers --group api --group obs --group nlp
 
 EXPOSE 8000
-HEALTHCHECK --interval=30s --timeout=3s CMD ["uv", "run", "python", "-c", \
-  "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).status == 200 else 1)"]
-CMD ["uv", "run", "uvicorn", "medimate.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+# 런타임에는 uv를 부르지 않는다. `uv run`은 호출마다 sync를 돌리고(런타임에는 --no-dev가 없어
+# ruff·pytest까지 내려받는다) 바이트코드를 다시 컴파일한다 — nlp 그룹이 들어온 뒤 6,531파일 2.8초가
+# 되어 헬스체크 3초를 넘겼다(sha-2fba661, 2026-10-13 운영 unhealthy). venv 실행 파일을 직접 쓴다.
+ENV PATH="/app/.venv/bin:$PATH"
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD ["/app/.venv/bin/python", "-c", \
+  "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4).status == 200 else 1)"]
+CMD ["/app/.venv/bin/uvicorn", "medimate.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
