@@ -34,6 +34,7 @@ RUNS = {
     "1.7B v8-noex": A / "questions-local-qwen3-1.7b-q4_0-cpu-noex.jsonl",
     "템플릿 v1": A / "questions-template-v1.jsonl",
     "템플릿 v2": A / "questions-template-v2.jsonl",
+    "템플릿 v2 (10-08)": A / "questions-template-v2-20261008.jsonl",
 }
 TEMPLATES = None
 TRAIN_TARGETS = Path("evals/results/qtrain/targets-nova-v8.jsonl")
