@@ -249,7 +249,86 @@ _Q_SYSTEM_V8 = (
     )
 )
 
+# v8-noex (2026-10-08, 온디바이스 실험): v8에서 **끝의 예시 카드 하나만** 뺀다.
+# Qwen3-1.7B로 v8을 돌리자 예시 카드의 "이사하고 나서"를 이사 얘기가 없는 카드 59장(64항목)에
+# 끼워 넣었다 — 환자가 하지 않은 말이다(Nova v8은 0). 예시가 출처인지 보려고 그것만 뺀다.
+# 출력 모양은 local 공급자의 JSON 스키마(문법 제약)가 잡는다. 운영 기본(v8)은 그대로다.
+_Q_SYSTEM_V8_NOEX = _Q_SYSTEM_V8[: _Q_SYSTEM_V8.rindex("예시. 카드:")].rstrip() + "\n"
+
+# small1 (2026-10-08, 온디바이스 1.7B 전용): v8을 줄이지 않고 **처음부터 짧게 쓴다.**
+# 추출(`extract-small`)·진료 후 분류(`memo-small`)처럼 작은 모델용 지시문을 따로 둔다 — Nova·Terra에
+# 맞춰 쌓은 v8을 1.7B에 그대로 넣은 것이 방법상 틀렸다(사용자 지적).
+#
+# v8-noex + LoRA v1 실측(카드 100장)에서 남은 실패를 규칙으로 옮긴다.
+# - 카드에 없는 상황·물건을 끼워 넣음(술·깃털), 지시문 예시 문장 누출("평지는 괜찮은 게")
+#   → **예시 문장을 하나도 두지 않는다.** 금지어 인용만 남긴다
+# - 같은 질문 반복(재료 적은 카드) → "질문마다 다른 내용". 재료가 적으면 적게 내도 된다
+# - 뜻 뒤집기(없어요→있는데) → 긍정·부정을 바꾸지 않는다
+# - 가족 병명을 환자 본인에게 적용 → 금지(team-reply §6)
+# 출력 형식은 v8과 같다(이 실험에서는 지시문만 바꾼다).
+_Q_SYSTEM_SMALL_V1 = """환자가 진료실에서 의사에게 물어볼 질문을 만든다. 아래 카드는 환자가 직접 한 말이다.
+
+규칙
+1. 카드에 있는 말로만 만든다. 카드에 없는 상황·장소·음식·물건·활동·병명·검사·약은 쓰지 않는다.
+2. 환자가 의사에게 묻는 말투. 질문 하나는 한 문장, 35자 안, 물음표로 끝난다.
+3. 질문마다 다른 내용을 묻는다. 비슷한 질문을 두 번 쓰지 않는다. 재료가 적으면 질문도 적게 낸다.
+4. 원인이나 병명을 짐작하지 않는다. "왜", "가능성", "~일까요"는 쓰지 않는다.
+5. 가족이나 다른 사람이 말한 병명을 환자 본인 병처럼 묻지 않는다.
+6. 카드 말의 긍정·부정을 바꾸지 않는다.
+7. 복용약·기저질환·알러지가 적혀 있으면 그중 하나로 질문 하나를 만든다.
+8. (안 답함)·(확인 안 됨) 칸으로는 질문을 만들지 않는다.
+
+source는 질문 재료가 된 칸: 부위=site, 시작=onset, 느낌=character, 심각도=severity, 경과=time_course, 악화·완화=exacerbating, 퍼짐=radiation, 동반 증상=associated, 복용약=medications, 기저질환=conditions, 알러지=allergies
+
+출력: {"items":[{"text":"질문","source":"칸"}]} 질문 3~5개.
+"""
+
+# small2: small1이 98/100장에서 질문을 1개만 냈다(개수가 맨 끝 한 줄에만 있었다). 과제와 개수를 첫 줄로 올린다.
+_Q_SYSTEM_SMALL_V2 = (
+    _Q_SYSTEM_SMALL_V1.replace(
+        "환자가 진료실에서 의사에게 물어볼 질문을 만든다. 아래 카드는 환자가 직접 한 말이다.",
+        "환자가 진료실에서 의사에게 물어볼 질문 3~5개를 만든다. 아래 카드는 환자가 직접 한 말이다.\n"
+        "질문은 카드의 서로 다른 칸에서 하나씩 고른다.",
+        1,
+    )
+    .replace("재료가 적으면 질문도 적게 낸다.", "", 1)
+    .replace(
+        '출력: {"items":[{"text":"질문","source":"칸"}]} 질문 3~5개.',
+        '출력: {"items":[{"text":"질문","source":"칸"}, …]} 항목 3~5개.',
+        1,
+    )
+)
+
+# small3: small2 + **대화 차례로 넣는 예시 하나**(system 안이 아니라 user/assistant 차례). 예시 카드는 평가·학습
+# 카드와 겹치지 않게 새로 썼고, 카드에 없는 말을 하나도 쓰지 않는다. 예시 누출은 q_dev가 예시 고유어로 센다.
+_Q_FEWSHOT_CARD = {
+    "axes": {
+        "site": "발뒤꿈치",
+        "onset": "2주 전",
+        "character": "찌릿해요",
+        "time_course": "아침 첫걸음이 제일 아프고 걷다 보면 덜해요",
+        "exacerbating": "오래 서 있으면 심해져요",
+        "associated": "없어요",
+    },
+    "profile": {"medications": ["혈압약"]},
+}
+_Q_FEWSHOT_ANSWER = {
+    "items": [
+        {
+            "text": "아침 첫걸음이 제일 아픈데 걷다 보면 덜한 게 괜찮은 건가요?",
+            "source": "time_course",
+        },
+        {"text": "오래 서 있어야 하는 날은 어떻게 하면 되나요?", "source": "exacerbating"},
+        {"text": "혈압약을 먹고 있는데 치료에 상관있나요?", "source": "medications"},
+    ]
+}
+QUESTIONS_FEWSHOT: dict[str, list[dict]] = {}
+
 QUESTIONS_PROMPTS = {
+    "questions-small1": _Q_SYSTEM_SMALL_V1,
+    "questions-small2": _Q_SYSTEM_SMALL_V2,
+    "questions-small3": _Q_SYSTEM_SMALL_V2,
+    "questions-small4": _Q_SYSTEM_SMALL_V2,
     "questions-v1": _Q_SYSTEM,
     "questions-v2": _Q_SYSTEM_V2,
     "questions-v3": _Q_SYSTEM_V3,
@@ -258,6 +337,7 @@ QUESTIONS_PROMPTS = {
     "questions-v6": _Q_SYSTEM_V6,
     "questions-v7": _Q_SYSTEM_V7,
     "questions-v8": _Q_SYSTEM_V8,
+    "questions-v8-noex": _Q_SYSTEM_V8_NOEX,
 }
 
 
@@ -273,6 +353,8 @@ def example_texts(version: str = QUESTIONS_VERSION) -> list[str]:
     프롬프트에서 뽑아 쓰므로 예시를 바꾸면 검사도 따라 바뀐다.
     """
     sysp = questions_system(version)
+    if "예시. 카드:" not in sysp:  # 예시 없는 변형(v8-noex)
+        return []
     i = sysp.rindex('{"items"')
     return [t["text"] for t in json.loads(sysp[i:])["items"]]
 
@@ -301,6 +383,45 @@ def questions_user(card: dict) -> str:
     if card.get("patient_message"):
         lines.append(f"환자가 덧붙인 말: {card['patient_message']}")
     return "카드:\n" + "\n".join(lines) + "\n\n의사에게 물어볼 것 후보. JSON:"
+
+
+QUESTIONS_FEWSHOT["questions-small3"] = [
+    {"role": "user", "content": questions_user(_Q_FEWSHOT_CARD)},
+    {"role": "assistant", "content": json.dumps(_Q_FEWSHOT_ANSWER, ensure_ascii=False)},
+]
+# small4: small3에서 예시가 늘 복용약 질문을 넣어 **복용약이 없는 카드에도** "복용약이 없는데도…"를 만들었다.
+# 복용약 없는 짧은 카드 예시를 하나 더 둔다(빈 칸은 건너뛰는 모습).
+QUESTIONS_FEWSHOT["questions-small4"] = QUESTIONS_FEWSHOT["questions-small3"] + [
+    {
+        "role": "user",
+        "content": questions_user(
+            {
+                "axes": {
+                    "site": "왼쪽 손목",
+                    "onset": "어제",
+                    "character": "시큰해요",
+                    "exacerbating": "병뚜껑 열 때",
+                }
+            }
+        ),
+    },
+    {
+        "role": "assistant",
+        "content": json.dumps(
+            {
+                "items": [
+                    {
+                        "text": "병뚜껑 열 때만 시큰한데 손목을 써도 되나요?",
+                        "source": "exacerbating",
+                    },
+                    {"text": "어제부터 시큰한데 얼마나 가면 다시 와야 하나요?", "source": "onset"},
+                    {"text": "시큰할 때 찜질을 해도 되나요?", "source": "character"},
+                ]
+            },
+            ensure_ascii=False,
+        ),
+    },
+]
 
 
 QUESTIONS_SCHEMA = {
