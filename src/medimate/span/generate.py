@@ -94,6 +94,11 @@ class ValueGenerator:
         self.gen = CandidateGenerator()
         self.rule = RuleSelector()
         self.last: dict = {}
+        # 프롬프트 모듈. 기본은 서버용 value-gen-v2.
+        # 폰 1.7B 실험은 prompt_value_gen_small (2026-10-12)
+        from medimate.llm import prompt_value_gen
+
+        self.prompt = prompt_value_gen
 
     @property
     def usage(self):
@@ -107,8 +112,9 @@ class ValueGenerator:
         return None if drops_negation(fb, segment) else fb
 
     def generate(self, segment: str, axis: str) -> Generated:
-        from medimate.llm import prompt_value_gen as P
         from medimate.llm.base import parse_json_text
+
+        P = self.prompt
         from medimate.text.chatnorm import normalize
 
         t0 = time.perf_counter()
