@@ -40,6 +40,7 @@ from medimate.dialog.memo import (
     classify_memo,
     lifestyle_axis_enabled,
     segment_memo,
+    span_select_mode,
     split_sentences,
 )
 from medimate.dialog.site import normalize_side, resolve_site, strip_side
@@ -350,6 +351,9 @@ class MemoAudit(BaseModel):
     lifestyle_axis: bool  # 지침 축이 따로 나갔는가(false면 약 칸에 접힘)
     split_version: str = SPLIT_VERSION
     usage: TurnUsage
+    # 값 만들기(2026-10-12, C안): rule(어미 정리) | gen(생성+검증). gen이면 조각별 판정이 values에
+    span_select: str = "rule"
+    values: list[dict[str, Any]] | None = None
 
 
 class MemoResponse(BaseModel):
@@ -501,6 +505,7 @@ def create_app(
     memo_factory: Callable | None = None,
     followup_factory: Callable | None = None,
     segment_factory: Callable | None = None,
+    value_gen_factory: Callable | None = None,
 ) -> FastAPI:
     app = FastAPI(
         title="진료 메이트 AI — 진료 전 카드",
@@ -521,6 +526,9 @@ def create_app(
     # 재방문 표현 리더. 주입 없으면 운영은 _memo_classifier가 분류기와 짝으로 채운다
     app.state.followup_factory = followup_factory
     app.state.segment_factory = segment_factory
+    # 값 생성기(C안). env MEDIMATE_SPAN_SELECT=gen일 때만 부른다.
+    # 테스트는 create_app(value_gen_factory=...)
+    app.state.value_gen_factory = value_gen_factory
 
     @app.get("/health")
     def health(request: Request) -> dict[str, Any]:
@@ -548,6 +556,9 @@ def create_app(
             # 우리 가격표 기준 **추정치**다(청구서와 다를 수 있다). 밖에서 보이게 두는 이유는
             # `hmac_required`와 같다 — "켠 줄 알았는데 안 켜진" 상태를 없앤다. 꺼져 있으면 null
             "llm_budget": request.app.state.daily_budget.status(),
+            # 진료 후 카드 값을 어떻게 만드는가: rule(어미 정리) | gen(생성+검증, C안).
+            # env MEDIMATE_SPAN_SELECT
+            "span_select": span_select_mode(),
             "cors_origins": len(request.app.state.cors_origins) or None,
             # 어떤 모델·프롬프트로 뜰 것인가. **턴을 태우지 않고** 확인하라고 낸다.
             #
@@ -889,11 +900,18 @@ def create_app(
             def make_segmenter():
                 return LLMMemoSegmenter(provider, model, client=shared.get("client"))
 
+            def make_value_gen():
+                from medimate.span.generate import ValueGenerator
+
+                return ValueGenerator(provider, model, client=shared.get("client"))
+
             factory = request.app.state.memo_factory = make
             if request.app.state.followup_factory is None:
                 request.app.state.followup_factory = make_reader
             if request.app.state.segment_factory is None:
                 request.app.state.segment_factory = make_segmenter
+            if request.app.state.value_gen_factory is None:
+                request.app.state.value_gen_factory = make_value_gen
         return BudgetGuarded(factory(), request.app.state.daily_budget)
 
     def _followup_reader(request: Request):
@@ -904,6 +922,18 @@ def create_app(
         그 추론이 운영에서 리더를 영영 안 만들게 했다.
         """
         factory = request.app.state.followup_factory
+        if factory is None:
+            return None
+        return BudgetGuarded(factory(), request.app.state.daily_budget)
+
+    def _value_generator(request: Request):
+        """값 생성기(C안). `MEDIMATE_SPAN_SELECT=gen`이고 팩토리가 있을 때만.
+
+        아니면 None(어미 정리).
+        """
+        if span_select_mode() != "gen":
+            return None
+        factory = request.app.state.value_gen_factory
         if factory is None:
             return None
         return BudgetGuarded(factory(), request.app.state.daily_budget)
@@ -931,6 +961,7 @@ def create_app(
         # 여기서 끊는다. 다시 분류하면 되는 일이라 4xx이고, 상태 충돌이라 409다
         res = None
         used: list = []  # 이 요청이 실제로 LLM을 태운 객체들(usage 합산용)
+        value_gen = None
         phone_readings = (
             {_WS_RE.sub("", r.sentence): r.model_dump() for r in body.follow_up_readings}
             if body.follow_up_readings
@@ -976,6 +1007,8 @@ def create_app(
                 source = "server"
             prov_obj = clf
             reader = _followup_reader(request) if source == "server" else None
+            # 값 생성은 **서버가 분류하는 경로에서만**. 폰 라벨 경로는 "외부 LLM 없음"이 전제다
+            value_gen = _value_generator(request) if source == "server" else None
             try:
                 # **규칙이 한 덩어리밖에 못 만들 때만** LLM에게 조각을 맡긴다(2026-09-15 실측).
                 # 마침표·띄어쓰기가 있는 정상 입력은 규칙 분리 + v4 분류가 더 정확했다
@@ -993,6 +1026,7 @@ def create_app(
                             clinic=body.clinic,
                             followup_reader=reader,
                             phone_readings=phone_readings,
+                            value_gen=value_gen,
                         )
                         if res is not None:
                             prov_obj = seg
@@ -1006,9 +1040,12 @@ def create_app(
                         clinic=body.clinic,
                         followup_reader=reader,
                         phone_readings=phone_readings,
+                        value_gen=value_gen,
                     )
                 if reader is not None:
                     used.append(reader)
+                if value_gen is not None:
+                    used.append(value_gen)
             except BudgetExceeded as e:
                 raise HTTPException(status_code=503, detail=str(e)) from e
             except ValueError as e:
@@ -1055,6 +1092,8 @@ def create_app(
             model_id=card.provenance.model_id if card.provenance else "",
             lifestyle_axis=lifestyle_axis_enabled(),
             usage=tu,
+            span_select="gen" if value_gen is not None else "rule",
+            values=res.values or None,
         )
         return MemoResponse(
             card=to_backend_payload(card),

@@ -39,6 +39,25 @@ Label = Literal[
 ]
 
 
+def span_select_mode() -> str:
+    """카드 `value`를 어떻게 만들지. env `MEDIMATE_SPAN_SELECT`: `rule`(기본) | `gen`.
+
+    `rule` — 문장 어미만 정리한 줄(`tidy_value`). 지금까지의 운영 동작.
+    `gen`  — 조각마다 Nova가 짧은 값을 쓰고 검증기(`span/verify`)가 원문 출처·부정·숫자를 확인한다.
+             실패하면 rule 후보로, 값이 없으면 어미 정리 줄로 폴백한다
+             (C안, 2026-09-25 결정, 2026-10-12 연결).
+             조각당 호출 1회(Nova ≈ $0.003). evidence는 언제나 원문이라 보증은 그대로다.
+    """
+    import os
+
+    v = (os.getenv("MEDIMATE_SPAN_SELECT") or "rule").strip().lower()
+    return "gen" if v == "gen" else "rule"
+
+
+# 값 생성기가 아는 칸. 지침(lifestyle)은 프롬프트에 없어 어미 정리 줄 그대로
+GEN_AXES = frozenset({"findings", "tests", "medication_instructions", "follow_up"})
+
+
 def lifestyle_axis_enabled() -> bool:
     """지침을 **따로 낼지** 약 칸에 접을지. env `MEDIMATE_LIFESTYLE_AXIS` (기본 꺼짐).
 
@@ -790,6 +809,55 @@ class MemoResult:
     sentences: list[str]
     labels: dict[int, str]
     dropped: list[dict] = field(default_factory=list)  # 가드가 무시한 라벨
+    # 값 생성기를 썼을 때 조각별 판정:
+    # {sentence, axis, value, source(generated|fallback|none|rule|error), dropped}
+    values: list[dict] = field(default_factory=list)
+
+
+def _value_for(sentence: str, axis: PostAxis, value_gen: Any, log: list[dict] | None) -> str:
+    """칸에 넣을 짧은 값 하나. 생성기가 있으면 생성→검증→폴백, 없으면 어미 정리 줄.
+
+    생성기가 값을 못 내면(`none`·검증 실패 뒤 폴백도 없음·예외) 어미 정리 줄을 쓴다 — 칸이 비면
+    환자가 쓴 말이 화면에서 사라진다. 예산 초과(BudgetExceeded)는 삼키지 않는다
+    (503으로 올라가야 한다).
+    """
+    tidy = tidy_value(sentence, axis)
+    if value_gen is None or axis.value not in GEN_AXES:
+        if log is not None and value_gen is not None:
+            log.append({"sentence": sentence, "axis": axis.value, "value": tidy, "source": "rule"})
+        return tidy
+    try:
+        g = value_gen.generate(sentence, axis.value)
+    except Exception as e:  # noqa: BLE001
+        from medimate.llm.providers import BudgetExceeded  # 순환 import 회피용 지연 import
+
+        if isinstance(e, BudgetExceeded):
+            raise
+        logger.warning("값 생성 실패(%s) — 어미 정리 줄로 계속합니다", type(e).__name__)
+        if log is not None:
+            log.append(
+                {
+                    "sentence": sentence,
+                    "axis": axis.value,
+                    "value": tidy,
+                    "source": "error",
+                    "dropped": type(e).__name__,
+                }
+            )
+        return tidy
+    value = g.value if (g.value and g.source in ("generated", "fallback")) else tidy
+    if log is not None:
+        log.append(
+            {
+                "sentence": sentence,
+                "axis": axis.value,
+                "value": value,
+                "source": g.source if g.value else "none",
+                "model_value": g.model_value,
+                "dropped": g.dropped or None,
+            }
+        )
+    return value
 
 
 def _assemble(
@@ -799,8 +867,14 @@ def _assemble(
     visit_date: date | None,
     followup_reader: FollowUpReader | None,
     phone_readings: Mapping[str, Mapping[str, Any]] | None = None,
+    value_gen: Any = None,
+    values_log: list[dict] | None = None,
 ) -> None:
     """(문장, 라벨) → 카드. 규칙 분리든 LLM 조각이든 되보낸 조각이든 여기 하나로 온다.
+
+    `value_gen`: 값 생성기(`span/generate.ValueGenerator` 모양 — `generate(segment, axis)`). 있으면
+    소견·검사·약·재방문 칸의 `value`를 생성+검증으로 만들고 판정을 `values_log`에 남긴다.
+    없으면 어미 정리.
 
     `phone_readings`: 폰 모델이 재방문 문장에서 읽은 표현(공백 뺀 문장 → {text, days, month, day}).
     있으면 그 문장은 서버 리더를 부르지 않는다 — 읽기는 폰, 산수는 서버.
@@ -821,7 +895,7 @@ def _assemble(
             entry.status = FieldStatus.FILLED
             # `value`는 어미를 정리한 줄, `evidence`는 **문장 원문 그대로**.
             # 진료 전 카드가 이미 이 구조다. 원문이 사라지면 우리가 보증하는 것이 사라진다
-            entry.value = " · ".join(tidy_value(s, axis) for s in sents)
+            entry.value = " · ".join(_value_for(s, axis, value_gen, values_log) for s in sents)
             entry.evidence = list(sents)
         else:
             entry.status = FieldStatus.UNKNOWN  # 메모에 그 묶음 얘기가 없었다
@@ -917,6 +991,7 @@ def segment_memo(
     card: PostVisitCard | None = None,
     followup_reader: FollowUpReader | None = None,
     phone_readings: Mapping[str, Mapping[str, Any]] | None = None,
+    value_gen: Any = None,
 ) -> MemoResult | None:
     """LLM이 나눈 조각으로 카드를 만든다.
 
@@ -952,8 +1027,11 @@ def segment_memo(
     card.clinic = clinic
     card.visit_date = visit_date.isoformat() if visit_date else card.visit_date
     labels = dict(enumerate(labs))
-    _assemble(card, sentences, labels, visit_date, followup_reader, phone_readings)
-    return MemoResult(card, sentences, fold_lifestyle(labels), [])
+    values: list[dict] = []
+    _assemble(
+        card, sentences, labels, visit_date, followup_reader, phone_readings, value_gen, values
+    )
+    return MemoResult(card, sentences, fold_lifestyle(labels), [], values)
 
 
 def assemble_from_client(
@@ -990,6 +1068,7 @@ def classify_memo(
     card: PostVisitCard | None = None,
     followup_reader: FollowUpReader | None = None,
     phone_readings: Mapping[str, Mapping[str, Any]] | None = None,
+    value_gen: Any = None,
 ) -> MemoResult:
     """메모 하나를 4묶음 카드로. 문장 원문 보존, 라벨 없는 문장은 unsorted.
 
@@ -1014,5 +1093,8 @@ def classify_memo(
     for i in range(len(raw.labels), len(sentences)):
         dropped.append({"i": i, "label": None, "reason": "missing_label"})  # none으로 처리된다
 
-    _assemble(card, sentences, labels, visit_date, followup_reader, phone_readings)
-    return MemoResult(card, sentences, fold_lifestyle(labels), dropped)
+    values: list[dict] = []
+    _assemble(
+        card, sentences, labels, visit_date, followup_reader, phone_readings, value_gen, values
+    )
+    return MemoResult(card, sentences, fold_lifestyle(labels), dropped, values)

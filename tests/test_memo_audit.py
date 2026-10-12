@@ -60,5 +60,7 @@ def test_audit_carries_nothing_but_what_the_patient_typed():
         "lifestyle_axis",
         "split_version",
         "usage",
+        "span_select",  # 2026-10-12 C안: rule | gen
+        "values",  # gen일 때 조각별 판정, 아니면 None
     }
     assert "OO내과" not in str(a)  # clinic은 카드에만, audit에는 없다
