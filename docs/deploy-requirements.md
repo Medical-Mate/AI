@@ -112,6 +112,11 @@ MEDIMATE_SPAN_SELECT=          # 비움=rule. gen이면 진료 후 카드 값을
 MEDIMATE_CORS_ORIGINS=         # 웹이 우리를 직접 부를 때만. 쉼표 구분, `*` 금지
 ```
 
+- **메모리 — Kiwi가 든 뒤로는 `mem_limit: 192m`이 모자란다(2026-10-12).** #137부터 이미지에 Kiwi(`nlp` 그룹)가 들어갔다.
+  Kiwi는 **처음 쓸 때** 로드되고(폰 질문 후보 검증·`MEDIMATE_SPAN_SELECT=gen`·값 생성 다듬기), 로드에 약 300MB, 한 번 쓰고 나면 RSS 480~540MB(로컬 실측,
+  kiwipiepy 0.23.2 `cong` 모델). 그 전까지는 종전과 같은 70MB 안팎이다. 즉 **지금 compose(192m)로도 뜨고 돌지만, 폰이 후보를 보내거나 gen을 켜는 순간 OOM으로 죽는다.**
+  백엔드 compose의 ai `mem_limit`을 **640m**으로 올리고 나서 켜야 한다(Lightsail 2GB: caddy 64 + backend 640 + ai 640 + postgres 400 + grafana 192 = 1,936MB, 스왑 2GB).
+  켜지 않을 거면 그대로 둬도 된다
 - **`OPENAI_API_KEY`는 필요 없다.** Bedrock은 IAM 인증이다
 - `MEDIMATE_HMAC_SECRET`이 비면 검증 미들웨어를 아예 붙이지 않는다(`api/auth.py`).
   **한쪽만 채우면 AI가 백엔드 요청을 전부 거부한다.** 같은 사설망이므로 양쪽 다 비워 둔다
