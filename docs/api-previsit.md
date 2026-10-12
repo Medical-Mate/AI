@@ -102,7 +102,7 @@ AI 서버는 무상태다. 인증·세션 식별·저장은 백엔드가 한다(
 | `card.axes.*.status` | **`not_asked` · `filled` · `unknown` · `skipped` · `ambiguous` 다섯 값이다.** `not_asked`가 8축의 기본값이라 세 값으로 검증하면 카드 대부분이 떨어진다. `ambiguous`는 답이 모호해 한 번 되물은 상태다 |
 | `card.title` | 카드 제목. **`{부위 라벨} · {기간}`을 결정론으로 조합한다** — LLM을 부르지 않는다(2026-09-11 합의). 20자 이내, `evidence` 없음. 기간은 **숫자+단위만** 뽑는다("2주 전부터요, 등산 다음 날부터" → `2주`). 순우리말 날짜(이틀·닷새·열흘)와 상대 표현(어제·오늘)도 잡는다. 기간을 못 뽑으면 부위만, 20자를 넘으면 기간을 빼고 부위만(**자르지 않는다** — 자르면 부위 이름이 깨진다). **부위가 없으면 `null`** → 앱이 제목 줄을 숨긴다. **증상어("통증")를 붙이지 않는다** — 부위 라벨에도 축에도 없는 말이라 붙이면 없는 사실을 넣는 것이고, 느낌이 "먹먹해요"인 카드에 "통증"이라 쓰면 틀린다. 카드 100장 실측: 100장 생성, 기간 포함 73장, 20자 초과 0 |
 | `card` | 그 시점 브리핑 카드(`schema/export.py` 형식). 매 턴 갱신되므로 마지막 것만 저장해도 된다. `patient_message`는 8축 뒤 "의사 선생님께 전하고 싶은 말" 질문에 환자가 답한 원문(없으면 null) |
-| `card.question_candidates` | **"의사에게 물어볼 것" 후보**(앱 4단계 화면). `[{text, source, rank}]` 최대 3개. **요청에 `question_candidates: true`를 보낸 종료 턴에만** 값이 오고, 그 외에는 `null`이다 |
+| `card.question_candidates` | **"의사에게 물어볼 것" 후보**(앱 4단계 화면). `[{text, source, rank}]` 최대 3개(폰 경로는 `origin` 추가, 아래 절). **요청에 `question_candidates: true`를 보낸 종료 턴에만** 값이 오고, 그 외에는 `null`이다 |
 | `audit` | 판정 로그 한 줄(물은 축, 실제 입력 발화, 추출 결과, 토큰·비용). 감사 기록으로 적재. **LLM을 안 부른 턴에도 `audit`은 있다** — `source`가 `none`(선택지만 온 턴)이나 `device`(폰 추출)이고 `usage`는 0이다. `audit`이 `null`인 것은 **턴 처리 자체가 없을 때**뿐이다(빈 입력, 상한 종료). 2026-09-11 정정 |
 
 > **`state.card`가 아니라 최상위 `card`를 읽으세요.**
@@ -321,6 +321,37 @@ AI 서버는 무상태다. 인증·세션 식별·저장은 백엔드가 한다(
 - **최종 목록은 앱·백엔드가 만든다.** 우리는 후보만 낸다(환자가 지우거나 직접 더한 결과가 최종)
 - 프롬프트에 **식별자를 넣지 않는다** — 이름·나이·성별·병원·진료일·ID·`request_id`.
   카드에 그 값이 있어도 프롬프트에는 안 들어간다
+
+#### 온디바이스 경로 — `phone_question_candidates` (2026-10-12)
+
+폰 모델(Qwen3-1.7B)이 후보를 만들었으면 같은 종료 턴에 실어 보낸다. **서버는 생성하지 않고 검증·보충만
+한다** — 외부 LLM 호출 0. 추론은 폰, 검증 계층은 서버라는 앱 구조 그대로다.
+
+```json
+{
+  "state": { "...": "" },
+  "utterance": "네 다 말한 것 같아요",
+  "question_candidates": true,
+  "phone_question_candidates": [
+    {"text": "계단 내려갈 때 더 아픈 건 어떤 상태인가요?", "source": "exacerbating"},
+    {"text": "혈압약을 계속 먹어도 되나요?", "source": "medications"}
+  ],
+  "candidates_meta": {"model_id": "qwen3-1.7b-q4_0", "prompt_version": "q-small-v4"},
+  "patient_profile": {"medications": ["혈압약"], "conditions": [], "allergies": []}
+}
+```
+
+- **검증기**(`dialog/question_verify`)가 카드에 없는 말·병명·반복·"왜" 중복을 버린다. 카드에 없는 복용약
+  질문은 `patient_profile`을 같이 보내야 산다(재료가 거기 있다)
+- 통과분이 모자라면 **템플릿 v2**(카드 값으로 만든 질문)를 뒤에 붙인다. 각 항목에 `origin`: `model` | `template`
+- 응답은 같은 자리 `card.question_candidates` `[{text, source, rank, origin}]`. **`origin`은 이 경로에만 붙는다**
+- `[]`를 보내도 된다 — 폰이 하나도 못 만들었다는 뜻이고 템플릿만으로 채운다. 필드를 생략하면 전처럼 서버 LLM 경로
+- `audit.question_candidates`에 판정이 남는다: `{source: "phone", received, kept, templated, dropped[{text, reasons}], model_id, prompt_version}`.
+  서버 LLM 경로는 `{source: "server", kept}`. 후보를 안 만든 턴은 `null`
+- `question_candidates: true`가 아닌 턴에 보내면 422. `candidates_meta`만 보내도 422
+- 검증을 못 하면(어떤 이유든) `question_candidates`는 `null`이고 카드는 그대로 200이다. **검증 안 된 폰 후보를
+  그대로 싣지는 않는다**
+- 서버 이미지에 Kiwi(`nlp` 그룹)가 들어간다. 배포 때 이미지만 새로 받으면 된다
 
 #### 복용약·기저질환·알러지 — `patient_profile` (2026-09-11 확정, #7)
 

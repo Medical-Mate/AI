@@ -394,7 +394,8 @@
             "input_tokens": 0,
             "output_tokens": 0,
             "cost_usd": 0.0
-          }
+          },
+          "question_candidates": null
         },
         "request_id": "demo-1"
       }
@@ -706,7 +707,8 @@
             "input_tokens": 0,
             "output_tokens": 0,
             "cost_usd": 0.0
-          }
+          },
+          "question_candidates": null
         },
         "request_id": "demo-2"
       }
@@ -1028,7 +1030,8 @@
             "input_tokens": 0,
             "output_tokens": 0,
             "cost_usd": 0.0
-          }
+          },
+          "question_candidates": null
         },
         "request_id": "demo-3"
       }
@@ -1356,7 +1359,8 @@
             "input_tokens": 0,
             "output_tokens": 0,
             "cost_usd": 0.0
-          }
+          },
+          "question_candidates": null
         },
         "request_id": "demo-4"
       }
@@ -1690,7 +1694,8 @@
             "input_tokens": 0,
             "output_tokens": 0,
             "cost_usd": 0.0
-          }
+          },
+          "question_candidates": null
         },
         "request_id": "demo-5"
       }
