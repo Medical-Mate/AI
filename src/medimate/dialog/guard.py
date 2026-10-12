@@ -52,6 +52,15 @@ class GuardConfig:
     # 찍혔다(운영 시연에서 확인 — "네"가 "모름"이 됐다). 이제 물은 축은 모델이 채웠든
     # 비웠든 unknown/skipped로 냈든 ambiguous다
     bare_affirmative_asks_back: bool = True
+    # 규칙 7 (2026-10-12): 복원 뒤 발화가 "모르겠다"로 시작하면 물은 축은 unknown이다.
+    # 폰 1.7B가 `ㅁㄹ`을 skipped로 내거나(CA03) `ㅁㄹ 그냥 계속 아픔`에서 칸을 비웠다(CA06).
+    # "모름"은 "건너뜀"이 아니다 — 카드에 "말하고 싶지 않다"로 찍히면 환자 말과 다르다.
+    # 모델이 filled로 내용을 뽑았으면 둔다. 글자 없는 발화(복원 안 된 자음)에는 걸지 않는다
+    bare_unknown_is_unknown: bool = True
+    # 규칙 8 (2026-10-12): 복원 뒤 발화가 짧은 부정만이면("아니", "ㄴㄴ ㅠㅠ"→아니, "없음")
+    # 예/아니오로 묻는 축(퍼짐·동반)은 filled "없음"이다. 폰 1.7B가 `ㄴㄴ ㅠㅠ`를 skipped로
+    # 냈다(CM03). 값은 축별 한 낱말이고 근거는 원문 그대로. 다른 축의 "아니"는 답이 아니라 둔다
+    bare_negative_fills_yes_no_axis: bool = True
 
     @classmethod
     def ondevice(cls) -> GuardConfig:
@@ -71,6 +80,18 @@ _BARE_AFFIRM = re.compile(
     r"^\s*(?:네|예|응|어|그래|그렇다|그렇습니다|그런 것 같다|맞다|맞아요|맞습니다"
     r"|그런데요|그래요|네요|ㅇㅇ|ㅇㅋ|오케이)[\s.!~ㅋㅎㅠㅜ]*$"
 )
+
+
+# 모름으로 시작하는 답. 복원문 기준(`ㅁㄹ`→`모르겠다`, `기억안남`→`기억 안 남`)
+_BARE_UNKNOWN = re.compile(
+    r"^\s*(?:모르겠|몰라|모름|기억\s*안\s*나|기억\s*안\s*남|기억이\s*안|글쎄|잘\s*모르)"
+)
+# 짧은 부정만 있는 답. 복원문 전체가 이것뿐일 때
+_BARE_NEGATIVE = re.compile(
+    r"^\s*(?:아니요|아니오|아니|아뇨|아님|없음|없어요|없어|없다|노)[\s.!~ㅋㅎㅠㅜ]*$"
+)
+# 예/아니오로 묻는 축과 그 "아니오" 값. 다른 축의 짧은 부정은 답이 아니다
+_YES_NO_AXIS_NEGATION = {"radiation": "안 퍼짐", "associated": "없음"}
 
 
 def _norm(s: str) -> str:
@@ -106,6 +127,21 @@ def guard_extraction(
         cfg.bare_affirmative_asks_back
         and asked_axis is not None
         and bool(_BARE_AFFIRM.match(normalized or utterance))
+    )
+
+    axis_name = str(getattr(asked_axis, "value", asked_axis)) if asked_axis is not None else None
+    # 둘 다 글자 있는 발화에만 — `ㄴㄴ`가 복원 없이 오면 5번 필터대로 버린다
+    bare_unknown = (
+        cfg.bare_unknown_is_unknown
+        and asked_axis is not None
+        and not letterless
+        and bool(_BARE_UNKNOWN.match(normalized or utterance))
+    )
+    bare_negative = (
+        cfg.bare_negative_fills_yes_no_axis
+        and axis_name in _YES_NO_AXIS_NEGATION
+        and not letterless
+        and bool(_BARE_NEGATIVE.match(normalized or utterance))
     )
 
     # 되묻기: 강도를 물었는데 물음표로 끝나고 숫자가 하나도 없다
@@ -153,6 +189,33 @@ def guard_extraction(
                 u = AxisUpdate(
                     axis=u.axis, status=FieldStatus.AMBIGUOUS, value=None, evidence=u.evidence
                 )
+            elif bare_unknown and u.axis == asked_axis and u.status == FieldStatus.SKIPPED:
+                dropped.append(
+                    {
+                        "axis": u.axis.value,
+                        "reason": "bare_unknown_is_unknown",
+                        "value": u.value,
+                        "evidence": u.evidence,
+                    }
+                )
+                u = AxisUpdate(
+                    axis=u.axis, status=FieldStatus.UNKNOWN, value=None, evidence=u.evidence
+                )
+            elif bare_negative and u.axis == asked_axis and u.status != FieldStatus.FILLED:
+                dropped.append(
+                    {
+                        "axis": u.axis.value,
+                        "reason": "bare_negative_fills_yes_no_axis",
+                        "value": u.value,
+                        "evidence": u.evidence,
+                    }
+                )
+                u = AxisUpdate(
+                    axis=u.axis,
+                    status=FieldStatus.FILLED,
+                    value=_YES_NO_AXIS_NEGATION[axis_name],
+                    evidence=u.evidence,
+                )
             kept.append(u)
             continue
         dropped.append(
@@ -181,6 +244,41 @@ def guard_extraction(
                 "evidence": utterance,
             }
         )
+
+    # 모델이 물은 축을 비웠는데 "모르겠다"로 시작했으면 unknown, 짧은 부정이면 "없음"으로 닫는다.
+    # 비워 두면 엔진이 skipped로 닫아 "말하고 싶지 않다"가 된다 — 환자가 한 말이 아니다
+    if asked_axis is not None and not any(u.axis == asked_axis for u in kept):
+        if bare_unknown:
+            kept.append(
+                AxisUpdate(
+                    axis=asked_axis, status=FieldStatus.UNKNOWN, value=None, evidence=utterance
+                )
+            )
+            dropped.append(
+                {
+                    "axis": axis_name,
+                    "reason": "bare_unknown_is_unknown",
+                    "value": None,
+                    "evidence": utterance,
+                }
+            )
+        elif bare_negative:
+            kept.append(
+                AxisUpdate(
+                    axis=asked_axis,
+                    status=FieldStatus.FILLED,
+                    value=_YES_NO_AXIS_NEGATION[axis_name],
+                    evidence=utterance,
+                )
+            )
+            dropped.append(
+                {
+                    "axis": axis_name,
+                    "reason": "bare_negative_fills_yes_no_axis",
+                    "value": None,
+                    "evidence": utterance,
+                }
+            )
 
     # chief_complaint에도 숫자 규칙을 적용한다 (첫 발화 요약에 숫자를 만들어 넣는 것 방지)
     cc = ext.chief_complaint
