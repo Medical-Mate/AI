@@ -123,6 +123,9 @@ class Selection(BaseModel):
     value: str = Field(min_length=1, max_length=200)
 
 
+_WS_RE = re.compile(r"\s+")
+
+
 class ExtractionMeta(BaseModel):
     """폰이 추출했을 때 무엇으로 뽑았나. provenance에 기록된다."""
 
@@ -130,6 +133,22 @@ class ExtractionMeta(BaseModel):
 
     model_id: str = Field(max_length=80)
     prompt_version: str = Field(max_length=40)
+
+
+class FollowUpReading(BaseModel):
+    """폰 모델(followup-v1)이 재방문 문장에서 읽은 표현. **읽기는 폰, 산수는 서버**(2026-10-12).
+
+    서버는 `text`가 그 문장에 글자 그대로 있는지 대조하고, 월·일 → 규칙 파서 → `days` 순서로
+    날짜를 센다. 어느 것도 안 맞으면 `follow_up_date`는 `null`(앱 달력에서 직접). 지어내지 않는다.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    sentence: str = Field(min_length=1, max_length=500)  # 어느 조각을 읽었나(응답 sentences의 것)
+    text: str = Field(default="", max_length=120)  # 문장에서 글자 그대로 자른 시점 표현. 없으면 ""
+    days: int | None = None
+    month: int | None = Field(default=None, ge=1, le=12)
+    day: int | None = Field(default=None, ge=1, le=31)
 
 
 class PatientProfile(BaseModel):
@@ -257,6 +276,9 @@ class MemoRequest(BaseModel):
         True  # false면 서버 LLM을 부르지 않고 sentences만(폰 분류 1단계). labels가 있으면 무시
     )
     labels_meta: ExtractionMeta | None = None  # labels가 폰 모델에서 왔으면 무엇으로
+    # 폰 모델이 재방문 문장에서 읽은 시점 표현(온디바이스 경로, 2026-10-12). 있으면 그 문장은
+    # 서버 2차 호출(followup-v1) 대신 이것으로 날짜를 센다. 규칙이 확실히 읽은 문장은 규칙이 우선
+    follow_up_readings: list[FollowUpReading] | None = Field(default=None, max_length=50)
     previsit_anchor_id: str | None = Field(default=None, max_length=40)  # 진료 전 부위(대조용)
     request_id: str | None = Field(default=None, max_length=128)
 
@@ -796,6 +818,11 @@ def create_app(
         # 여기서 끊는다. 다시 분류하면 되는 일이라 4xx이고, 상태 충돌이라 409다
         res = None
         used: list = []  # 이 요청이 실제로 LLM을 태운 객체들(usage 합산용)
+        phone_readings = (
+            {_WS_RE.sub("", r.sentence): r.model_dump() for r in body.follow_up_readings}
+            if body.follow_up_readings
+            else None
+        )
         prov_obj = None  # provenance를 낼 객체
         if body.labels is not None and body.sentences is not None:
             # memo-v5 되보내기: 조각 자체가 왔다. **다시 나누지 않는다.** 번호가 어긋날 길이 없다
@@ -806,6 +833,7 @@ def create_app(
                 body.labels,
                 visit_date=body.visit_date,
                 clinic=body.clinic,
+                phone_readings=phone_readings,
             )
             if res is None:
                 raise HTTPException(
@@ -851,6 +879,7 @@ def create_app(
                             visit_date=body.visit_date,
                             clinic=body.clinic,
                             followup_reader=reader,
+                            phone_readings=phone_readings,
                         )
                         if res is not None:
                             prov_obj = seg
@@ -863,6 +892,7 @@ def create_app(
                         visit_date=body.visit_date,
                         clinic=body.clinic,
                         followup_reader=reader,
+                        phone_readings=phone_readings,
                     )
                 if reader is not None:
                     used.append(reader)

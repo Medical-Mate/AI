@@ -18,15 +18,16 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from medimate.schema.card import AxisEntry, FieldStatus
 from medimate.schema.postvisit import FollowUpDate, PostAxis, PostVisitCard
+from medimate.text.kodate import Duration, find_durations
 
 logger = logging.getLogger("medimate.memo")
 
@@ -356,56 +357,20 @@ def split_sentences(memo: str) -> list[str]:
 
 
 # 숫자로 안 쓰는 기간. 공백을 뺀 형태를 키로 둔다(`한 주일` → `한주일`).
-_WORD_DAYS = {
-    "일주일": 7,
-    "한주일": 7,
-    "이주일": 14,
-    "두주일": 14,
-    "삼주일": 21,
-    "세주일": 21,
-    # '일'을 빼고 쓰는 형태(2026-09-15). "이주뒤 재방문"이 안 읽혀서 앞 절의 약 기간
-    # "일주일치"를 재방문으로 썼다 — 어제 고친 것과 같은 모양이 다른 낱말에서 났다
-    "일주": 7,
-    "이주": 14,
-    "삼주": 21,
-    "열흘": 10,
-    "보름": 15,
-    "사흘": 3,
-    "나흘": 4,
-}
-_WORD_ALT = "|".join(sorted((k[0] + r"\s*" + k[1:] for k in _WORD_DAYS), key=len, reverse=True))
-
-_REL = [
-    (re.compile(r"(\d+)\s*주\s*(뒤|후|있다가|지나서)"), lambda m: timedelta(weeks=int(m.group(1)))),
-    (re.compile(r"(\d+)\s*일\s*(뒤|후|있다가|지나서)"), lambda m: timedelta(days=int(m.group(1)))),
-    (
-        re.compile(r"(\d+)\s*(개월|달)\s*(뒤|후|있다가|지나서)"),
-        lambda m: timedelta(days=30 * int(m.group(1))),
-    ),
-    # `다다음주`는 2주다. `다음 주`가 그 안에서 걸려 7일이 되던 것을 실측(followup-v1)이 잡았다
-    (re.compile(r"다다음\s*주"), lambda m: timedelta(weeks=2)),
-    (re.compile(r"(?<!다)다음\s*주"), lambda m: timedelta(weeks=1)),
-    (
-        re.compile(r"(한|두|세|네)\s*주\s*(뒤|후)"),
-        lambda m: timedelta(weeks={"한": 1, "두": 2, "세": 3, "네": 4}[m.group(1)]),
-    ),
-    (
-        re.compile(r"(한|두|세)\s*달\s*(뒤|후)"),
-        lambda m: timedelta(days=30 * {"한": 1, "두": 2, "세": 3}[m.group(1)]),
-    ),
-    # 숫자 없는 기간 (2026-09-15). `\d+`만 보다가 `일주일 뒤에 다시 오세요`를 못 읽고
-    # **앞 절의 약 기간으로 새는** 사고가 있었다. 환자는 `7일`보다 `일주일`이라고 쓴다.
-    (
-        re.compile(rf"({_WORD_ALT})\s*(뒤|후|있다가|지나서)"),
-        lambda m: timedelta(days=_WORD_DAYS[m.group(1).replace(" ", "")]),
-    ),
-]
+# ── 기간·상대 날짜 읽기 ─────────────────────────────────────────────────────
+#
+# 낱말 표(`_WORD_DAYS`)와 정규식 목록(`_REL`)을 2026-10-12에 **조립 파서**(`text/kodate`)로 바꿨다.
+# 표는 늘 하나씩 늦었다 — `4일후` → `일주일` → `이주뒤` → `모레`·`닷새`·`열사흘`. 재방문 표현은
+# 고유어·한자어·숫자 수사 × 단위 + 날 이름 + 상대 낱말이 **조합되는 열린 집합**이라 구성 요소와
+# 결합 규칙만 두고 센다. 날짜 산수는 여기(코드)다. 폰 1.7B·서버 LLM은 세지 않는다.
+# `보름 남짓 지나서`·`열흘쯤 있다가` — 어림 말이 끼어도 뒤/후/있다가/지나서가 오면 같은 표현이다
+_AFTER = re.compile(r"\s*(?:쯤|정도|가량|남짓|경|이상)?\s*(뒤|후|있다가|지나서|지나고)")
 _ABS = re.compile(r"(\d{1,2})\s*월\s*(\d{1,2})\s*일")
 _NEXT_MONTH_DAY = re.compile(r"다음\s*달\s*(\d{1,2})\s*일")
 
 # ── 재방문 기간을 뒤에 오는 말 없이 읽는 자리 (2026-09-14, 앱 화면 메모) ────────────
 #
-# `_REL`은 `2주 뒤`처럼 **기간 + 뒤/후/있다가/지나서**만 본다. 그런데 실제 메모는
+# `열흘 뒤`처럼 **기간 + 뒤/후/있다가/지나서**는 그대로 재방문이다. 그런데 실제 메모는
 # "2주 약 먹고 다시 오라고 했어요"였고 재방문 날짜가 `null`이었다. 환자는 "뒤"를 안 쓴다.
 #
 # **기간만 보고 잡으면 안 된다.** "2주 약 먹고"의 2주는 약 기간이지 재방문 시점이 아닐 수 있다.
@@ -423,9 +388,11 @@ _RETURN_WORDS = (
     "방문하",
     "방문해",
     "내원",
+    "재진",
+    "재검",
+    "오래요",  # "다시 오래요" = 오라고 해요. 1.7B 실측 39문장에서 규칙이 이것 때문에 둘을 놓쳤다
+    "와보래요",
 )
-_BARE_DURATION = re.compile(rf"(\d+)\s*(주일|개월|주|일|달|년)|({_WORD_ALT})")
-_UNIT_DAYS = {"주": 7, "주일": 7, "일": 1, "개월": 30, "달": 30, "년": 365}
 
 # 앞 절에서 기간을 끌어올 수 있는 조건. 여기만 추론이 들어가므로 `basis`에 남긴다.
 # 약·기간 말만 있는 절이어야 한다 — 소견이나 검사 절의 숫자를 끌어오면 엉뚱한 날짜가 된다.
@@ -442,27 +409,19 @@ def _return_word_pos(text: str) -> int | None:
     return min(hits) if hits else None
 
 
-def _match_days(m: re.Match[str]) -> int:
-    if m.group(3):  # 숫자 없는 기간(`일주일`·`열흘`)
-        return _WORD_DAYS[m.group(3).replace(" ", "")]
-    return _UNIT_DAYS[m.group(2)] * int(m.group(1))
-
-
-def _bare_duration(text: str, near: int | None = None) -> tuple[str, timedelta] | None:
+def _bare_duration(text: str, near: int | None = None) -> Duration | None:
     """기간 하나를 고른다. `near`가 있으면 **그 위치에 가장 가까운** 것으로.
 
     첫 번째를 집으면 안 된다 (2026-09-15). `"3일치 약처방 4일후 재방문"`에서 첫 기간은
-    **약 기간**이라 재방문이 3일 뒤로 잡힌다. 지금은 `_REL`이 `4일후`를 먼저 잡아 가려져
-    있지만, `"3일치 약 먹고 4일에 다시 오세요"`처럼 `뒤`·`후`가 빠지면 바로 드러난다.
-    재방문 말 옆에 있는 기간이 재방문 기간이다.
+    **약 기간**이라 재방문이 3일 뒤로 잡힌다. 재방문 말 옆에 있는 기간이 재방문 기간이다.
+    `오늘`(0일)은 기간이 아니다 — "오늘 피검사 했고"의 오늘이다.
     """
-    ms = list(_BARE_DURATION.finditer(text))
-    if not ms:
+    ds = [d for d in find_durations(text) if not d.is_zero]
+    if not ds:
         return None
     if near is not None:
-        ms.sort(key=lambda m: min(abs(m.start() - near), abs(m.end() - near)))
-    m = ms[0]
-    return m.group(0), timedelta(days=_match_days(m))
+        ds.sort(key=lambda d: min(abs(d.start - near), abs(d.end - near)))
+    return ds[0]
 
 
 def followup_date(text: str, visit_date: date, prev_text: str | None = None) -> FollowUpDate | None:
@@ -489,28 +448,28 @@ def followup_date(text: str, visit_date: date, prev_text: str | None = None) -> 
         return FollowUpDate(
             text=m.group(0), date=dt.isoformat(), approximate=False, basis="다음 달 + 일자"
         )
-    for rx, fn in _REL:
-        m = rx.search(text)
-        if m:
-            delta = fn(m)
-            dt = visit_date + delta
+    # 기간 + 뒤/후/있다가/지나서, 또는 시점 낱말(모레·담주·다다음 달)은 재방문 말이 없어도 시점이다
+    # 달·해는 달력으로 더한다(`Duration.add_to`): 9월 15일 + 두 달 = 11월 15일. 일·주만 일수다
+    for d in find_durations(text):
+        after = _AFTER.match(text, d.end)
+        if not d.is_zero and (d.point or after):
             return FollowUpDate(
-                text=m.group(0),
-                date=dt.isoformat(),
+                # "2주 뒤" — 뒤까지가 표현이다(앱이 그대로 보여 준다)
+                text=text[d.start : after.end()] if after else d.text,
+                date=d.add_to(visit_date).isoformat(),
                 approximate=True,
-                basis=f"visit_date {visit_date.isoformat()} + {delta.days}d",
+                basis=f"visit_date {visit_date.isoformat()} + {d.label}",
             )
 
     # 뒤에 오는 말 없이 기간만 있는 경우 — **같은 절에 다시 온다는 말이 있을 때만**
     if _has_return_word(text):
         found = _bare_duration(text, near=_return_word_pos(text))
         if found:
-            raw, delta = found
             return FollowUpDate(
-                text=raw,
-                date=(visit_date + delta).isoformat(),
+                text=found.text,
+                date=found.add_to(visit_date).isoformat(),
                 approximate=True,
-                basis=f"visit_date {visit_date.isoformat()} + {delta.days}d",
+                basis=f"visit_date {visit_date.isoformat()} + {found.label}",
             )
 
         # 이 절에는 기간이 없다. **앞 절이 약·기간만 말하고 있으면** 그 기간을 쓴다
@@ -519,14 +478,13 @@ def followup_date(text: str, visit_date: date, prev_text: str | None = None) -> 
         if prev_text:
             found = _bare_duration(prev_text)
             if found and any(w in prev_text for w in _MED_ONLY):
-                raw, delta = found
                 return FollowUpDate(
-                    text=raw,
-                    date=(visit_date + delta).isoformat(),
+                    text=found.text,
+                    date=found.add_to(visit_date).isoformat(),
                     approximate=True,
                     basis=(
                         f"앞 절 '{prev_text.strip()}'의 기간을 씀 · "
-                        f"visit_date {visit_date.isoformat()} + {delta.days}d"
+                        f"visit_date {visit_date.isoformat()} + {found.label}"
                     ),
                 )
     return None
@@ -776,6 +734,56 @@ def followup_from_reader(
     return None
 
 
+def followup_from_reading(
+    reading: Mapping[str, Any], sentence: str, visit_date: date
+) -> FollowUpDate | None:
+    """**폰 모델이 읽어 보낸** 표현으로 날짜를 계산한다(2026-10-12, 온디바이스 이식).
+
+    서버 리더(`followup_from_reader`)와 다른 점은 **순서**다 — 1.7B는 표현은 글자 그대로 잘 자르지만
+    고유어 수사를 못 센다(열흘→14, 사나흘→12, 두 달→없음). 실측 15표현에서 폰 일수 그대로는 9,
+    **폰 표현 → 서버 규칙 → 규칙이 모를 때만 폰 일수**가 14였다(`evals/RESULTS.md` 2026-10-12).
+
+    1. `text`가 현재 문장에 글자 그대로 있어야 한다. 아니면 None(앞 문장의 약 기간이 넘어오는 길)
+    2. 월·일이 왔으면 절대 날짜(진료일 기준 다음 도래일)
+    3. `text` 조각만 규칙 파서에 넣는다 — 문장 전체가 아니라 조각이라 앞 절 추론이 끼지 않는다
+    4. 규칙이 모르면 폰이 센 `days`(1..400)
+    """
+    if not isinstance(reading, Mapping):
+        return None
+    text = str(reading.get("text") or "").strip()
+    if not text or text not in sentence:
+        return None
+    mo, d, days = reading.get("month"), reading.get("day"), reading.get("days")
+    if isinstance(mo, int) and isinstance(d, int) and not isinstance(mo, bool):
+        yr = visit_date.year + (1 if (mo, d) < (visit_date.month, visit_date.day) else 0)
+        try:
+            dt = date(yr, mo, d)
+        except ValueError:
+            return None
+        return FollowUpDate(
+            text=text, date=dt.isoformat(), approximate=False, basis=f"폰 읽음 '{text}' · 절대 날짜"
+        )
+    # 조각 뒤에 재방문 표식을 붙인다 — `_bare_duration` 경로는 같은 절에 다시 온다는 말이 있어야
+    # 기간을 재방문으로 읽는다. 조각은 이미 재방문 문장에서 폰이 잘라 온 것이다
+    by_rule = followup_date(text + " 재방문", visit_date)
+    if by_rule is not None:
+        return FollowUpDate(
+            text=text,
+            date=by_rule.date,
+            approximate=by_rule.approximate,
+            basis=f"폰 읽음 '{text}' → 규칙 · {by_rule.basis}",
+        )
+    if isinstance(days, int) and not isinstance(days, bool) and 1 <= days <= _READ_MAX_DAYS:
+        dt = visit_date + timedelta(days=days)
+        return FollowUpDate(
+            text=text,
+            date=dt.isoformat(),
+            approximate=True,
+            basis=f"폰 읽음 '{text}' = {days}d · visit_date {visit_date.isoformat()} + {days}d",
+        )
+    return None
+
+
 @dataclass
 class MemoResult:
     card: PostVisitCard
@@ -790,8 +798,13 @@ def _assemble(
     labels: dict[int, str],
     visit_date: date | None,
     followup_reader: FollowUpReader | None,
+    phone_readings: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> None:
-    """(문장, 라벨) → 카드. 규칙 분리든 LLM 조각이든 되보낸 조각이든 여기 하나로 온다."""
+    """(문장, 라벨) → 카드. 규칙 분리든 LLM 조각이든 되보낸 조각이든 여기 하나로 온다.
+
+    `phone_readings`: 폰 모델이 재방문 문장에서 읽은 표현(공백 뺀 문장 → {text, days, month, day}).
+    있으면 그 문장은 서버 리더를 부르지 않는다 — 읽기는 폰, 산수는 서버.
+    """
     labels = fold_lifestyle(labels)
     buckets: dict[PostAxis, list[str]] = {a: [] for a in PostAxis}
     unsorted: list[str] = []
@@ -828,8 +841,14 @@ def _assemble(
             # 규칙이 먼저다 — 확인 가능하고 공짜다. 규칙이 **못 읽었거나 앞 절에서 끌어왔을 때만**
             # LLM에게 읽힌다(2026-09-15). "이주뒤"를 못 읽어 앞 절의 약 기간을 재방문으로 쓴
             # 것이 계기다. LLM이 읽은 것도 문장에 글자 그대로 있어야만 받는다
-            if followup_reader is not None and (fu is None or fu.basis.startswith("앞 절")):
-                read = followup_from_reader(followup_reader, s, visit_date, prev_text=prev)
+            if fu is None or fu.basis.startswith("앞 절"):
+                phone = (phone_readings or {}).get(_WS.sub("", s))
+                if phone is not None:
+                    read = followup_from_reading(phone, s, visit_date)
+                elif followup_reader is not None:
+                    read = followup_from_reader(followup_reader, s, visit_date, prev_text=prev)
+                else:
+                    read = None
                 if read is not None:
                     fu = read
             if fu:
@@ -897,6 +916,7 @@ def segment_memo(
     clinic: str | None = None,
     card: PostVisitCard | None = None,
     followup_reader: FollowUpReader | None = None,
+    phone_readings: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> MemoResult | None:
     """LLM이 나눈 조각으로 카드를 만든다.
 
@@ -932,7 +952,7 @@ def segment_memo(
     card.clinic = clinic
     card.visit_date = visit_date.isoformat() if visit_date else card.visit_date
     labels = dict(enumerate(labs))
-    _assemble(card, sentences, labels, visit_date, followup_reader)
+    _assemble(card, sentences, labels, visit_date, followup_reader, phone_readings)
     return MemoResult(card, sentences, fold_lifestyle(labels), [])
 
 
@@ -943,6 +963,7 @@ def assemble_from_client(
     visit_date: date | None = None,
     clinic: str | None = None,
     card: PostVisitCard | None = None,
+    phone_readings: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> MemoResult | None:
     """앱이 되보낸 조각 + 라벨로 카드를 만든다(1q-2 수정). **다시 나누지 않는다.**
 
@@ -957,7 +978,7 @@ def assemble_from_client(
     card.visit_date = visit_date.isoformat() if visit_date else card.visit_date
     raw = MemoLabels.from_keyed(keyed_labels, len(sliced))
     labels = dict(enumerate(raw.labels))
-    _assemble(card, sliced, labels, visit_date, None)
+    _assemble(card, sliced, labels, visit_date, None, phone_readings)
     return MemoResult(card, sliced, fold_lifestyle(labels), [])
 
 
@@ -968,6 +989,7 @@ def classify_memo(
     clinic: str | None = None,
     card: PostVisitCard | None = None,
     followup_reader: FollowUpReader | None = None,
+    phone_readings: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> MemoResult:
     """메모 하나를 4묶음 카드로. 문장 원문 보존, 라벨 없는 문장은 unsorted.
 
@@ -992,5 +1014,5 @@ def classify_memo(
     for i in range(len(raw.labels), len(sentences)):
         dropped.append({"i": i, "label": None, "reason": "missing_label"})  # none으로 처리된다
 
-    _assemble(card, sentences, labels, visit_date, followup_reader)
+    _assemble(card, sentences, labels, visit_date, followup_reader, phone_readings)
     return MemoResult(card, sentences, fold_lifestyle(labels), dropped)
