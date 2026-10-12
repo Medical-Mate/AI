@@ -174,7 +174,7 @@ def test_the_lazy_production_path_builds_the_reader_too(monkeypatch):
         def read(self, sentence, prev_text=None):
             calls["read"] += 1
             self.usage = _Usage(800, 20, 0.0008)
-            return {"text": "담주", "days": 7, "month": None, "day": None}
+            return {"text": "다음 달", "days": 30, "month": None, "day": None}
 
     class DeadSeg:  # 세그멘터는 이 테스트의 관심 밖 — 죽여서 v4 분류 + 리더 경로를 타게 한다
         model_id = "fake"
@@ -190,12 +190,12 @@ def test_the_lazy_production_path_builds_the_reader_too(monkeypatch):
     monkeypatch.setattr(appmod, "LLMFollowUpReader", FakeReader)
     monkeypatch.setattr(appmod, "LLMMemoSegmenter", DeadSeg)
     client = TestClient(create_app())  # 주입 없음 = 운영 모양
-    body = {"memo": "약 받았어요. 담주에 다시 오래요.", "visit_date": "2026-09-15"}
+    body = {"memo": "약 받았어요. 다음 달에 다시 오래요.", "visit_date": "2026-09-15"}
     for expected_reads in (1, 2):
         r = client.post("/v1/postvisit/memo", json=body)
         assert r.status_code == 200
         fu = r.json()["card"]["follow_up_date"]
-        assert fu["date"] == "2026-09-22" and fu["basis"].startswith("LLM 읽음 '담주'")
+        assert fu["date"] == "2026-10-15" and fu["basis"].startswith("LLM 읽음 '다음 달'")
         assert calls["read"] == expected_reads
         # 응답 usage는 분류기 + 리더 **둘 다** 담는다. 리더 몫이 빠지면 켜졌는지 비용으로 못 본다
         u = r.json()["usage"]
