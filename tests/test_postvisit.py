@@ -228,18 +228,18 @@ def test_the_reader_is_only_asked_when_the_rules_fail_or_guess():
     classify_memo("2주 뒤에 오라고", FakeClassifier(["follow_up"]), visit_date=v, followup_reader=r)
     assert r.calls == []  # 규칙이 읽었다
 
-    # `다음 달`은 규칙이 모른다(`담주`는 2026-10-12부터 규칙) → 앞 절 폴백이 약 기간을 집으려는
-    # 자리 → 여기서 LLM이 읽는다
-    r = _Reader({"text": "다음 달", "days": 30, "month": None, "day": None})
+    # `연말`은 파서가 모른다(`담주`·`다음 달`은 2026-10-12부터 조립 파서가 센다)
+    # → 앞 절 폴백이 약 기간을 집으려는 자리 → 여기서 LLM이 읽는다
+    r = _Reader({"text": "연말", "days": 100, "month": None, "day": None})
     res = classify_memo(
-        "일주일치 약처방받고. 다음 달에 보자고.",
+        "일주일치 약처방받고. 연말에 보자고.",
         FakeClassifier(["medication_instructions", "follow_up"]),
         visit_date=v,
         followup_reader=r,
     )
-    assert r.calls and r.calls[0][0] == "다음 달에 보자고."
-    assert res.card.follow_up_date.date == "2026-10-15"
-    assert res.card.follow_up_date.basis.startswith("LLM 읽음 '다음 달' = 30d")
+    assert r.calls and r.calls[0][0] == "연말에 보자고."
+    assert res.card.follow_up_date.date == "2026-12-24"
+    assert res.card.follow_up_date.basis.startswith("LLM 읽음 '연말' = 100d")
 
 
 def test_what_the_reader_says_must_be_in_the_sentence_verbatim():

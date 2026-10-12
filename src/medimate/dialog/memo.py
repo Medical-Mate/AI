@@ -27,6 +27,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from medimate.schema.card import AxisEntry, FieldStatus
 from medimate.schema.postvisit import FollowUpDate, PostAxis, PostVisitCard
+from medimate.text.kodate import find_durations
 
 logger = logging.getLogger("medimate.memo")
 
@@ -356,77 +357,20 @@ def split_sentences(memo: str) -> list[str]:
 
 
 # 숫자로 안 쓰는 기간. 공백을 뺀 형태를 키로 둔다(`한 주일` → `한주일`).
-_WORD_DAYS = {
-    "일주일": 7,
-    "한주일": 7,
-    "이주일": 14,
-    "두주일": 14,
-    "삼주일": 21,
-    "세주일": 21,
-    # '일'을 빼고 쓰는 형태(2026-09-15). "이주뒤 재방문"이 안 읽혀서 앞 절의 약 기간
-    # "일주일치"를 재방문으로 썼다 — 어제 고친 것과 같은 모양이 다른 낱말에서 났다
-    "일주": 7,
-    "이주": 14,
-    "삼주": 21,
-    "열흘": 10,
-    "보름": 15,
-    "사흘": 3,
-    "나흘": 4,
-    # 고유어 날짜 낱말(2026-10-12). 예시에 없는 12표현 실측에서 폰 1.7B가 못 세고(모레→1, 닷새→15,
-    # 스무날→7) 못 자르기도 한(글피·엿새) 말들. 닫힌 집합이라 표가 맞다. `하루`는 넣지 않는다 —
-    # "하루 두 번"(복용법)이 재방문 말 옆에 서면 1일로 샌다
-    "이틀": 2,
-    "닷새": 5,
-    "엿새": 6,
-    "이레": 7,
-    "여드레": 8,
-    "아흐레": 9,
-    "스무날": 20,
-    "모레": 2,
-    "글피": 3,
-    "담주": 7,  # "다음 주"의 구어. 폰·서버 리더가 7로 읽던 것을 규칙으로
-}
-_WORD_ALT = "|".join(sorted((k[0] + r"\s*" + k[1:] for k in _WORD_DAYS), key=len, reverse=True))
-
-_MONTH_WORDS = {"한": 1, "두": 2, "세": 3, "석": 3, "네": 4, "넉": 4}
-
-_REL = [
-    (re.compile(r"(\d+)\s*주\s*(뒤|후|있다가|지나서)"), lambda m: timedelta(weeks=int(m.group(1)))),
-    (re.compile(r"(\d+)\s*일\s*(뒤|후|있다가|지나서)"), lambda m: timedelta(days=int(m.group(1)))),
-    (
-        re.compile(r"(\d+)\s*(개월|달)\s*(뒤|후|있다가|지나서)"),
-        lambda m: timedelta(days=30 * int(m.group(1))),
-    ),
-    # `다다음주`는 2주다. `다음 주`가 그 안에서 걸려 7일이 되던 것을 실측(followup-v1)이 잡았다
-    (re.compile(r"다다음\s*주"), lambda m: timedelta(weeks=2)),
-    (re.compile(r"(?<!다)다음\s*주"), lambda m: timedelta(weeks=1)),
-    (
-        re.compile(r"(한|두|세|네)\s*주\s*(뒤|후)"),
-        lambda m: timedelta(weeks={"한": 1, "두": 2, "세": 3, "네": 4}[m.group(1)]),
-    ),
-    # `한 달 반`(2026-10-12). 폰 1.7B·규칙 둘 다 모르던 유일한 표현. 45일로 센다
-    (
-        re.compile(r"(한|두|세|석|네|넉)\s*달\s*반\s*(뒤|후|있다가|지나서)"),
-        lambda m: timedelta(days=30 * _MONTH_WORDS[m.group(1)] + 15),
-    ),
-    # `석 달`·`넉 달`(2026-10-12)
-    (
-        re.compile(r"(한|두|세|석|네|넉)\s*달\s*(뒤|후|있다가|지나서)"),
-        lambda m: timedelta(days=30 * _MONTH_WORDS[m.group(1)]),
-    ),
-    # 숫자 없는 기간 (2026-09-15). `\d+`만 보다가 `일주일 뒤에 다시 오세요`를 못 읽고
-    # **앞 절의 약 기간으로 새는** 사고가 있었다. 환자는 `7일`보다 `일주일`이라고 쓴다.
-    (
-        re.compile(rf"({_WORD_ALT})\s*(뒤|후|있다가|지나서)"),
-        lambda m: timedelta(days=_WORD_DAYS[m.group(1).replace(" ", "")]),
-    ),
-]
+# ── 기간·상대 날짜 읽기 ─────────────────────────────────────────────────────
+#
+# 낱말 표(`_WORD_DAYS`)와 정규식 목록(`_REL`)을 2026-10-12에 **조립 파서**(`text/kodate`)로 바꿨다.
+# 표는 늘 하나씩 늦었다 — `4일후` → `일주일` → `이주뒤` → `모레`·`닷새`·`열사흘`. 재방문 표현은
+# 고유어·한자어·숫자 수사 × 단위 + 날 이름 + 상대 낱말이 **조합되는 열린 집합**이라 구성 요소와
+# 결합 규칙만 두고 센다. 날짜 산수는 여기(코드)다. 폰 1.7B·서버 LLM은 세지 않는다.
+# `보름 남짓 지나서`·`열흘쯤 있다가` — 어림 말이 끼어도 뒤/후/있다가/지나서가 오면 같은 표현이다
+_AFTER = re.compile(r"\s*(?:쯤|정도|가량|남짓|경|이상)?\s*(뒤|후|있다가|지나서|지나고)")
 _ABS = re.compile(r"(\d{1,2})\s*월\s*(\d{1,2})\s*일")
 _NEXT_MONTH_DAY = re.compile(r"다음\s*달\s*(\d{1,2})\s*일")
 
 # ── 재방문 기간을 뒤에 오는 말 없이 읽는 자리 (2026-09-14, 앱 화면 메모) ────────────
 #
-# `_REL`은 `2주 뒤`처럼 **기간 + 뒤/후/있다가/지나서**만 본다. 그런데 실제 메모는
+# `열흘 뒤`처럼 **기간 + 뒤/후/있다가/지나서**는 그대로 재방문이다. 그런데 실제 메모는
 # "2주 약 먹고 다시 오라고 했어요"였고 재방문 날짜가 `null`이었다. 환자는 "뒤"를 안 쓴다.
 #
 # **기간만 보고 잡으면 안 된다.** "2주 약 먹고"의 2주는 약 기간이지 재방문 시점이 아닐 수 있다.
@@ -444,9 +388,11 @@ _RETURN_WORDS = (
     "방문하",
     "방문해",
     "내원",
+    "재진",
+    "재검",
+    "오래요",  # "다시 오래요" = 오라고 해요. 1.7B 실측 39문장에서 규칙이 이것 때문에 둘을 놓쳤다
+    "와보래요",
 )
-_BARE_DURATION = re.compile(rf"(\d+)\s*(주일|개월|주|일|달|년)|({_WORD_ALT})")
-_UNIT_DAYS = {"주": 7, "주일": 7, "일": 1, "개월": 30, "달": 30, "년": 365}
 
 # 앞 절에서 기간을 끌어올 수 있는 조건. 여기만 추론이 들어가므로 `basis`에 남긴다.
 # 약·기간 말만 있는 절이어야 한다 — 소견이나 검사 절의 숫자를 끌어오면 엉뚱한 날짜가 된다.
@@ -463,27 +409,20 @@ def _return_word_pos(text: str) -> int | None:
     return min(hits) if hits else None
 
 
-def _match_days(m: re.Match[str]) -> int:
-    if m.group(3):  # 숫자 없는 기간(`일주일`·`열흘`)
-        return _WORD_DAYS[m.group(3).replace(" ", "")]
-    return _UNIT_DAYS[m.group(2)] * int(m.group(1))
-
-
 def _bare_duration(text: str, near: int | None = None) -> tuple[str, timedelta] | None:
     """기간 하나를 고른다. `near`가 있으면 **그 위치에 가장 가까운** 것으로.
 
     첫 번째를 집으면 안 된다 (2026-09-15). `"3일치 약처방 4일후 재방문"`에서 첫 기간은
-    **약 기간**이라 재방문이 3일 뒤로 잡힌다. 지금은 `_REL`이 `4일후`를 먼저 잡아 가려져
-    있지만, `"3일치 약 먹고 4일에 다시 오세요"`처럼 `뒤`·`후`가 빠지면 바로 드러난다.
-    재방문 말 옆에 있는 기간이 재방문 기간이다.
+    **약 기간**이라 재방문이 3일 뒤로 잡힌다. 재방문 말 옆에 있는 기간이 재방문 기간이다.
+    `오늘`(0일)은 기간이 아니다 — "오늘 피검사 했고"의 오늘이다.
     """
-    ms = list(_BARE_DURATION.finditer(text))
-    if not ms:
+    ds = [d for d in find_durations(text) if d.days > 0]
+    if not ds:
         return None
     if near is not None:
-        ms.sort(key=lambda m: min(abs(m.start() - near), abs(m.end() - near)))
-    m = ms[0]
-    return m.group(0), timedelta(days=_match_days(m))
+        ds.sort(key=lambda d: min(abs(d.start - near), abs(d.end - near)))
+    d = ds[0]
+    return d.text, timedelta(days=d.days)
 
 
 def followup_date(text: str, visit_date: date, prev_text: str | None = None) -> FollowUpDate | None:
@@ -510,16 +449,18 @@ def followup_date(text: str, visit_date: date, prev_text: str | None = None) -> 
         return FollowUpDate(
             text=m.group(0), date=dt.isoformat(), approximate=False, basis="다음 달 + 일자"
         )
-    for rx, fn in _REL:
-        m = rx.search(text)
-        if m:
-            delta = fn(m)
-            dt = visit_date + delta
+    # 기간 + 뒤/후/있다가/지나서, 또는 시점 낱말(모레·담주·다다음 달)은 재방문 말이 없어도 시점이다
+    for d in find_durations(text):
+        after = _AFTER.match(text, d.end)
+        if d.days > 0 and (d.point or after):
+            dt = visit_date + timedelta(days=d.days)
             return FollowUpDate(
-                text=m.group(0),
+                text=text[d.start : after.end()]
+                if after
+                else d.text,  # "2주 뒤" — 뒤까지가 표현이다
                 date=dt.isoformat(),
                 approximate=True,
-                basis=f"visit_date {visit_date.isoformat()} + {delta.days}d",
+                basis=f"visit_date {visit_date.isoformat()} + {d.days}d",
             )
 
     # 뒤에 오는 말 없이 기간만 있는 경우 — **같은 절에 다시 온다는 말이 있을 때만**

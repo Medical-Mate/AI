@@ -34,12 +34,12 @@ def test_rules_win_over_the_phone_count_when_they_know_the_word():
 
 
 def test_the_phone_count_is_used_only_when_the_rules_do_not_know_the_word():
-    """`다음 달`은 규칙에 없다 — 폰이 센 30을 쓴다. basis에 폰 일수라고 남는다.
+    """`연말`은 파서에 없다 — 폰이 센 100을 쓴다. basis에 폰 일수라고 남는다.
 
     (`담주`·`이틀`도 1차 실측 때는 여기였다. 2026-10-12에 규칙 표에 들어가 이제 규칙이 먼저 센다)
     """
-    fu = followup_from_reading(_r("다음 달", days=30), "다음 달에 보자고", V)
-    assert fu is not None and fu.date == "2026-10-15" and "= 30d" in fu.basis and fu.approximate
+    fu = followup_from_reading(_r("연말", days=100), "연말에 보자고", V)
+    assert fu is not None and fu.date == "2026-12-24" and "= 100d" in fu.basis and fu.approximate
     fu = followup_from_reading(_r("담주", days=99), "담주에 보자고", V)
     assert fu is not None and fu.date == "2026-09-22" and "→ 규칙" in fu.basis
 
@@ -53,9 +53,9 @@ def test_what_the_phone_says_must_be_in_the_sentence_verbatim():
     """앞 문장의 약 기간을 끌어온 것, 빈 표현, 범위 밖 일수는 전부 None — 지어내지 않는다."""
     assert followup_from_reading(_r("3일치 약 먹고", days=3), "다시 오세요", V) is None
     assert followup_from_reading(_r("", days=7), "안 좋아지면 바로 오래요", V) is None
-    assert followup_from_reading(_r("다음 달", days=0), "다음 달에 보자고", V) is None
-    assert followup_from_reading(_r("다음 달", days=9999), "다음 달에 보자고", V) is None
-    assert followup_from_reading(_r("다음 달", days=True), "다음 달에 보자고", V) is None
+    assert followup_from_reading(_r("연말", days=0), "연말에 보자고", V) is None
+    assert followup_from_reading(_r("연말", days=9999), "연말에 보자고", V) is None
+    assert followup_from_reading(_r("연말", days=True), "연말에 보자고", V) is None
     assert followup_from_reading("not a dict", "담주에 보자고", V) is None
 
 
@@ -68,17 +68,17 @@ def test_a_month_and_a_half_is_now_a_rule():
 
 def test_client_path_uses_the_phone_reading_without_any_llm():
     """labels + sentences + follow_up_readings → 서버 LLM 0으로 날짜까지 나온다."""
-    memo = "위염 초기래요. 다음 달에 보자고 하셨어요."
-    sents = ["위염 초기래요.", "다음 달에 보자고 하셨어요."]
+    memo = "위염 초기래요. 연말에 보자고 하셨어요."
+    sents = ["위염 초기래요.", "연말에 보자고 하셨어요."]
     res = assemble_from_client(
         memo,
         sents,
         {"0": "findings", "1": "follow_up"},
         visit_date=V,
-        phone_readings={"다음달에보자고하셨어요.": _r("다음 달", days=30)},
+        phone_readings={"연말에보자고하셨어요.": _r("연말", days=100)},
     )
     assert res is not None
-    assert res.card.follow_up_date is not None and res.card.follow_up_date.date == "2026-10-15"
+    assert res.card.follow_up_date is not None and res.card.follow_up_date.date == "2026-12-24"
 
 
 def test_the_rule_result_stays_when_it_is_certain_even_if_the_phone_disagrees():
@@ -101,15 +101,15 @@ def test_api_accepts_follow_up_readings_on_the_client_path():
     """온디바이스 경로: 폰 라벨 + 폰 읽기. 호출 0, basis가 폰에서 왔다고 남는다."""
     c = TestClient(create_app(_no_llm))
     body = {
-        "memo": "위염 초기래요. 다음 달에 보자고 하셨어요.",
+        "memo": "위염 초기래요. 연말에 보자고 하셨어요.",
         "visit_date": "2026-09-15",
-        "sentences": ["위염 초기래요.", "다음 달에 보자고 하셨어요."],
+        "sentences": ["위염 초기래요.", "연말에 보자고 하셨어요."],
         "labels": {"0": "findings", "1": "follow_up"},
         "follow_up_readings": [
             {
-                "sentence": "다음 달에 보자고 하셨어요.",
-                "text": "다음 달",
-                "days": 30,
+                "sentence": "연말에 보자고 하셨어요.",
+                "text": "연말",
+                "days": 100,
                 "month": None,
                 "day": None,
             }
@@ -118,7 +118,7 @@ def test_api_accepts_follow_up_readings_on_the_client_path():
     r = c.post("/v1/postvisit/memo", json=body)
     assert r.status_code == 200, r.text
     fu = r.json()["card"]["follow_up_date"]
-    assert fu["date"] == "2026-10-15" and fu["basis"].startswith("폰 읽음")
+    assert fu["date"] == "2026-12-24" and fu["basis"].startswith("폰 읽음")
     assert r.json()["usage"]["cost_usd"] == 0
 
 
