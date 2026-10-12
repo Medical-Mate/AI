@@ -22,6 +22,8 @@ v2
   12장). 과거 값은 가정으로 바꾸지 않고 "~는데"
 - 느낌 값에 이름씨가 없으면 부위를 주어로 붙인다(PC77 "가끔 콕콕 찌르는데" — 가슴이 빠졌다)
 - 악화 명사구는 "~에 더 심한데"로 받는다("아침 첫 걸음에"). 쉼표로 이어진 조각도 하나씩 맞춘다
+- 2차 판독: 좋아지는 경과는 조건형이 아니라 "~는데 다시 와야 하나요?"(PC29 — 뜻이
+  뒤집혔다). 동반 "이름씨 + 횟수"는 "설사를 여섯 번 한 것도"(PC57)
 
 앱 경로에서 템플릿은 서버가 만든다(추론만 폰, 검증·폴백은 서버). 그래서 Kiwi를 쓸 수 있다.
 """
@@ -186,6 +188,11 @@ def _adverbial(v: str, kiwi) -> str | None:
     return f"{v}{'에서' if _PLACE.search(v) else '에'}"
 
 
+_COUNT = re.compile(
+    r"([가-힣]+) ((?:\d+|한|두|세|네|다섯|여섯|일곱|여덟|아홉|열|여러|몇)\s?(?:번|회|차례))"
+)
+
+
 def _glue(source: str, value: str, kiwi=None, kind: str = "데") -> str | None:
     """서술어 없이 끝나는 값에 칸 뜻에 맞는 말을 붙여 절로 만든다. 맞는 게 없으면 None.
     kind — 데: "…처럼 아픈데", 관형: "…처럼 아픈"(뒤에 "건"이 온다)."""
@@ -199,6 +206,11 @@ def _glue(source: str, value: str, kiwi=None, kind: str = "데") -> str | None:
         return f"{v}이 {'드는데' if kind == '데' else '드는'}"
     if source == "radiation" and kind == "데" and re.search(r"(까지|으로|로|쪽)$", v):
         return f"{v} 퍼지는데"
+    # "설사 여섯 번" — 이름씨 + 횟수는 "설사도 있는데"로 자르면 어색하다. "하다"를 붙인다(PC57)
+    if source == "associated" and (m := _COUNT.fullmatch(v)):
+        noun, count = m.groups()
+        obj = f"{noun}{'을' if _has_batchim(noun) else '를'} {count}"
+        return f"{obj} 했는데" if kind == "데" else f"{obj} 한 것도"
     # 이름씨로 끝나는 짧은 값만("기침", "콧물"). 어미로 끝나는 값("붓기도 해요")은 여기 오면 안 된다
     if (
         source == "associated"
@@ -241,6 +253,11 @@ _FORMS: dict[str, list[tuple[str, list[str]]]] = {
     ],
     "radiation": [("데", ["같은 증상인가요?", "관련이 있나요?"])],
 }
+# 좋아지는 경과("조금씩 나아지는 것 같아요")를 조건형으로 받으면 "나아지면 다시 와야 하나요?"가 되어
+# 뜻이 뒤집힌다(PC29). "~는데"로 받고 꼬리도 따로
+_IMPROVING_TAILS = ["다시 와야 하나요?", "이대로 지켜봐도 되나요?"]
+_IMPROVING = re.compile(r"나아|나았|좋아지|좋아졌|덜해|덜하|가라앉|줄었|줄어들|풀려|풀리")
+_WORSENING = re.compile(r"심해|나빠|늘어|늘었|커지|번지")
 _ORDER = ["exacerbating", "character", "associated", "time_course", "radiation"]
 # 흐름을 말하는 부사가 없는 한 낱말 경과("비슷해요", "그대로예요")는 "계속"을 앞에 둔다 —
 # "비슷하면"만으로는 무엇과 비슷한지 모른다
@@ -323,6 +340,11 @@ def _axis_question(
             adv = [_adverbial(x, kiwi) for x in parts]
             whole = ", ".join(a for a in adv if a) if all(adv) else first
     forms = _FORMS[source]
+    # 마지막 절이 좋아지는 말이면("어제가 제일 심했고 오늘은 조금 덜해요") 좋아지는 경과다
+    # "심해졌다 덜해졌다"·"좋아졌다 나빠졌다"처럼 오락가락하는 값은 빼고
+    last = re.split(r"[,.]|고 |는데 ", value)[-1]
+    if source == "time_course" and _IMPROVING.search(last) and not _WORSENING.search(last):
+        forms = [("데", _IMPROVING_TAILS)]
     if len(forms) > 1 and source != "time_course":
         # 값에서 정해지는 순번으로 돌리고, 이 카드에서 아직 안 쓴 잇는 말을 앞에 둔다
         k = sum(map(ord, value)) % len(forms)

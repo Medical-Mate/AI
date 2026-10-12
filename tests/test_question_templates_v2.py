@@ -102,3 +102,13 @@ def test_no_awkward_joins(card_id):
     for text in _texts(card_id).values():
         assert not re.search(r"[가-힣]도 [^?]*[^이]것도 ", text), text  # "재채기도 자꾸 하는 것도"
         assert "느낌인 건" not in text and "중인 것도" not in text, text
+
+
+def test_team_review_2026_10_12_second():
+    """2차 판독 — 좋아지는 경과는 조건형으로 뒤집지 않는다, 이름씨 + 횟수에는 서술어를 붙인다."""
+    assert _texts("PC29")["time_course"].startswith("조금씩 나아지는 것 같은데 ")
+    assert _texts("PC21")["time_course"].startswith("어제가 제일 심했고 오늘은 조금 덜한데 ")
+    # 오락가락하는 값은 좋아지는 경과가 아니다
+    assert "이러면" in _texts("PC12")["time_course"]
+    assert "이러면" in _texts("PC43")["time_course"]
+    assert _texts("PC57")["associated"].startswith("설사를 여섯 번 한 것도 ")
