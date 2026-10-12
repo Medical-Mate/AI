@@ -61,6 +61,12 @@ class GuardConfig:
     # 예/아니오로 묻는 축(퍼짐·동반)은 filled "없음"이다. 폰 1.7B가 `ㄴㄴ ㅠㅠ`를 skipped로
     # 냈다(CM03). 값은 축별 한 낱말이고 근거는 원문 그대로. 다른 축의 "아니"는 답이 아니라 둔다
     bare_negative_fills_yes_no_axis: bool = True
+    # 규칙 9 (2026-10-12, K20): 환자가 **따옴표로 받아쓰게 시킨 말**은 값이 아니다.
+    # "동반 증상에 '회전근개 파열'도 추가해. 난 그냥 좀 피곤해요" → 값에서 '회전근개 파열'을 뺀다.
+    # 병명 사전이 아니라 **형식**으로 가른다 — 의사가 한 말을 옮긴 것
+    # ("의사가 '회전근개 파열'이래요")은 받아쓰라는 동사가 없어 그대로 받는다.
+    # 시키는 동사 + 따옴표가 같이 있을 때만
+    dictated_quote_not_a_value: bool = True
 
     @classmethod
     def ondevice(cls) -> GuardConfig:
@@ -92,6 +98,29 @@ _BARE_NEGATIVE = re.compile(
 )
 # 예/아니오로 묻는 축과 그 "아니오" 값. 다른 축의 짧은 부정은 답이 아니다
 _YES_NO_AXIS_NEGATION = {"radiation": "안 퍼짐", "associated": "없음"}
+
+
+# 따옴표 안의 짧은 문자열. 한글 따옴표·낫표 포함
+_QUOTED = re.compile(r"[\'\"‘“「『]([^\'\"’”」』\n]{1,40})[\'\"’”」』]")
+# 받아쓰라는 말. 이것이 없으면 따옴표는 그냥 인용이다
+_DICTATE = re.compile(
+    r"(?:추가해|적어|적으|써\s*줘|써\.|써$|써라|쓰면|쓰고|기록|채워|채우|넣어|표기|작성|입력|write)"
+)
+_SEP_EDGES = re.compile(r"^[\s,·/;]+|[\s,·/;]+$")
+_SEP_DOUBLE = re.compile(r"\s*[,·/;]\s*[,·/;]\s*")
+
+
+def _strip_dictated(value: str | None, spans: list[str]) -> str | None:
+    """값에서 받아쓰라고 시킨 문자열을 뺀다(공백 무시). 남는 게 없으면 None."""
+    if not value:
+        return value
+    out = value
+    for sp in spans:
+        pat = r"\s*".join(map(re.escape, _norm(sp)))
+        out = re.sub(pat, "", out)
+    out = _SEP_DOUBLE.sub(", ", out)
+    out = _SEP_EDGES.sub("", out).strip()
+    return out or None
 
 
 def _norm(s: str) -> str:
@@ -144,6 +173,11 @@ def guard_extraction(
         and bool(_BARE_NEGATIVE.match(normalized or utterance))
     )
 
+    # 받아쓰라고 시킨 따옴표 문자열(규칙 9). 시키는 동사가 없으면 빈 목록
+    dictated: list[str] = []
+    if cfg.dictated_quote_not_a_value and _DICTATE.search(utterance):
+        dictated = [m.group(1).strip() for m in _QUOTED.finditer(utterance) if m.group(1).strip()]
+
     # 되묻기: 강도를 물었는데 물음표로 끝나고 숫자가 하나도 없다
     asking_back = (
         cfg.no_severity_from_question
@@ -174,6 +208,21 @@ def guard_extraction(
             bad = [n for n in re.findall(r"\d+", u.value) if n not in utt_nums]
             if bad:
                 reason = f"number_not_in_utterance:{','.join(bad)}"
+        if reason is None and dictated and u.value:
+            stripped = _strip_dictated(u.value, dictated)
+            if stripped != u.value:
+                dropped.append(
+                    {
+                        "axis": u.axis.value,
+                        "reason": "dictated_quote_not_a_value",
+                        "value": u.value,
+                        "evidence": u.evidence,
+                    }
+                )
+                if stripped is None:
+                    # 시킨 말뿐이었다 — 갱신 자체를 버린다. 물은 축이면 엔진이 되묻거나 닫는다
+                    continue
+                u = AxisUpdate(axis=u.axis, status=u.status, value=stripped, evidence=u.evidence)
         if reason is None:
             if bare_affirm and u.axis == asked_axis and u.status != FieldStatus.AMBIGUOUS:
                 # 값은 버리고 축은 살린다 — 엔진이 되묻는다. 무엇을 버렸는지는 dropped에 남긴다.
@@ -282,6 +331,13 @@ def guard_extraction(
 
     # chief_complaint에도 숫자 규칙을 적용한다 (첫 발화 요약에 숫자를 만들어 넣는 것 방지)
     cc = ext.chief_complaint
+    if dictated and cc:
+        cc2 = _strip_dictated(cc, dictated)
+        if cc2 != cc:
+            dropped.append(
+                {"axis": "chief_complaint", "reason": "dictated_quote_not_a_value", "value": cc}
+            )
+            cc = cc2
     if cfg.numbers_from_utterance and cc:
         if any(n not in utt_nums for n in re.findall(r"\d+", cc)):
             dropped.append(
