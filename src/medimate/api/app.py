@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import functools
 import logging
 import os
 import re
@@ -126,6 +127,17 @@ class Selection(BaseModel):
 _WS_RE = re.compile(r"\s+")
 
 
+@functools.lru_cache(maxsize=1)
+def _diagnosis_lexicon() -> list[str] | None:
+    """질문 검증기가 쓰는 병명 목록(`evals/lexicon/diagnosis_terms.txt`). 이미지에 없으면 None."""
+    try:
+        from medimate.evals.score import load_lexicon
+
+        return load_lexicon()
+    except Exception:  # noqa: BLE001
+        return None
+
+
 class ExtractionMeta(BaseModel):
     """폰이 추출했을 때 무엇으로 뽑았나. provenance에 기록된다."""
 
@@ -149,6 +161,19 @@ class FollowUpReading(BaseModel):
     days: int | None = None
     month: int | None = Field(default=None, ge=1, le=12)
     day: int | None = Field(default=None, ge=1, le=31)
+
+
+class PhoneQuestion(BaseModel):
+    """폰 모델이 만든 "의사에게 물어볼 것" 후보 하나 (앱 온디바이스 경로, 2026-10-12).
+
+    서버는 생성하지 않고 **검증·보충**만 한다(`dialog/question_verify.finalize`): 카드에 없는 말이
+    들어간 질문은 버리고, 반복은 하나만 남기고, 모자라면 템플릿(v2)으로 채운다. 외부 LLM 호출 0.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    text: str = Field(min_length=1, max_length=200)
+    source: str = Field(default="", max_length=40)  # 어느 칸에서 왔나(폰 모델이 단 것). 틀려도 된다
 
 
 class PatientProfile(BaseModel):
@@ -220,6 +245,22 @@ class TurnRequest(BaseModel):
     # 필드를 생략하면 지금까지와 같다(빈 배열). 카드에 저장되지 않는다
     patient_profile: PatientProfile | None = None
 
+    # 온디바이스 경로(2026-10-12): 폰 1.7B가 만든 후보. 있으면 서버는 LLM을 부르지 않고 검증기 +
+    # 템플릿으로 최종 후보를 만든다. `question_candidates: true`인 종료 턴에만. 빈 배열도 된다 —
+    # "폰이 하나도 못 만들었다"는 뜻이고 그러면 템플릿만으로 채운다
+    phone_question_candidates: list[PhoneQuestion] | None = Field(default=None, max_length=10)
+    candidates_meta: ExtractionMeta | None = None  # 폰이 무엇으로 만들었나(provenance·audit)
+
+    @model_validator(mode="after")
+    def _phone_candidates_only_with_flag(self) -> TurnRequest:
+        if self.phone_question_candidates is not None and not self.question_candidates:
+            raise ValueError(
+                "phone_question_candidates는 question_candidates: true인 턴에만 보낼 수 있습니다"
+            )
+        if self.candidates_meta is not None and self.phone_question_candidates is None:
+            raise ValueError("candidates_meta는 phone_question_candidates와 함께 와야 합니다")
+        return self
+
     @model_validator(mode="after")
     def _profile_only_with_candidates(self) -> TurnRequest:
         """후보를 안 만드는 턴에 건강정보가 오면 거부한다.
@@ -253,6 +294,9 @@ class TurnAudit(BaseModel):
     dropped: list[dict[str, Any]] = Field(default_factory=list)  # 가드가 버린 갱신과 이유
     source: str = "server"  # server | device | none(선택지만)
     usage: TurnUsage
+    # 질문 후보 판정(종료 턴, 2026-10-12). 폰 경로면 검증기가 버린 항목과 이유, 템플릿으로 채운 수.
+    # 서버 LLM 경로면 {"source": "server"}만. 후보를 안 만든 턴은 None
+    question_candidates: dict[str, Any] | None = None
 
 
 class MemoRequest(BaseModel):
@@ -699,8 +743,20 @@ def create_app(
             )
 
         cands = None
+        qc_audit = None
         if body.question_candidates and s.ended and isinstance(s.card, PreVisitCard):
-            cands = _make_question_candidates(s.card, extractor, body.patient_profile)
+            if body.phone_question_candidates is not None:
+                cands, qc_audit = _finalize_phone_candidates(
+                    s.card,
+                    [it.model_dump() for it in body.phone_question_candidates],
+                    body.patient_profile,
+                    body.candidates_meta,
+                )
+            else:
+                cands = _make_question_candidates(s.card, extractor, body.patient_profile)
+                qc_audit = {"source": "server", "kept": len(cands or [])}
+        if audit is not None and qc_audit is not None:
+            audit.question_candidates = qc_audit
 
         return TurnResponse(
             reply=reply,
@@ -730,19 +786,7 @@ def create_app(
         빈 값이고, 그러면 eval에서 그 세 카테고리를 3%→65%로 올린 규칙(questions-v8)이
         제품에서 안 걸린다(2026-09-11 백엔드 합의, #7).
         """
-        axes = {
-            str(getattr(a, "value", a)): e.value
-            for a, e in card.axes.items()
-            if e.value and e.status == FieldStatus.FILLED
-        }
-        payload = {
-            "axes": axes,
-            # 요청에서 온 것. 안 보냈으면 빈 값 — 카드에는 저장하지 않는다
-            "profile": profile.as_prompt_payload()
-            if profile
-            else {"medications": [], "conditions": [], "allergies": []},
-            "patient_message": None,  # 전할 말 턴은 없앴다(2026-09-11)
-        }
+        payload = _card_payload(card, profile)
         try:
             version = ap.QUESTIONS_VERSION
             text, _, _ = extractor.complete_json(
@@ -754,6 +798,75 @@ def create_app(
             return None
         top = top_candidates(items, top=QUESTION_CANDIDATES_TOP)
         return [{"text": it["text"], "source": it["source"], "rank": it["rank"]} for it in top]
+
+    def _card_payload(card: PreVisitCard, profile: PatientProfile | None) -> dict[str, Any]:
+        """후보 생성·검증이 보는 카드. 축 값과 프로필뿐 — 식별자는 없다."""
+        axes = {
+            str(getattr(a, "value", a)): e.value
+            for a, e in card.axes.items()
+            if e.value and e.status == FieldStatus.FILLED
+        }
+        return {
+            "axes": axes,
+            # 요청에서 온 것. 안 보냈으면 빈 값 — 카드에는 저장하지 않는다
+            "profile": profile.as_prompt_payload()
+            if profile
+            else {"medications": [], "conditions": [], "allergies": []},
+            "patient_message": None,  # 전할 말 턴은 없앴다(2026-09-11)
+        }
+
+    def _finalize_phone_candidates(
+        card: PreVisitCard,
+        items: list[dict[str, Any]],
+        profile: PatientProfile | None,
+        meta: ExtractionMeta | None,
+    ) -> tuple[list[dict[str, Any]] | None, dict[str, Any]]:
+        """폰이 만든 후보를 **검증하고 보충한다.** 생성은 안 한다, 외부 LLM 호출 0.
+
+        - 검증기(`question_verify`): 카드에 없는 말·병명·반복·"왜" 중복을 버린다. 이유는 audit에
+        - 템플릿 v2: 통과분이 모자라면 카드 값으로 만든 질문을 뒤에 붙인다(`origin: template`)
+        - 어떤 이유로든 안 되면 `None` — 카드는 그대로 나간다(서버 생성 경로와 같은 원칙)
+        Kiwi(nlp 그룹)가 없으면 검증을 못 하므로 **폰 후보를 그대로 쓰지 않고** `None`이다 —
+        검증 안 된 생성물을 카드에 싣지 않는다
+        """
+        try:
+            from medimate.dialog.question_templates_v2 import natural_candidates
+            from medimate.dialog.question_verify import finalize
+            from medimate.text.tokenize import base_kiwi
+
+            kiwi = base_kiwi()
+            lex = _diagnosis_lexicon()
+            payload = _card_payload(card, profile)
+            out, dropped = finalize(
+                payload,
+                items,
+                lex,
+                kiwi,
+                templates=lambda axes, prof: natural_candidates(axes, prof, kiwi),
+            )
+        except Exception:  # noqa: BLE001 — 후보가 없어도 카드는 나가야 한다
+            logging.getLogger("medimate.api").warning(
+                "폰 질문 후보 검증 실패 — 카드는 그대로 낸다", exc_info=True
+            )
+            return None, {"source": "phone", "error": True}
+        cands = [
+            {
+                "text": it["text"],
+                "source": it.get("source", ""),
+                "rank": i + 1,
+                "origin": it.get("origin", "model"),
+            }
+            for i, it in enumerate(out)
+        ]
+        return cands, {
+            "source": "phone",
+            "received": len(items),
+            "kept": sum(1 for c in cands if c["origin"] == "model"),
+            "templated": sum(1 for c in cands if c["origin"] == "template"),
+            "dropped": [{"text": d.get("text"), "reasons": d.get("reasons", [])} for d in dropped],
+            "model_id": meta.model_id if meta else None,
+            "prompt_version": meta.prompt_version if meta else None,
+        }
 
     def _memo_classifier(request: Request):
         factory = request.app.state.memo_factory

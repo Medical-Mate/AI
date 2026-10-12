@@ -14,12 +14,16 @@ WORKDIR /app
 # 의존성 먼저 (캐시)
 # obs = Langfuse. 키(LANGFUSE_*)가 없으면 무동작이고, 있어도 본문은 가림(MEDIMATE_TRACE_CONTENT=on 전까지)
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --group providers --group api --group obs --no-install-project
+# nlp = Kiwi(질문 후보 검증기·템플릿, 앱 온디바이스 경로 2026-10-12). 모델 파일 포함 수십 MB
+RUN uv sync --frozen --no-dev --group providers --group api --group obs --group nlp --no-install-project
 
 # 코드 + 데이터(온톨로지 CSV는 부위 마스터 API가 읽는다)
 COPY src ./src
 COPY data/ontology ./data/ontology
-RUN uv sync --frozen --no-dev --group providers --group api --group obs
+# 어휘집: Kiwi 사용자 사전(data/lexicon) · 질문 검증기의 병명 목록(evals/lexicon)
+COPY data/lexicon ./data/lexicon
+COPY evals/lexicon ./evals/lexicon
+RUN uv sync --frozen --no-dev --group providers --group api --group obs --group nlp
 
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=3s CMD ["uv", "run", "python", "-c", \
