@@ -44,6 +44,13 @@ def _reasons(card_id: str, text: str) -> list[str]:
         ),  # v8 예시 누출
         ("PC35", "힘줄이 상했을 가능성도 있나요?", "guess"),
         ("PC01", "MRI를 찍어봐야 하나요?", "unsourced"),
+        # 같은 말의 다른 꼴만 받는다 — 카드에 없는 변화("가빠요"→"가빠지는")는 여전히 버린다
+        ("PC90", "숨이 살짝 가빠지는 건 가슴 답답함과 관련이 있나요?", "unsourced"),
+        (
+            "PC22",
+            "손가락 둘째·셋째 마디가 점점 여러 군데로 늘어나는 건 이상한 건가요?",
+            "unsourced",
+        ),
     ],
 )
 def test_rejects(card_id, text, reason):
@@ -58,6 +65,10 @@ def test_rejects(card_id, text, reason):
         ("PC13", "엄지·검지·중지가 저리는 건 어떤 상태인가요?"),  # 저려요 → 저리(어간)
         ("PC02", "혈압약 먹고 있는데 계속 먹어도 되나요?"),
         ("PC27", "옷 입을 때나 머리 감을 때 더 심한데 그런 동작을 피해야 하나요?"),
+        # 2026-10-12 팀원 판독 — 카드 "찔러요"·"넓어졌어요"와 같은 말
+        ("PC29", "숨을 크게 쉴 때 콕 찔리는 건 어떤 상태인가요?"),
+        ("PC77", "가슴 가운데가 콕콕 찔리는 건 어떤 상태인가요?"),
+        ("PC39", "따끔한 자리가 조금 넓어졌는데 걱정할 게 있나요?"),
     ],
 )
 def test_passes(card_id, text):
@@ -79,3 +90,15 @@ def test_set_level_duplicate_and_single_why():
 def test_finalize_fills_with_templates_to_three():
     out, _ = finalize(CARDS["PC47"], [{"text": "술을 마시면 더 아픈 건가요?", "source": "x"}], LEX)
     assert len(out) >= 3 and all(o["origin"] == "template" for o in out)
+
+
+def test_finalize_skips_template_the_model_already_said():
+    """PC48 LoRA v1 — 모델이 느낌 값을 쓰고 악화라 달았다. 같은 말의 느낌 템플릿을 또
+    넣지 않는다."""
+    from medimate.dialog.question_templates_v2 import natural_candidates
+
+    model = {"text": "밤에 누우면 더 아픈 건 어떤 상태인가요?", "source": "exacerbating"}
+    out, _ = finalize(CARDS["PC48"], [model], LEX, templates=natural_candidates)
+    assert out[0]["origin"] == "model"
+    assert not any("누우면" in o["text"] for o in out[1:]), out
+    assert len(out) == 3

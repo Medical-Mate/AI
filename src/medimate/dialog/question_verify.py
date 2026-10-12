@@ -326,6 +326,7 @@ class Card:
     content: set[str]
     seg_forms: list[list[tuple[str, str]]]
     has_profile: dict[str, bool]
+    derived: set[str] = field(default_factory=set)
 
 
 def _neg(forms: list[tuple[str, str]]) -> list[str]:
@@ -341,6 +342,30 @@ def _forms(text: str, kiwi) -> list[tuple[str, str]]:
 
 def _usable(v: Any) -> bool:
     return isinstance(v, str) and bool(v.strip()) and not v.strip().startswith("(")
+
+
+# 입음꼴 — 카드의 능동과 **느낌이 같은 것만** 하나씩 넣는다. 규칙으로 만들지 않는다:
+# 누르→눌리("누르면 아파요"↔"눌리는 느낌"), 모르→몰리, 조르→졸리는 뜻이 다르다
+_PASSIVE = {"찌르": "찔리"}
+
+
+def _derived(seg_forms: list[list[tuple[str, str]]], kiwi) -> set[str]:
+    """카드 어간에서 **같은 말의 다른 꼴**만 만든다(2026-10-12 팀원 판독 — "찔러요"↔"찔리는"이
+    카드에 없는 말로 빠졌다). 어간 비교로 넓히지 않는다 — `늘다`↔`늘어나다`, `오르다`↔`올라가다`는
+    다른 낱말이라 지금처럼 버린다.
+
+    - 입음꼴: `_PASSIVE` 표(찌르→찔리)
+    - `-어지다`: 카드가 이미 그 꼴로 말했을 때만(넓/어/지 → 넓어지). 질문의 "넓어졌는데"를
+      Kiwi가 한 낱말로 볼 때 맞춘다. 카드에 없는 변화("가빠요"→"가빠지는", "크게"→"커지는")는
+      만들지 않는다"""
+    out: set[str] = set()
+    for fs in seg_forms:
+        for n, (f, t) in enumerate(fs):
+            if t.startswith("VV") and f in _PASSIVE:
+                out.add(_PASSIVE[f])
+            if t.startswith("VA") and fs[n + 1 : n + 3] == [("어", "EC"), ("지", "VX")]:
+                out.add(kiwi.join([(f, t.split("-")[0]), ("어", "EC")]) + "지")
+    return out
 
 
 def prepare_card(card: dict, kiwi=None) -> Card:
@@ -367,11 +392,12 @@ def prepare_card(card: dict, kiwi=None) -> Card:
             k: bool([x for x in prof.get(k) or [] if _usable(x)])
             for k in ("medications", "conditions", "allergies")
         },
+        _derived(seg_forms, kiwi),
     )
 
 
 def _sourced(f: str, card: Card) -> bool:
-    if f in card.content:
+    if f in card.content or f in card.derived:
         return True
     # 어간·분절 차이(`간수치`↔`간수/치`, `저려`↔`저리`): 글자 포함으로 본다 — span/verify와 같은
     # 규칙
@@ -529,15 +555,26 @@ def finalize(
 
     `templates(axes, profile)` — 기본은 v1(인용). v2는
     `question_templates_v2.natural_candidates`."""
+    kiwi = kiwi or base_kiwi()
     kept, dropped = verify_items(card, items, lexicon, kiwi)
     out = [{**it, "origin": "model"} for it in kept]
     used = {it.get("source") for it in out}
     if len(out) < MIN_ITEMS:
+        # 모델이 단 칸 이름은 틀릴 수 있다 — PC48 LoRA v1은 느낌 값("밤에 누우면 더 아픈")을
+        # 쓰고 악화라 달아, 같은 말의 느낌 템플릿이 또 들어갔다. 칸 이름과 함께 내용(반복 판정과
+        # 같은 선)으로도 건너뛴다
+        c = prepare_card(card, kiwi)
+        keys = [k for it in out if (k := _key(it["text"], c, kiwi))]
         for tpl in (templates or template_candidates)(card.get("axes") or {}, card.get("profile")):
             if len(out) >= MIN_ITEMS:
                 break
             if tpl["source"] in used:
                 continue
+            k = _key(tpl["text"], c, kiwi)
+            if k and any(len(k & p) / len(k | p) >= 0.6 for p in keys):
+                continue
             out.append({**tpl, "origin": "template"})
             used.add(tpl["source"])
+            if k:
+                keys.append(k)
     return out, dropped
