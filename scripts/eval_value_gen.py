@@ -31,7 +31,7 @@ from pathlib import Path
 
 sys.path.insert(0, "src")
 
-from medimate.llm.prompt_value_gen import PROMPT_VERSION  # noqa: E402
+from medimate.llm.prompt_value_gen import PROMPT_VERSION as _V2_VERSION  # noqa: E402
 from medimate.llm.providers import require_price  # noqa: E402
 from medimate.span.candidates import compact  # noqa: E402
 from medimate.span.generate import ValueGenerator, screen  # noqa: E402
@@ -90,28 +90,52 @@ def main() -> None:
     a.add_argument("--yes", action="store_true")
     a.add_argument("--report", type=Path)
     a.add_argument("--misses", action="store_true")
-    a.add_argument("--sheet", action="append", choices=[n for n, _, _ in SHEETS], help="이 시트만(여러 번 가능)")
-    a.add_argument("--keys", type=Path, help="이 조각만(한 줄에 sheet<TAB>case_id<TAB>idx). 분리 실험용")
+    a.add_argument(
+        "--prompt", choices=["v2", "small"], default="v2", help="small = 폰 1.7B용 value-gen-small"
+    )
+    a.add_argument(
+        "--sheet",
+        action="append",
+        choices=[n for n, _, _ in SHEETS],
+        help="이 시트만(여러 번 가능)",
+    )
+    a.add_argument(
+        "--keys", type=Path, help="이 조각만(한 줄에 sheet<TAB>case_id<TAB>idx). 분리 실험용"
+    )
     args = a.parse_args()
+    PROMPT_VERSION = _V2_VERSION if args.prompt == "v2" else "value-gen-small-v1b"
 
     only = set(args.sheet or [])
     segs = segments(only)
     if args.keys:
-        want = {tuple(ln.split("	")) for ln in args.keys.read_text(encoding="utf-8").splitlines() if ln.strip()}
+        want = {
+            tuple(ln.split("	"))
+            for ln in args.keys.read_text(encoding="utf-8").splitlines()
+            if ln.strip()
+        }
         segs = [s for s in segs if (s["sheet"], s["case_id"], str(s["idx"])) in want]
     if args.limit:
         segs = segs[: args.limit]
     per_sheet = Counter(s["sheet"] for s in segs)
 
     if args.report:
-        rows = [json.loads(ln) for ln in args.report.read_text(encoding="utf-8").splitlines() if ln.strip()]
+        rows = [
+            json.loads(ln)
+            for ln in args.report.read_text(encoding="utf-8").splitlines()
+            if ln.strip()
+        ]
         model = rows[0].get("model_id", args.model) if rows else args.model
         gen = ValueGenerator.__new__(ValueGenerator)  # 호출 0 — check()만 쓴다
         from medimate.span.candidates import CandidateGenerator
         from medimate.span.select import RuleSelector
         from medimate.text.lexicon import load_lexicon
 
-        gen.lexicon, gen.gen, gen.rule, gen.model_id = load_lexicon(), CandidateGenerator(), RuleSelector(), model
+        gen.lexicon, gen.gen, gen.rule, gen.model_id = (
+            load_lexicon(),
+            CandidateGenerator(),
+            RuleSelector(),
+            model,
+        )
         cost = None
         # gold는 지금 시트에서 읽는다 — 시트를 고친 뒤(중이염 → 귀지 때문) 재채점이 옛 gold로 세지 않게
         now = {(s["sheet"], s["case_id"], s["idx"]): s["gold"] for s in segments()}
@@ -141,8 +165,14 @@ def main() -> None:
         from medimate.obs import tracing
 
         gen = ValueGenerator(args.provider, args.model, budget_usd=args.budget)
+        if args.prompt == "small":
+            from medimate.llm import prompt_value_gen_small
+
+            gen.prompt = prompt_value_gen_small
         # 시트를 골랐으면 이름을 붙인다 — 전체 결과 파일을 덮어쓰지 않게
-        suffix = "".join(f"-{n}" for n, _, _ in SHEETS if n in only) + (f"-first{args.limit}" if args.limit else "")
+        suffix = "".join(f"-{n}" for n, _, _ in SHEETS if n in only) + (
+            f"-first{args.limit}" if args.limit else ""
+        )
         if args.keys:
             suffix += f"-{args.keys.stem}"
         # v3부터 프롬프트 버전을 파일 이름에 — v2 결과(`valgen-<model>.jsonl`)를 덮지 않게
@@ -155,12 +185,23 @@ def main() -> None:
                     trace_name="value-gen-eval",
                     session_id=f"valgen-eval:{args.model}:{PROMPT_VERSION}",
                     tags=["eval", "valgen", s["sheet"], s["axis"]],
-                    metadata={**{k: s[k] for k in ("sheet", "case_id", "idx", "axis")}, "gold": s["gold"]},
+                    metadata={
+                        **{k: s[k] for k in ("sheet", "case_id", "idx", "axis")},
+                        "gold": s["gold"],
+                    },
                 ):
                     g = gen.generate(s["segment"], s["axis"])
-                    em = (g.value is None) if s["gold"].upper() == "NONE" else same(g.value, s["gold"])
-                    tracing.score("em", 1.0 if em else 0.0, comment=f"gold={s['gold']} value={g.value}")
-                    tracing.score("verified", 1.0 if g.source != "fallback" else 0.0, comment=g.dropped)
+                    em = (
+                        (g.value is None)
+                        if s["gold"].upper() == "NONE"
+                        else same(g.value, s["gold"])
+                    )
+                    tracing.score(
+                        "em", 1.0 if em else 0.0, comment=f"gold={s['gold']} value={g.value}"
+                    )
+                    tracing.score(
+                        "verified", 1.0 if g.source != "fallback" else 0.0, comment=g.dropped
+                    )
                 row = {
                     **s,
                     "model_value": g.model_value if g.source != "none" else None,
@@ -240,7 +281,9 @@ def main() -> None:
         if k in by:
             print(row(k, by[k]))
     print(row("전체", total))
-    print("\n| 축 | n | EM | GEN-EM | NONE | 통과 | 통과✗ | 거절 | 거절이 gold | 거절이 구함 |\n|---|---|---|---|---|---|---|---|---|---|")
+    print(
+        "\n| 축 | n | EM | GEN-EM | NONE | 통과 | 통과✗ | 거절 | 거절이 gold | 거절이 구함 |\n|---|---|---|---|---|---|---|---|---|---|"
+    )
     for k in ("findings", "tests", "medication_instructions", "follow_up"):
         if k in by_axis:
             print(row(k, by_axis[k]))
