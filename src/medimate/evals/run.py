@@ -260,7 +260,7 @@ def main() -> None:
     ap.add_argument("--yes", action="store_true", help="예상 비용 확인 생략")
     ap.add_argument(
         "--prompt",
-        choices=["auto", "v3", "small", "v4-nova", "v5-nova"],
+        choices=["auto", "v3", "small", "v4-nova", "v5-nova", "v6-nova"],
         default="auto",
         help="프롬프트 계열. auto는 모델 id로 고른다(providers.prompt_family_for)",
     )
