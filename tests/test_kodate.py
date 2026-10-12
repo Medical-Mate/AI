@@ -7,9 +7,11 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 
-from medimate.text.kodate import find_durations
+from medimate.text.kodate import add_months, find_durations
 
 CASES = [
     # 고유어 날 이름 + 조합
@@ -34,13 +36,13 @@ CASES = [
     ("다음 주 수요일에 오라고", [7]),
     ("달포 뒤에 오라고", [30]),
     ("반년 뒤에 재검", [180]),
-    ("내년에 다시 보자고", [365]),
+    ("내년에 다시 보자고", [360]),  # 어림 일수는 12달×30. 실제 날짜는 달력(아래)
     ("오늘 피검사 했고", [0]),
     # 수사 × 단위 (+ 반)
     ("삼일 뒤에 오라고", [3]),
     ("오일 후 재방문", [5]),
     ("사십일 뒤 재방문", [40]),
-    ("일 년 뒤에 보자고", [365]),
+    ("일 년 뒤에 보자고", [360]),
     ("일주일 반 뒤에 오래요", [10]),
     ("두 주 반 뒤에 보자고", [17]),
     ("석 달 반 뒤에 재검", [105]),
@@ -66,7 +68,28 @@ CASES = [
 
 @pytest.mark.parametrize(("text", "days"), CASES)
 def test_durations_are_composed_not_looked_up(text, days):
-    assert [d.days for d in find_durations(text)] == days
+    """비교는 어림 일수(달=30)로. 실제 날짜는 달력으로 더한다(아래 테스트)."""
+    assert [d.approx_days for d in find_durations(text)] == days
+
+
+def test_months_and_years_are_added_on_the_calendar_not_as_30_days():
+    """9월 15일 + 두 달 = 11월 15일(61일), 60일이 아니다. 월말은 그 달 마지막 날로."""
+    v = date(2026, 9, 15)
+    (d,) = find_durations("두 달 뒤에 오라고")
+    assert (d.days, d.months) == (0, 2) and d.add_to(v) == date(2026, 11, 15)
+    (d,) = find_durations("석 달 반 뒤에")
+    assert (d.days, d.months) == (15, 3) and d.add_to(v) == date(2026, 12, 30)
+    (d,) = find_durations("내년에 보자고")
+    assert d.add_to(v) == date(2027, 9, 15)
+    (d,) = find_durations("반년 뒤")
+    assert d.add_to(v) == date(2027, 3, 15)
+    (d,) = find_durations("다다음 달에")
+    assert d.add_to(v) == date(2026, 11, 15)
+    assert add_months(date(2026, 1, 31), 1) == date(2026, 2, 28)
+    assert add_months(date(2026, 10, 31), 4) == date(2027, 2, 28)
+    assert add_months(date(2024, 1, 31), 1) == date(2024, 2, 29)
+    (d,) = find_durations("열두 주 뒤에")
+    assert (d.days, d.months) == (84, 0)  # 일·주는 그대로 일수
 
 
 def test_the_matched_text_is_verbatim_and_positioned():

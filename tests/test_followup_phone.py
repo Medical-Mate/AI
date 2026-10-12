@@ -28,7 +28,7 @@ def test_rules_win_over_the_phone_count_when_they_know_the_word():
     fu = followup_from_reading(_r("사나흘 뒤에", days=12), "사나흘 뒤에 경과 보자고", V)
     assert fu is not None and fu.date in ("2026-09-18", "2026-09-19")
     fu = followup_from_reading(_r("두 달 후", days=None), "두 달 후 재검", V)
-    assert fu is not None and fu.date == "2026-11-14"
+    assert fu is not None and fu.date == "2026-11-15"  # 달력으로 두 달, 60일이 아니다
     fu = followup_from_reading(_r("다다음주에", days=7), "다다음주에 재방문", V)
     assert fu is not None and fu.date == "2026-09-29"
 
@@ -141,13 +141,13 @@ def test_native_korean_day_words_are_rules_now():
     cases = {
         "모레 다시 오라고 하셨어요": "2026-09-17",
         "글피에 보자고": "2026-09-18",
-        "석 달 후에 검사 다시 하자고": "2026-12-14",
+        "석 달 후에 검사 다시 하자고": "2026-12-15",
         "엿새 뒤에 실밥 뽑으러 오라고": "2026-09-21",
         "닷새 후 재방문": "2026-09-20",
         "스무날 뒤쯤 보자고": "2026-10-05",
         "담주에 보자고": "2026-09-22",
         "이틀 뒤에 다시 오세요": "2026-09-17",
-        "넉 달 뒤에 오라고": "2027-01-13",
+        "넉 달 뒤에 오라고": "2027-01-15",
     }
     for sent, want in cases.items():
         fu = followup_date(sent, V)

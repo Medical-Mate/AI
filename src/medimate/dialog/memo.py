@@ -27,7 +27,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from medimate.schema.card import AxisEntry, FieldStatus
 from medimate.schema.postvisit import FollowUpDate, PostAxis, PostVisitCard
-from medimate.text.kodate import find_durations
+from medimate.text.kodate import Duration, find_durations
 
 logger = logging.getLogger("medimate.memo")
 
@@ -409,20 +409,19 @@ def _return_word_pos(text: str) -> int | None:
     return min(hits) if hits else None
 
 
-def _bare_duration(text: str, near: int | None = None) -> tuple[str, timedelta] | None:
+def _bare_duration(text: str, near: int | None = None) -> Duration | None:
     """기간 하나를 고른다. `near`가 있으면 **그 위치에 가장 가까운** 것으로.
 
     첫 번째를 집으면 안 된다 (2026-09-15). `"3일치 약처방 4일후 재방문"`에서 첫 기간은
     **약 기간**이라 재방문이 3일 뒤로 잡힌다. 재방문 말 옆에 있는 기간이 재방문 기간이다.
     `오늘`(0일)은 기간이 아니다 — "오늘 피검사 했고"의 오늘이다.
     """
-    ds = [d for d in find_durations(text) if d.days > 0]
+    ds = [d for d in find_durations(text) if not d.is_zero]
     if not ds:
         return None
     if near is not None:
         ds.sort(key=lambda d: min(abs(d.start - near), abs(d.end - near)))
-    d = ds[0]
-    return d.text, timedelta(days=d.days)
+    return ds[0]
 
 
 def followup_date(text: str, visit_date: date, prev_text: str | None = None) -> FollowUpDate | None:
@@ -450,29 +449,27 @@ def followup_date(text: str, visit_date: date, prev_text: str | None = None) -> 
             text=m.group(0), date=dt.isoformat(), approximate=False, basis="다음 달 + 일자"
         )
     # 기간 + 뒤/후/있다가/지나서, 또는 시점 낱말(모레·담주·다다음 달)은 재방문 말이 없어도 시점이다
+    # 달·해는 달력으로 더한다(`Duration.add_to`): 9월 15일 + 두 달 = 11월 15일. 일·주만 일수다
     for d in find_durations(text):
         after = _AFTER.match(text, d.end)
-        if d.days > 0 and (d.point or after):
-            dt = visit_date + timedelta(days=d.days)
+        if not d.is_zero and (d.point or after):
             return FollowUpDate(
-                text=text[d.start : after.end()]
-                if after
-                else d.text,  # "2주 뒤" — 뒤까지가 표현이다
-                date=dt.isoformat(),
+                # "2주 뒤" — 뒤까지가 표현이다(앱이 그대로 보여 준다)
+                text=text[d.start : after.end()] if after else d.text,
+                date=d.add_to(visit_date).isoformat(),
                 approximate=True,
-                basis=f"visit_date {visit_date.isoformat()} + {d.days}d",
+                basis=f"visit_date {visit_date.isoformat()} + {d.label}",
             )
 
     # 뒤에 오는 말 없이 기간만 있는 경우 — **같은 절에 다시 온다는 말이 있을 때만**
     if _has_return_word(text):
         found = _bare_duration(text, near=_return_word_pos(text))
         if found:
-            raw, delta = found
             return FollowUpDate(
-                text=raw,
-                date=(visit_date + delta).isoformat(),
+                text=found.text,
+                date=found.add_to(visit_date).isoformat(),
                 approximate=True,
-                basis=f"visit_date {visit_date.isoformat()} + {delta.days}d",
+                basis=f"visit_date {visit_date.isoformat()} + {found.label}",
             )
 
         # 이 절에는 기간이 없다. **앞 절이 약·기간만 말하고 있으면** 그 기간을 쓴다
@@ -481,14 +478,13 @@ def followup_date(text: str, visit_date: date, prev_text: str | None = None) -> 
         if prev_text:
             found = _bare_duration(prev_text)
             if found and any(w in prev_text for w in _MED_ONLY):
-                raw, delta = found
                 return FollowUpDate(
-                    text=raw,
-                    date=(visit_date + delta).isoformat(),
+                    text=found.text,
+                    date=found.add_to(visit_date).isoformat(),
                     approximate=True,
                     basis=(
                         f"앞 절 '{prev_text.strip()}'의 기간을 씀 · "
-                        f"visit_date {visit_date.isoformat()} + {delta.days}d"
+                        f"visit_date {visit_date.isoformat()} + {found.label}"
                     ),
                 )
     return None
