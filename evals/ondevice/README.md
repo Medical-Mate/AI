@@ -117,13 +117,15 @@ GGUF 파일(정확한 양자화 이름), 프롬프트 파일(버전), `turn_extr
 | 파일 | 무엇 | 어떻게 만들었나 |
 |---|---|---|
 | `prompt-extract-small-2b-v1.system.txt` | 2B용 진료 전 추출 시스템 프롬프트 | `MEDIMATE_SMALL_PROMPT=2b-v1`의 `prompt_small.system_prompt()` (LF) |
-| `vectors-qwen3.5-2b-q4_0-extract-small-2b-v1.jsonl` | 추출 벡터 79(앱 경로 65). 줄마다 `category`·`purpose`·`expect`(채점 기준)·`expected_output`(PC 출력) | `scripts/export_ondevice_2b.py` ← PC GPU 실행 원본 |
-| `vectors-questions-qwen3.5-2b-q4_0-questions-small4.jsonl` | 질문 후보 벡터 100(`messages`에 예시 차례 포함) | 같은 스크립트 ← 이어 돌리기 원본(카드는 2B가 만든 것) |
+| `vectors-qwen3.5-2b-q4_0-ssmq8-extract-small-2b-v1.jsonl` | 추출 벡터 79(앱 경로 65). 줄마다 `category`·`purpose`·`expect`(채점 기준)·`expected_output`(PC 출력) | `scripts/export_ondevice_2b.py` ← PC GPU 실행 원본 |
+| `vectors-questions-qwen3.5-2b-q4_0-ssmq8-questions-small4.jsonl` | 질문 후보 벡터 100(`messages`에 예시 차례 포함) | 같은 스크립트 ← 이어 돌리기 원본(카드는 2B가 만든 것) |
 | `questions.schema.json` · `questions.gbnf` | 질문 후보 출력 스키마와 그 GBNF | `assist_prompts.QUESTIONS_SCHEMA` · 업스트림 `examples/json_schema_to_grammar.py` |
 | `qwen3.5-2b.chat_template.jinja` | 모델 안의 채팅 템플릿 원문 | `llama-server`(b10819) `/props`의 `chat_template` |
 | `rendered/2b-A01-0.…txt` · `rendered/2b-questions-PC01.…txt` | 벡터 하나씩을 `enable_thinking=false`로 렌더한 전문 | 같은 서버의 `/apply-template` — 앱의 `llama_chat_apply_template` 결과와 글자까지 같아야 한다 |
 
-PC 기준(폰 가드 재채점): 108문항 77(앱 경로 86 중 68) · 위반 0. 1.7B는 82(앱 경로 68).
+모델은 `hyos0415/Qwen3.5-2B-NPU-GGUF@1c069ab6` `Qwen3.5-2B-Q4_0-ssmout-q8.gguf`(SHA256 `c8e057df…dc53f`) — unsloth Q4_0에서 Hexagon이 못 하는 `ssm_out` Q5_K 18개만 Q8_0으로 바꿈(`scripts/gguf_swap_tensor_type.py`, 나머지 302개 텐서 바이트 동일). 1차 폰 실측(unsloth 원본)에서 graph splits 39가 이것 때문이었다.
+
+PC 기준(폰 가드 재채점): 108문항 78(앱 경로 86 중 70) · 위반 0. unsloth 원본 77(68), 1.7B 82(68).
 
 같은 채점기로 PC 실행(`evals/results/local/Qwen3-1.7B-Q4_0-small4b.jsonl`)과 나란히 보면:
 PC 61/88·위반 0, 폰 60/88·위반 0 (둘 다 가드 적용). raw는 PC 59/3, 폰 58/2.
