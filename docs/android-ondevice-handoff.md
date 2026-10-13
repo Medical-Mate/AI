@@ -36,6 +36,39 @@
    서버 규칙이 아무것도 못 읽었을 때만 쓴다(2026-10-13부터 앞 절 날짜를 덮지 않는다)
 5. 추론 설정·엔진은 그대로
 
+### llama-server 설정 → 앱(llama.cpp C API) 대응표
+
+우리 숫자는 전부 `llama-server`로 쟀습니다. 앱은 C API를 직접 부르니 이름이 다릅니다. 아래 이름은 엔진 빌드
+`2092353`의 `include/llama.h` 기준이에요(2026-10-13 확인).
+
+| llama-server에서 쓴 것 | 앱에서 같은 것 | 주의 |
+|---|---|---|
+| `-m <gguf>` | `llama_model_load_from_file(path, mparams)` | |
+| `--device HTP0` | `mparams.devices = {ggml_backend_dev_by_name("HTP0"), NULL}` | |
+| `-ngl 99` | `mparams.n_gpu_layers = 99` | |
+| 환경 `LD_LIBRARY_PATH` · `ADSP_LIBRARY_PATH` | 백엔드를 올리기 **전에** `setenv("ADSP_LIBRARY_PATH", <lib 경로>, 1)` | 빠뜨리면 에러 없이 CPU로 돈다 |
+| `-c 4096` | `cparams.n_ctx = 4096` | |
+| `-np 1` | **`cparams.n_seq_max = 1`** | 2B 필수(위 "왜 `n_seq_max = 1`") |
+| (기본) | `cparams.n_batch = 2048` · `cparams.n_ubatch = 512` | 실측 때 값 |
+| (기본 auto) | `cparams.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_AUTO` | |
+| `--temp 0 --seed 42` | 샘플러 체인 끝에 `llama_sampler_init_greedy()` | 온도 0이라 greedy. seed는 쓰이지 않는다 |
+| 요청별 `response_format: json_schema` | 체인 앞에 `llama_sampler_init_grammar(vocab, <GBNF>, "root")` | GBNF는 아래 표. 메모는 문장 수 N마다 만든다 |
+| `--reasoning off` | 프롬프트 끝에 **`<think>
+
+</think>
+
+`을 직접 붙인다** | `llama_chat_apply_template`(chatml)은 `<\|im_start\|>assistant
+`에서 끝나고 이 블록을 안 붙인다. 렌더 전문 `rendered/2b-*.txt`와 글자 대조 |
+| `max_tokens 1024` | 생성 루프 상한 1024토큰 | 질문 후보는 40자 문법이라 여기 닿지 않는다 |
+| 프롬프트 캐시(서버가 자동) | 시스템 프롬프트를 decode한 직후 `llama_state_seq_get_data`로 상태를 떠 두고, 턴마다 `llama_state_seq_set_data`로 되돌린 뒤 사용자 메시지만 decode | **2B는 부분 삭제가 안 된다**(로그 "does not support partial sequence removal" — DeltaNet 상태). 1.7B처럼 `llama_memory_seq_rm`으로 턴 부분만 지우는 방식은 안 통한다. 이걸 안 하면 매 턴 시스템 프롬프트(약 2,000토큰)를 다시 처리한다 |
+
+| 기능 | GBNF |
+|---|---|
+| 진료 전 추출 | `evals/ondevice/turn_extraction.small.gbnf` |
+| 질문 후보 | `evals/ondevice/questions.gbnf` (text 40자) |
+| 메모 분류 | `evals/ondevice/memo_labels-memo-small-v5.n4.gbnf`(N=4 예시) — 키 `"0"`…`"N-1"`이 순서대로 전부 나오게 N마다 같은 모양으로 만든다 |
+| 재방문 표현 | `evals/ondevice/followup-v1.gbnf` |
+
 ## (이전) 묶음 v1 — Qwen3-1.7B (2026-09-07 1차 · 2026-09-09 진료 후 추가)
 
 아래 v1 절들은 기록으로 둡니다. 일치 확인 절차·통합 시 알아둘 것은 v2에도 그대로 적용됩니다.
