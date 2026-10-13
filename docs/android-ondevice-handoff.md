@@ -102,6 +102,74 @@ API 필드 정의: `docs/api-previsit.md` "온디바이스 프로필 — 예정"
 
 일치 확인은 위 88개와 같은 방식으로 30개 `user`를 넣고 `expected_output`과 JSON 비교. 지연은 첫 호출에 시스템 프롬프트 처리가 붙고(NPU 약 1초), 문장 5개 메모의 출력은 약 30토큰이라 턴당 2~3초 예상.
 
+## 후보 모델 폰 실측 요청 — Qwen3.5-2B (2026-10-13)
+
+**앱 코드는 바꾸지 않습니다.** 위 묶음(1.7B)이 계속 기준이고, 이번 것은 adb로 폰에서 재 보는 실측입니다.
+결과가 좋으면 그때 묶음 버전을 올려 다시 전달합니다.
+
+왜: PC에서 재 보니 2B가 **질문 후보를 훨씬 잘 만듭니다**(서버 검증기를 통과한 모델 질문 46 → 87,
+템플릿만으로 채운 카드 17 → 8). 진료 전 추출은 앱 경로 기준 1.7B와 같습니다(86문항 중 68 · 68,
+안전 위반 0). 남은 질문은 **폰 NPU에서 도는가**뿐입니다 — Qwen3.5는 DeltaNet 혼합 구조라 9/7에 "NPU에서
+CPU로 떨어질 수 있다"며 뺐는데, 넘겨드린 엔진 빌드(`pkg-android-2092353`)에 그 연산의 Hexagon 커널이 들어 있습니다.
+
+### 받을 것
+
+| | 값 |
+|---|---|
+| 모델 | `Qwen3.5-2B-Q4_0.gguf` · 1,214,873,856 bytes · Apache-2.0 |
+| 받는 곳 | `https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/f6d5376be1edb4d416d56da11e5397a961aca8ae/Qwen3.5-2B-Q4_0.gguf` |
+| SHA256 | `cd70221bebaee0503e0f6717e174250cd7825aa88438b3aabec9ad55731d9bb1` |
+| 엔진 | 그대로 `pkg-android-2092353` (새로 받을 것 없음) |
+| 추출 프롬프트 | `evals/ondevice/prompt-extract-small-2b-v1.system.txt` (1.7B의 small-v4에서 값 규칙 한 줄과 예시 둘만 다름) |
+| 추출 벡터 | `evals/ondevice/vectors-qwen3.5-2b-q4_0-extract-small-2b-v1.jsonl` (79개, `app_path: true` 65개) |
+| 질문 후보 벡터 | `evals/ondevice/vectors-questions-qwen3.5-2b-q4_0-questions-small4.jsonl` (100개, `messages` 그대로 보냄) · 스키마 `evals/ondevice/questions.schema.json` |
+| 추론 설정 | 1.7B와 같음 — temperature 0 · seed 42 · max_tokens 1024 · **reasoning off** · `-c 4096` · NPU `--device HTP0 -ngl 99` |
+
+`expected_output`은 PC(GPU)에서 낸 것이라 폰과 바이트가 같을 필요는 없습니다. 판정은 AI 쪽 채점기가 합니다.
+
+**벡터 읽는 법 — 폰에서 무엇이 나와야 하는가**
+
+- **프롬프트가 먼저 같아야 합니다.** 모델에 들어가는 전문은 `evals/ondevice/rendered/2b-A01-0.enable_thinking_false.txt`와
+  글자까지 같아야 합니다(끝이 `<|im_start|>assistant
+<think>
+
+</think>
+
+` — 생각 끄기). 템플릿 원문은
+  `evals/ondevice/qwen3.5-2b.chat_template.jinja`. 여기가 다르면 아래 숫자는 의미가 없습니다
+- **출력은 JSON 하나**(스키마 강제). `<think>` 내용이나 설명문이 섞이면 실패입니다
+- **줄마다 `expect`가 판정 기준**입니다. 예: `{"axes": {"onset": "filled"}, "value_must_contain": {"onset": "4일"}}` —
+  물은 칸이 채워지고 값에 "4일"이 들어 있으면 통과. 바이트가 PC와 달라도 `expect`를 지키면 통과입니다.
+  `category`·`purpose`는 그 케이스가 무엇을 보는지(경계값·고쳐 말하기·채팅체·인젝션 등)
+- **`app_path: false`는 첫 발화 케이스**라 앱 흐름(축 질문부터)에는 없습니다. 참고용
+- 질문 후보 벡터는 정답이 하나가 아닙니다. 서버 검증기가 거르고 템플릿이 채우므로, 폰에서는 **JSON이 나오고 3~5개**인지만 봅니다
+
+### 재는 법 (PC + USB, 30분 정도)
+
+```bash
+adb push Qwen3.5-2B-Q4_0.gguf /data/local/tmp/llama.cpp/
+# 폰에서 서버 — 1.7B 때와 같은 명령, 모델 파일만 다름. VERBOSE로 연산 배치가 로그에 남는다
+adb shell "cd /data/local/tmp/llama.cpp && GGML_HEXAGON_VERBOSE=1 LD_LIBRARY_PATH=lib ADSP_LIBRARY_PATH=lib   bin/llama-server -m Qwen3.5-2B-Q4_0.gguf --port 8080 -c 4096 --temp 0 --seed 42 --reasoning off   --device HTP0 -ngl 99" 2>&1 | tee server-2b.log
+adb forward tcp:8080 tcp:8080
+
+# PC에서 (파이썬 표준 라이브러리만, 저장소 환경 불필요)
+python scripts/ondevice_device_run.py --vectors evals/ondevice/vectors-qwen3.5-2b-q4_0-extract-small-2b-v1.jsonl --out device-2b-extract.jsonl --adb-temp
+python scripts/ondevice_device_run.py --vectors evals/ondevice/vectors-questions-qwen3.5-2b-q4_0-questions-small4.jsonl --out device-2b-questions.jsonl --adb-temp --limit 30
+python scripts/ondevice_device_run.py --vectors evals/ondevice/vectors-qwen3.5-2b-q4_0-extract-small-2b-v1.jsonl --out device-2b-heat.jsonl --minutes 5 --adb-temp
+```
+
+### 보고 싶은 것 넷 (1.7B 9/7 실측과 나란히 봅니다)
+
+| | 1.7B NPU (9/7) | 2B에서 확인 |
+|---|---|---|
+| NPU에서 도는가 | 전부 HTP0 | `server-2b.log`에서 CPU로 떨어진 연산이 있는지(특히 `GATED_DELTA_NET` · `SSM_CONV`) |
+| 첫 호출 · 턴 지연 p50 | 1.7초 · 3.4초 | 스크립트 요약 줄 |
+| 생성 속도 | 12~13 tok/s | 스크립트 요약 줄 |
+| 5분 연속 발열 | 34.9°C 안정 | `--minutes 5` 요약 줄(배터리 온도) |
+
+**올려 주실 것**: `device-2b-*.jsonl` 셋과 `server-2b.log`(앞 200줄이면 충분) → 이슈 #35.
+ADSP_LIBRARY_PATH를 빠뜨리면 에러 없이 CPU로 돕니다 — 첫 호출이 10초 넘게 걸리면 이것부터 확인해 주세요.
+
 ## 연락
 
 - 벡터 불일치, 빌드 실패, 지연 이상은 이슈 #35에 코멘트. AI 쪽이 재현·판정한다.

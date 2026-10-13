@@ -1,0 +1,9 @@
+char ::= [^"\\\x7F\x00-\x1F] | [\\] (["\\bfnrt] | "u" [0-9a-fA-F]{4})
+items ::= "[" space items-item ("," space items-item){0,4} space "]"
+items-item ::= "{" space items-item-text-kv "," space items-item-source-kv space "}"
+items-item-source-kv ::= "\"source\"" space ":" space string
+items-item-text-kv ::= "\"text\"" space ":" space string
+items-kv ::= "\"items\"" space ":" space items
+root ::= "{" space items-kv space "}"
+space ::= | " " | "\n"{1,2} [ \t]{0,20}
+string ::= "\"" char* "\""

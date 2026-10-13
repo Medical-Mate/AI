@@ -324,7 +324,7 @@ AI 서버는 무상태다. 인증·세션 식별·저장은 백엔드가 한다(
 
 #### 온디바이스 경로 — `phone_question_candidates` (2026-10-12)
 
-폰 모델(Qwen3-1.7B)이 후보를 만들었으면 같은 종료 턴에 실어 보낸다. **서버는 생성하지 않고 검증·보충만
+폰 모델(Qwen3-1.7B)이 후보를 만들었으면 **문답이 끝난 뒤의 턴**(통증 슬라이더 턴 등, `ended: true`인 state로 보내는 요청)에 실어 보낸다. 폰은 서버가 확정한 마지막 카드와 슬라이더 값을 받은 뒤에야 후보를 만들 수 있기 때문이다. 종료 턴에 실어도 동작은 같다. **서버는 생성하지 않고 검증·보충만
 한다** — 외부 LLM 호출 0. 추론은 폰, 검증 계층은 서버라는 앱 구조 그대로다.
 
 ```json
@@ -346,7 +346,7 @@ AI 서버는 무상태다. 인증·세션 식별·저장은 백엔드가 한다(
 - 통과분이 모자라면 **템플릿 v2**(카드 값으로 만든 질문)를 뒤에 붙인다. 각 항목에 `origin`: `model` | `template`
 - 응답은 같은 자리 `card.question_candidates` `[{text, source, rank, origin}]`. **`origin`은 이 경로에만 붙는다**
 - `[]`를 보내도 된다 — 폰이 하나도 못 만들었다는 뜻이고 템플릿만으로 채운다. 필드를 생략하면 전처럼 서버 LLM 경로
-- `audit.question_candidates`에 판정이 남는다: `{source: "phone", received, kept, templated, dropped[{text, reasons}], model_id, prompt_version}`.
+- `audit.question_candidates`에 판정이 남는다(끝난 뒤의 턴이면 `audit`은 `source: "none"`·빈 발화 한 줄이고 이 키만 채워진다, 2026-10-13): `{source: "phone", received, kept, templated, dropped[{text, reasons}], model_id, prompt_version}`.
   서버 LLM 경로는 `{source: "server", kept}`. 후보를 안 만든 턴은 `null`
 - `question_candidates: true`가 아닌 턴에 보내면 422. `candidates_meta`만 보내도 422
 - 검증을 못 하면(어떤 이유든) `question_candidates`는 `null`이고 카드는 그대로 200이다. **검증 안 된 폰 후보를

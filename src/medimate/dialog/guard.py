@@ -26,6 +26,7 @@ import re
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from medimate.dialog.value_source import patient_words, value_problems
 from medimate.llm.base import AxisUpdate, TurnExtraction
 from medimate.schema.card import FieldStatus
 
@@ -67,10 +68,22 @@ class GuardConfig:
     # ("의사가 '회전근개 파열'이래요")은 받아쓰라는 동사가 없어 그대로 받는다.
     # 시키는 동사 + 따옴표가 같이 있을 때만
     dictated_quote_not_a_value: bool = True
+    # 규칙 10 (2026-10-13): 값이 그 발화에서 나오지 않았으면(낱말 출처·숫자·부정, `value_source`)
+    # 값을 **환자가 한 말로 바꾼다.** 근거 필터(2)는 evidence만 보고 값은 안 봤다 — 폰 1.7B가
+    # "아침에 좀 뻣뻣해요"에 `립구름`, "열이 나지는 않아요"에 `열이 나요`를 냈고 둘 다 카드에 갔다.
+    # 버리지 않는 이유: 같은 뜻을 다른 낱말로 쓴 값도 걸리는데, 그때 손해는 값이 길어지는 것뿐이다.
+    # 폰 프로필에서만 켠다. Nova·Terra·Sonnet 저장 결과에는 이런 값이 없었다
+    value_from_utterance: bool = False
+    # 규칙 11 (2026-10-13): 근거가 원문과 띄어쓰기·한두 글자만 다르면(`3 일`, `욕신거려요`)
+    # 버리지 않고 **원문의 그 구간으로 바꿔 넣는다.** 근거는 여전히 원문 글자 그대로다.
+    # 값은 규칙 10이 원문에 다시 대조한다 — 그래서 규칙 10과 같이 켠다.
+    # Qwen3.5-2B가 숫자와 한글 사이를 띄우고 받침을 바꿔 복사해(`욱신`→`욕신`) 답한 칸을
+    # 통째로 잃었다(108문항 B01·C04·CC01). 띄어쓰기만 다른 근거·값도 원문 띄어쓰기로 되돌린다
+    snap_evidence: bool = False
 
     @classmethod
     def ondevice(cls) -> GuardConfig:
-        return cls(only_asked_axis=True)
+        return cls(only_asked_axis=True, value_from_utterance=True, snap_evidence=True)
 
 
 @dataclass
@@ -88,14 +101,16 @@ _BARE_AFFIRM = re.compile(
 )
 
 
-# 모름으로 시작하는 답. 복원문 기준(`ㅁㄹ`→`모르겠다`, `기억안남`→`기억 안 남`)
+# 모름으로 시작하는 답. 복원문 기준(`ㅁㄹ`→`모르겠다`, `기억안남`→`기억 안 남`).
+# 앞에 붙는 군말("그건", "음", "글쎄요")은 건너뛴다(2026-10-13, "그건 잘 모르겠어요")
 _BARE_UNKNOWN = re.compile(
-    r"^\s*(?:모르겠|몰라|모름|기억\s*안\s*나|기억\s*안\s*남|기억이\s*안|글쎄|잘\s*모르)"
+    r"^\s*(?:(?:그건|그거는|그거|그게|음+|어+|아+|저기|글쎄요?)[\s,.~]*)?"
+    r"(?:모르겠|몰라|모름|기억\s*안\s*나|기억\s*안\s*남|기억이\s*안|글쎄|잘\s*모르)"
 )
 # 짧은 부정만 있는 답. 복원문 전체가 이것뿐일 때
-_BARE_NEGATIVE = re.compile(
-    r"^\s*(?:아니요|아니오|아니|아뇨|아님|없음|없어요|없어|없다|노)[\s.!~ㅋㅎㅠㅜ]*$"
-)
+# 둘까지 이어 써도 같다("ㄴㄴ 없음"→"아니 없음", "아뇨 없어요"). 2026-10-13
+_NEG_WORD = r"(?:아니요|아니오|아니|아뇨|아님|없음|없어요|없어|없다|노)"
+_BARE_NEGATIVE = re.compile(rf"^\s*{_NEG_WORD}(?:[\s,.]+{_NEG_WORD})?[\s.!~ㅋㅎㅠㅜ]*$")
 # 예/아니오로 묻는 축과 그 "아니오" 값. 다른 축의 짧은 부정은 답이 아니다
 _YES_NO_AXIS_NEGATION = {"radiation": "안 퍼짐", "associated": "없음"}
 
@@ -125,6 +140,38 @@ def _strip_dictated(value: str | None, spans: list[str]) -> str | None:
 
 def _norm(s: str) -> str:
     return re.sub(r"\s+", "", s or "")
+
+
+def _edit_distance(a: str, b: str) -> int:
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+def _snap_to_utterance(evidence: str, utterance: str) -> str | None:
+    """근거와 가장 가까운 원문 구간(공백 무시 비교). 다섯 글자에 하나까지만 다를 때. 없으면 None."""
+    ev = _norm(evidence)
+    if len(ev) < 2:
+        return None
+    pos = [i for i, ch in enumerate(utterance) if not ch.isspace()]
+    compact = "".join(utterance[i] for i in pos)
+    budget = max(1, len(ev) // 5)
+    best: tuple[int, int, int] | None = None  # (거리, 시작, 끝)
+    # 같은 길이를 먼저 본다 — 거리가 같으면 글자 하나 바꾼 쪽이 하나 빠진 쪽보다 원문에 가깝다
+    for length in (len(ev), len(ev) + 1, len(ev) - 1):
+        if length < 2 or length > len(compact):
+            continue
+        for i in range(len(compact) - length + 1):
+            d = _edit_distance(ev, compact[i : i + length])
+            if d <= budget and (best is None or d < best[0]):
+                best = (d, i, i + length)
+    if best is None:
+        return None
+    return utterance[pos[best[1]] : pos[best[2] - 1] + 1]
 
 
 def guard_extraction(
@@ -203,8 +250,37 @@ def guard_extraction(
         elif cfg.only_asked_axis and asked_axis is not None and u.axis != asked_axis:
             reason = "not_asked_axis"
         elif cfg.evidence_substring and not in_utt(u.evidence):
-            reason = "evidence_not_in_utterance"
-        elif cfg.numbers_from_utterance and u.value:
+            snapped = _snap_to_utterance(u.evidence, utterance) if cfg.snap_evidence else None
+            if snapped is None:
+                reason = "evidence_not_in_utterance"
+            else:
+                dropped.append(
+                    {
+                        "axis": u.axis.value,
+                        "reason": "evidence_snapped",
+                        "value": u.value,
+                        "evidence": u.evidence,
+                    }
+                )
+                u = AxisUpdate(axis=u.axis, status=u.status, value=u.value, evidence=snapped)
+        elif cfg.snap_evidence and u.evidence and u.evidence not in utterance:
+            # 띄어쓰기만 다른 근거(`3 일 전부터`)도 원문 글자 그대로 되돌린다. 비교는 공백을 무시해
+            # 통과했지만 카드에 남는 근거는 환자가 친 그대로여야 한다
+            exact = _snap_to_utterance(u.evidence, utterance)
+            if exact is not None and _norm(exact) == _norm(u.evidence):
+                u = AxisUpdate(axis=u.axis, status=u.status, value=u.value, evidence=exact)
+        if (
+            reason is None
+            and cfg.snap_evidence
+            and u.value
+            and u.value not in utterance
+            and _norm(u.value) in nu
+        ):
+            # 값도 띄어쓰기만 다르면(`4 일 전부터`) 원문 띄어쓰기로 되돌린다. 글자는 안 바꾼다
+            exact = _snap_to_utterance(u.value, utterance)
+            if exact is not None and _norm(exact) == _norm(u.value):
+                u = AxisUpdate(axis=u.axis, status=u.status, value=exact, evidence=u.evidence)
+        if reason is None and cfg.numbers_from_utterance and u.value:
             bad = [n for n in re.findall(r"\d+", u.value) if n not in utt_nums]
             if bad:
                 reason = f"number_not_in_utterance:{','.join(bad)}"
@@ -223,6 +299,30 @@ def guard_extraction(
                     # 시킨 말뿐이었다 — 갱신 자체를 버린다. 물은 축이면 엔진이 되묻거나 닫는다
                     continue
                 u = AxisUpdate(axis=u.axis, status=u.status, value=stripped, evidence=u.evidence)
+        if (
+            reason is None
+            and cfg.value_from_utterance
+            and u.status == FieldStatus.FILLED
+            and u.value
+            and not letterless
+        ):
+            problems = value_problems(u.value, utterance, str(u.axis.value))
+            if problems:
+                dropped.append(
+                    {
+                        "axis": u.axis.value,
+                        "reason": "value_not_from_utterance:" + ";".join(problems),
+                        "value": u.value,
+                        "evidence": u.evidence,
+                    }
+                )
+                # 근거도 발화 전체로 — 값이 근거 밖의 말을 담게 되므로
+                u = AxisUpdate(
+                    axis=u.axis,
+                    status=u.status,
+                    value=patient_words(utterance),
+                    evidence=utterance,
+                )
         if reason is None:
             if bare_affirm and u.axis == asked_axis and u.status != FieldStatus.AMBIGUOUS:
                 # 값은 버리고 축은 살린다 — 엔진이 되묻는다. 무엇을 버렸는지는 dropped에 남긴다.
@@ -238,7 +338,15 @@ def guard_extraction(
                 u = AxisUpdate(
                     axis=u.axis, status=FieldStatus.AMBIGUOUS, value=None, evidence=u.evidence
                 )
-            elif bare_unknown and u.axis == asked_axis and u.status == FieldStatus.SKIPPED:
+            elif (
+                bare_unknown
+                and u.axis == asked_axis
+                and (
+                    u.status == FieldStatus.SKIPPED
+                    # 모름 문구 자체를 값으로 채운 것(`기억안남` → filled "기억안남")
+                    or (u.status == FieldStatus.FILLED and _BARE_UNKNOWN.match(u.value or ""))
+                )
+            ):
                 dropped.append(
                     {
                         "axis": u.axis.value,

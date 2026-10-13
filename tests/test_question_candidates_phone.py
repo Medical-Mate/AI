@@ -119,3 +119,42 @@ def test_server_path_is_unchanged_and_audited():
     assert b["ended"] and ex.called == 1
     assert b["card"]["question_candidates"] is None
     assert b["audit"]["question_candidates"] == {"source": "server", "kept": 0}
+
+
+def test_template_sees_the_exacerbating_axis():
+    """템플릿 v2는 `exacerbating` 키로 읽는다. 엔진 축 값(`exacerbating_relieving`)으로 넘기면
+    악화·완화 템플릿을 건너뛰었다(2026-10-13, 1.7B 카드 100장 중 악화·완화 질문 28장 → 77장)"""
+    r, _ = finish([])
+    cands = r.json()["card"]["question_candidates"]
+    assert any(c["source"] == "exacerbating" for c in cands), cands
+
+
+def test_candidates_after_the_dialog_ended_still_leave_an_audit():
+    """폰은 서버가 확정한 마지막 카드와 슬라이더 값을 받은 뒤에야 후보를 만든다 — 그래서 후보는
+    끝난 세션의 턴(슬라이더 턴)에 실린다. 그 턴에는 턴 로그가 없어 판정 로그가 빠졌다(2026-10-13)"""
+    ex = NoLLM()
+    c = TestClient(create_app(lambda: ex))
+    st = c.post("/v1/previsit/sessions").json()["state"]
+    utt = " ".join(VALUES.values()) + " 다 말했어요"
+    end = c.post("/v1/previsit/turns", json={"state": st, "utterance": utt}).json()
+    assert end["ended"]
+    r = c.post(
+        "/v1/previsit/turns",
+        json={
+            "state": end["state"],
+            "selections": [{"axis": "severity", "value": "3 (꽤 아파요)"}],
+            "question_candidates": True,
+            "phone_question_candidates": [
+                {"text": "계단 내려갈 때 더 아픈 건 어떤 상태인가요?", "source": "exacerbating"}
+            ],
+            "candidates_meta": {"model_id": "qwen3-1.7b-q4_0", "prompt_version": "q-small-v4"},
+        },
+    )
+    assert r.status_code == 200, r.text
+    b = r.json()
+    assert b["card"]["question_candidates"]
+    a = b["audit"]
+    assert a["source"] == "none" and a["utterance"] == ""
+    assert a["question_candidates"]["source"] == "phone"
+    assert a["question_candidates"]["received"] == 1
+    assert ex.called == 0

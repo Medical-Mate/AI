@@ -67,6 +67,14 @@ _ALLOWED: dict[str, list[tuple[str, str | None]]] = {
     ],
     "medication_instructions": [],
     "findings": [],
+    # 진료 전(가드 규칙 10, `dialog/value_source`). 방향이 없는 낱말만 — `악화`·`호전`은 넣지 않는다
+    "onset": [
+        ("전", None),
+        ("부터", None),
+        ("쯤", None),
+        ("정도", None),
+        ("무렵", None),
+    ],
 }
 _COMMON: list[tuple[str, str | None]] = [
     ("후", r"뒤|후|있다가|지나"),

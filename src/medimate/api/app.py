@@ -125,6 +125,9 @@ class Selection(BaseModel):
     value: str = Field(min_length=1, max_length=200)
 
 
+# 질문 후보 재료의 축 키. 엔진 축 값과 다른 것만 적는다
+_PAYLOAD_AXIS_KEY = {Axis.EXACERBATING_RELIEVING: "exacerbating"}
+
 _WS_RE = re.compile(r"\s+")
 
 
@@ -766,7 +769,19 @@ def create_app(
             else:
                 cands = _make_question_candidates(s.card, extractor, body.patient_profile)
                 qc_audit = {"source": "server", "kept": len(cands or [])}
-        if audit is not None and qc_audit is not None:
+        if qc_audit is not None:
+            if audit is None:
+                # 끝난 세션의 턴(통증 슬라이더 등)에는 턴 로그가 없다 — 엔진이 발화를 무시하고
+                # 바로 돌려준다. 폰은 서버가 확정한 마지막 카드와 슬라이더 값을 받은 **뒤에야**
+                # 후보를 만들 수 있으므로 이 자리가 후보의 정상 경로다. 판정 로그만 따로 남긴다
+                audit = TurnAudit(
+                    turn=s.turn,
+                    asked_axis=None,
+                    utterance="",
+                    extraction=TurnExtraction(),
+                    source="none",
+                    usage=TurnUsage(),
+                )
             audit.question_candidates = qc_audit
 
         return TurnResponse(
@@ -812,8 +827,11 @@ def create_app(
 
     def _card_payload(card: PreVisitCard, profile: PatientProfile | None) -> dict[str, Any]:
         """후보 생성·검증이 보는 카드. 축 값과 프로필뿐 — 식별자는 없다."""
+        # 키는 질문 프롬프트·템플릿·검증기가 읽는 이름(`assist_prompts._AXIS_KO`)으로 맞춘다.
+        # 엔진 축 값을 그대로 쓰면 `exacerbating_relieving`이 되어 악화·완화 값이 프롬프트에
+        # "(안 답함)"으로 찍히고 템플릿도 건너뛰었다(2026-10-13, 1.7B 이어 돌리기에서 발견)
         axes = {
-            str(getattr(a, "value", a)): e.value
+            _PAYLOAD_AXIS_KEY.get(a, str(getattr(a, "value", a))): e.value
             for a, e in card.axes.items()
             if e.value and e.status == FieldStatus.FILLED
         }
