@@ -102,7 +102,8 @@ uv run python -m medimate.evals.run --provider openai --model gpt-5.6-terra  # �
 | Anthropic `claude-sonnet-5` · `claude-haiku-4-5-20251001` · `claude-opus-5` (비교용) | eval |
 | Google `gemini-3.5-flash` · `gemini-3.5-flash-lite` · `gemini-3.6-flash` · `gemini-3.1-pro` (비교용) | eval |
 | TypeSafe Jev `jev-1.13.0` (비교용, 기각된 실험) | span · eval |
-| Qwen3-1.7B Q4_0 — llama.cpp `llama-server` (로컬, 온디바이스 후보) | eval |
+| Qwen3.5-2B Q4_0 (`ssm_out` Q8_0) — 폰 NPU(llama.cpp Hexagon `pkg-android-2092353`), HF `hyos0415/Qwen3.5-2B-NPU-GGUF` (온디바이스 운영 모델, 2026-10-13 확정, 묶음 v2) | eval · 앱 |
+| Qwen3-1.7B Q4_0 — llama.cpp `llama-server` (온디바이스 이전 모델, 묶음 v1) | eval |
 
 ### 평가셋
 
