@@ -14,7 +14,8 @@
 | 엔진 | `pkg-android-2092353` 그대로 | 없음 |
 | 모델 | `Qwen3.5-2B-Q4_0-ssmout-q8.gguf` · 1,243,185,536 bytes · SHA256 `c8e057dfc224b87b2fce69690ee6b53ca828f67543d01d088e409cb8315dc53f` | **교체** |
 | 받는 곳 | `https://huggingface.co/hyos0415/Qwen3.5-2B-NPU-GGUF/resolve/1c069ab6a03d5840d81ad29b2476752a13a407c0/Qwen3.5-2B-Q4_0-ssmout-q8.gguf` (계정 불필요, 이어받기 됨, Apache-2.0) | **교체** |
-| 추론 설정 | temperature 0 · seed 42 · max_tokens 1024 · **reasoning off** · `-c 4096` · NPU `--device HTP0 -ngl 99` | 없음 |
+| 추론 설정 | temperature 0 · seed 42 · max_tokens 1024 · **reasoning off** · `-c 4096` · NPU `--device HTP0 -ngl 99` · **`n_seq_max = 1`**(llama-server는 `-np 1`) | **`n_seq_max = 1` 필수** |
+| 왜 `n_seq_max = 1` | 2B의 `ssm_out` 행렬곱은 입력이 `[2048, 토큰 수, 시퀀스 수]` 3차원이고, Hexagon 행렬곱은 세 번째 차원이 1이 아니면 받지 않는다(no broadcasting). 시퀀스를 여럿 잡으면(llama-server 기본 `n_parallel` auto = 4) DeltaNet 18층의 이 행렬곱이 CPU로 가서 graph splits 39 · 호출마다 가중치 4MB 복사. `-np 1`로 splits 3(1.7B와 같음), 2026-10-13 폰 확인(#35). 앱은 환자 한 명이 한 번에 한 요청이라 1이면 충분하다 | 2B에서 생김 |
 | 채팅 템플릿 | 모델 안 템플릿 그대로. 렌더 전문 `evals/ondevice/rendered/2b-*.enable_thinking_false.txt`와 글자까지 같아야 함 | 모델과 함께 바뀜 |
 
 | 기능 | 프롬프트 | 스키마 | 테스트 벡터 (PC 기준) |
@@ -204,7 +205,7 @@ python scripts/ondevice_device_run.py --vectors evals/ondevice/vectors-qwen3-1.7
 ```bash
 adb push Qwen3.5-2B-Q4_0-ssmout-q8.gguf /data/local/tmp/llama.cpp/
 # 폰에서 서버 — 1.7B 때와 같은 명령, 모델 파일만 다름. VERBOSE로 연산 배치가 로그에 남는다
-adb shell "cd /data/local/tmp/llama.cpp && GGML_HEXAGON_VERBOSE=1 LD_LIBRARY_PATH=lib ADSP_LIBRARY_PATH=lib   bin/llama-server -m Qwen3.5-2B-Q4_0-ssmout-q8.gguf --port 8080 -c 4096 --temp 0 --seed 42 --reasoning off   --device HTP0 -ngl 99" 2>&1 | tee server-2b.log
+adb shell "cd /data/local/tmp/llama.cpp && GGML_HEXAGON_VERBOSE=1 LD_LIBRARY_PATH=lib ADSP_LIBRARY_PATH=lib   bin/llama-server -m Qwen3.5-2B-Q4_0-ssmout-q8.gguf --port 8080 -c 4096 --temp 0 --seed 42 --reasoning off   --device HTP0 -ngl 99 -np 1" 2>&1 | tee server-2b.log
 adb forward tcp:8080 tcp:8080
 
 # PC에서 (파이썬 표준 라이브러리만, 저장소 환경 불필요)
