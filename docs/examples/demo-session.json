@@ -2028,7 +2028,29 @@
             }
           ]
         },
-        "audit": null,
+        "audit": {
+          "turn": 5,
+          "asked_axis": null,
+          "utterance": "",
+          "extraction": {
+            "chief_complaint": null,
+            "updates": [],
+            "notes": [],
+            "wants_to_stop": false
+          },
+          "raw_extraction": null,
+          "dropped": [],
+          "source": "none",
+          "usage": {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cost_usd": 0.0
+          },
+          "question_candidates": {
+            "source": "server",
+            "kept": 3
+          }
+        },
         "request_id": "demo-after"
       }
     },

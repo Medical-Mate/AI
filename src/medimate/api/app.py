@@ -769,7 +769,19 @@ def create_app(
             else:
                 cands = _make_question_candidates(s.card, extractor, body.patient_profile)
                 qc_audit = {"source": "server", "kept": len(cands or [])}
-        if audit is not None and qc_audit is not None:
+        if qc_audit is not None:
+            if audit is None:
+                # 끝난 세션의 턴(통증 슬라이더 등)에는 턴 로그가 없다 — 엔진이 발화를 무시하고
+                # 바로 돌려준다. 폰은 서버가 확정한 마지막 카드와 슬라이더 값을 받은 **뒤에야**
+                # 후보를 만들 수 있으므로 이 자리가 후보의 정상 경로다. 판정 로그만 따로 남긴다
+                audit = TurnAudit(
+                    turn=s.turn,
+                    asked_axis=None,
+                    utterance="",
+                    extraction=TurnExtraction(),
+                    source="none",
+                    usage=TurnUsage(),
+                )
             audit.question_candidates = qc_audit
 
         return TurnResponse(
