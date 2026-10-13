@@ -1,0 +1,10 @@
+0 ::= ("\"findings\"" | "\"tests\"" | "\"medication_instructions\"" | "\"lifestyle_instructions\"" | "\"follow_up\"" | "\"none\"")
+0-kv ::= "\"0\"" space ":" space 0
+1 ::= ("\"findings\"" | "\"tests\"" | "\"medication_instructions\"" | "\"lifestyle_instructions\"" | "\"follow_up\"" | "\"none\"")
+1-kv ::= "\"1\"" space ":" space 1
+2 ::= ("\"findings\"" | "\"tests\"" | "\"medication_instructions\"" | "\"lifestyle_instructions\"" | "\"follow_up\"" | "\"none\"")
+2-kv ::= "\"2\"" space ":" space 2
+3 ::= ("\"findings\"" | "\"tests\"" | "\"medication_instructions\"" | "\"lifestyle_instructions\"" | "\"follow_up\"" | "\"none\"")
+3-kv ::= "\"3\"" space ":" space 3
+root ::= "{" space 0-kv "," space 1-kv "," space 2-kv "," space 3-kv space "}"
+space ::= | " " | "\n"{1,2} [ \t]{0,20}
