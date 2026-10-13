@@ -754,7 +754,7 @@ def followup_from_reader(
 
 
 def followup_from_reading(
-    reading: Mapping[str, Any], sentence: str, visit_date: date
+    reading: Mapping[str, Any], sentence: str, visit_date: date, allow_phone_days: bool = True
 ) -> FollowUpDate | None:
     """**폰 모델이 읽어 보낸** 표현으로 날짜를 계산한다(2026-10-12, 온디바이스 이식).
 
@@ -765,7 +765,10 @@ def followup_from_reading(
     1. `text`가 현재 문장에 글자 그대로 있어야 한다. 아니면 None(앞 문장의 약 기간이 넘어오는 길)
     2. 월·일이 왔으면 절대 날짜(진료일 기준 다음 도래일)
     3. `text` 조각만 규칙 파서에 넣는다 — 문장 전체가 아니라 조각이라 앞 절 추론이 끼지 않는다
-    4. 규칙이 모르면 폰이 센 `days`(1..400)
+    4. 규칙이 모르면 폰이 센 `days`(1..400). `allow_phone_days=False`면 건너뛴다 — 서버 규칙이
+       앞 절에서 이미 날짜를 읽었을 때다. 폰은 고유어 수를 못 세서 일수가 가장 약한 근거다.
+       2026-10-13 Qwen3.5-2B: "닷새치 약 받고 / 약 다 먹고 나서 오래요"에서 문장 전체를
+       표현으로 내고 15일을 세어, 규칙이 앞 절에서 읽은 9/20을 9/30으로 덮었다
     """
     if not isinstance(reading, Mapping):
         return None
@@ -792,7 +795,12 @@ def followup_from_reading(
             approximate=by_rule.approximate,
             basis=f"폰 읽음 '{text}' → 규칙 · {by_rule.basis}",
         )
-    if isinstance(days, int) and not isinstance(days, bool) and 1 <= days <= _READ_MAX_DAYS:
+    if (
+        allow_phone_days
+        and isinstance(days, int)
+        and not isinstance(days, bool)
+        and 1 <= days <= _READ_MAX_DAYS
+    ):
         dt = visit_date + timedelta(days=days)
         return FollowUpDate(
             text=text,
@@ -918,7 +926,8 @@ def _assemble(
             if fu is None or fu.basis.startswith("앞 절"):
                 phone = (phone_readings or {}).get(_WS.sub("", s))
                 if phone is not None:
-                    read = followup_from_reading(phone, s, visit_date)
+                    # 규칙이 앞 절에서 읽었으면 폰 일수로는 덮지 않는다(표현·월일·규칙만)
+                    read = followup_from_reading(phone, s, visit_date, allow_phone_days=fu is None)
                 elif followup_reader is not None:
                     read = followup_from_reader(followup_reader, s, visit_date, prev_text=prev)
                 else:

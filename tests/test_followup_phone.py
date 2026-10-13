@@ -155,3 +155,26 @@ def test_native_korean_day_words_are_rules_now():
     # 복용법의 "하루"는 재방문이 아니다 — 표에 넣지 않은 이유
     fu = followup_date("하루 두 번 먹고 다시 오라고", V)
     assert fu is None or "하루" not in fu.text
+
+
+def test_phone_day_count_does_not_override_a_date_the_rules_took_from_the_previous_clause():
+    """2026-10-13 Qwen3.5-2B: 문장 전체를 표현으로 내고 15일을 셌다. 규칙은 앞 절 "닷새치"로
+    9/20을 읽었다 — 폰 일수(가장 약한 근거)가 그걸 9/30으로 덮으면 안 된다.
+    규칙이 아무것도 못 읽었을 때만 쓴다"""
+    res = assemble_from_client(
+        "닷새치 약 받고 약 다 먹고 나서 오래요",
+        ["닷새치 약 받고", "약 다 먹고 나서 오래요"],
+        {"0": "medication_instructions", "1": "follow_up"},
+        visit_date=V,
+        phone_readings={"약다먹고나서오래요": _r("약 다 먹고 나서 오래요", days=15)},
+    )
+    assert res.card.follow_up_date.date == "2026-09-20"
+    # 규칙이 아무것도 못 읽는 문장이면 폰 일수를 그대로 쓴다(기존 동작)
+    res = assemble_from_client(
+        "연말에 보자고 하셨어요.",
+        ["연말에 보자고 하셨어요."],
+        {"0": "follow_up"},
+        visit_date=V,
+        phone_readings={"연말에보자고하셨어요.": _r("연말", days=100)},
+    )
+    assert res.card.follow_up_date.date == "2026-12-24"
