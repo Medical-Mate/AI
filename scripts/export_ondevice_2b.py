@@ -27,9 +27,11 @@ from medimate.llm import prompt_small as ps  # noqa: E402
 from medimate.schema.card import Axis  # noqa: E402
 
 OD = Path("evals/ondevice")
-EXTRACT_RUN = Path("evals/results/local/gpu-qwen3.5-2b-q4_0-small-2b-v1.jsonl")
-CHAIN_RUN = Path("evals/results/ondevice-chain/chain-qwen3.5-2b-q4_0-small-2b-v1.jsonl")
-MODEL = "Qwen3.5-2B-Q4_0.gguf"
+EXTRACT_RUN = Path("evals/results/local/gpu-qwen3.5-2b-q4_0-ssmq8-small-2b-v1.jsonl")
+CHAIN_RUN = Path("evals/results/ondevice-chain/chain-qwen3.5-2b-q4_0-ssmq8-small-2b-v1.jsonl")
+# 2026-10-13 폰 실측 뒤: unsloth Q4_0에서 ssm_out(Q5_K, NPU 미지원)만 Q8_0으로 바꾼 파일
+# (`scripts/gguf_swap_tensor_type.py`, hyos0415/Qwen3.5-2B-NPU-GGUF@1c069ab6)
+MODEL = "Qwen3.5-2B-Q4_0-ssmout-q8.gguf"
 ENGINE = "llama.cpp b10819 (PC winget, GPU Vulkan) — 폰 엔진과 다른 빌드·장치"
 Q_VERSION = "questions-small4"
 
@@ -88,7 +90,7 @@ def main() -> None:
                 "engine": ENGINE,
             }
         )
-    out = OD / f"vectors-qwen3.5-2b-q4_0-{ps.PROMPT_VERSION}.jsonl"
+    out = OD / f"vectors-qwen3.5-2b-q4_0-ssmq8-{ps.PROMPT_VERSION}.jsonl"
     _write_jsonl(out, rows)
     print(f"{out} {len(rows)}개 (앱 경로 {sum(r['app_path'] for r in rows)})")
 
@@ -109,7 +111,7 @@ def main() -> None:
                 "engine": ENGINE,
             }
         )
-    qout = OD / f"vectors-questions-qwen3.5-2b-q4_0-{Q_VERSION}.jsonl"
+    qout = OD / f"vectors-questions-qwen3.5-2b-q4_0-ssmq8-{Q_VERSION}.jsonl"
     _write_jsonl(qout, qrows)
     print(f"{qout} {len(qrows)}개")
 

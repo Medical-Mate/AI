@@ -116,13 +116,13 @@ CPU로 떨어질 수 있다"며 뺐는데, 넘겨드린 엔진 빌드(`pkg-andro
 
 | | 값 |
 |---|---|
-| 모델 | `Qwen3.5-2B-Q4_0.gguf` · 1,214,873,856 bytes · Apache-2.0 |
-| 받는 곳 | `https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/f6d5376be1edb4d416d56da11e5397a961aca8ae/Qwen3.5-2B-Q4_0.gguf` |
-| SHA256 | `cd70221bebaee0503e0f6717e174250cd7825aa88438b3aabec9ad55731d9bb1` |
+| 모델 | `Qwen3.5-2B-Q4_0-ssmout-q8.gguf` · 1,243,185,536 bytes · Apache-2.0 (2차, 아래 "2차 실측" 참고) |
+| 받는 곳 | `https://huggingface.co/hyos0415/Qwen3.5-2B-NPU-GGUF/resolve/1c069ab6a03d5840d81ad29b2476752a13a407c0/Qwen3.5-2B-Q4_0-ssmout-q8.gguf` (계정·토큰 없이 받음, 이어받기 됨) |
+| SHA256 | `c8e057dfc224b87b2fce69690ee6b53ca828f67543d01d088e409cb8315dc53f` |
 | 엔진 | 그대로 `pkg-android-2092353` (새로 받을 것 없음) |
 | 추출 프롬프트 | `evals/ondevice/prompt-extract-small-2b-v1.system.txt` (1.7B의 small-v4에서 값 규칙 한 줄과 예시 둘만 다름) |
-| 추출 벡터 | `evals/ondevice/vectors-qwen3.5-2b-q4_0-extract-small-2b-v1.jsonl` (79개, `app_path: true` 65개) |
-| 질문 후보 벡터 | `evals/ondevice/vectors-questions-qwen3.5-2b-q4_0-questions-small4.jsonl` (100개, `messages` 그대로 보냄) · 스키마 `evals/ondevice/questions.schema.json` |
+| 추출 벡터 | `evals/ondevice/vectors-qwen3.5-2b-q4_0-ssmq8-extract-small-2b-v1.jsonl` (79개, `app_path: true` 65개) |
+| 질문 후보 벡터 | `evals/ondevice/vectors-questions-qwen3.5-2b-q4_0-ssmq8-questions-small4.jsonl` (100개, `messages` 그대로 보냄) · 스키마 `evals/ondevice/questions.schema.json` |
 | 추론 설정 | 1.7B와 같음 — temperature 0 · seed 42 · max_tokens 1024 · **reasoning off** · `-c 4096` · NPU `--device HTP0 -ngl 99` |
 
 `expected_output`은 PC(GPU)에서 낸 것이라 폰과 바이트가 같을 필요는 없습니다. 판정은 AI 쪽 채점기가 합니다.
@@ -144,18 +144,38 @@ CPU로 떨어질 수 있다"며 뺐는데, 넘겨드린 엔진 빌드(`pkg-andro
 - **`app_path: false`는 첫 발화 케이스**라 앱 흐름(축 질문부터)에는 없습니다. 참고용
 - 질문 후보 벡터는 정답이 하나가 아닙니다. 서버 검증기가 거르고 템플릿이 채우므로, 폰에서는 **JSON이 나오고 3~5개**인지만 봅니다
 
+### 2차 실측 (2026-10-13) — 1차 결과와 바꾼 것
+
+1차(unsloth `Qwen3.5-2B-Q4_0.gguf`, 이슈 #35): 프롬프트 렌더 일치, 추출 품질 폰 = PC(앱 경로 65문항 중 53, 위반 0),
+앱 경로 턴 지연 p50 3.64초 · p90 4.67초, 생성 12.7 tok/s. 대신 **graph splits 39**(1.7B 3), 첫 호출 9.0초,
+긴 프롬프트 360 tok/s(1.7B 1,283).
+
+원인: unsloth의 "Q4_0"은 혼합 양자화라 `ssm_out` 18개(DeltaNet 층마다 하나)가 **Q5_K**였고, Hexagon은 Q5_K를
+계산하지 않아 층마다 CPU로 갔다 왔습니다(CPU 쪽 가중치 +49.5MiB = 그 18개 크기). 그 18개만 BF16 원본에서
+**Q8_0**으로 바꿔 끼웠습니다(나머지 302개 텐서·메타데이터는 unsloth와 바이트까지 같음,
+`scripts/gguf_swap_tensor_type.py`). PC 품질은 그대로입니다(108문항 77 → 78, 위반 0). 채팅 템플릿도 같아서
+렌더 전문은 그대로 맞습니다.
+
+2차로 보고 싶은 것: **graph splits가 3 근처로 내려오는지**, 첫 호출·긴 프롬프트 속도, 5분 발열. 명령은 아래와 같고
+모델 파일 이름만 바뀌었습니다. 그리고 발열은 조건이 달라 1.7B와 비교할 수가 없어서(9/7은 선풍기, 1차는 USB 충전 중),
+**1.7B도 같은 조건으로 5분** 한 번 부탁드립니다:
+
+```bash
+python scripts/ondevice_device_run.py --vectors evals/ondevice/vectors-qwen3-1.7b-q4_0-small-v4.jsonl --out device-17-heat.jsonl --minutes 5 --adb-temp
+```
+
 ### 재는 법 (PC + USB, 30분 정도)
 
 ```bash
-adb push Qwen3.5-2B-Q4_0.gguf /data/local/tmp/llama.cpp/
+adb push Qwen3.5-2B-Q4_0-ssmout-q8.gguf /data/local/tmp/llama.cpp/
 # 폰에서 서버 — 1.7B 때와 같은 명령, 모델 파일만 다름. VERBOSE로 연산 배치가 로그에 남는다
-adb shell "cd /data/local/tmp/llama.cpp && GGML_HEXAGON_VERBOSE=1 LD_LIBRARY_PATH=lib ADSP_LIBRARY_PATH=lib   bin/llama-server -m Qwen3.5-2B-Q4_0.gguf --port 8080 -c 4096 --temp 0 --seed 42 --reasoning off   --device HTP0 -ngl 99" 2>&1 | tee server-2b.log
+adb shell "cd /data/local/tmp/llama.cpp && GGML_HEXAGON_VERBOSE=1 LD_LIBRARY_PATH=lib ADSP_LIBRARY_PATH=lib   bin/llama-server -m Qwen3.5-2B-Q4_0-ssmout-q8.gguf --port 8080 -c 4096 --temp 0 --seed 42 --reasoning off   --device HTP0 -ngl 99" 2>&1 | tee server-2b.log
 adb forward tcp:8080 tcp:8080
 
 # PC에서 (파이썬 표준 라이브러리만, 저장소 환경 불필요)
-python scripts/ondevice_device_run.py --vectors evals/ondevice/vectors-qwen3.5-2b-q4_0-extract-small-2b-v1.jsonl --out device-2b-extract.jsonl --adb-temp
-python scripts/ondevice_device_run.py --vectors evals/ondevice/vectors-questions-qwen3.5-2b-q4_0-questions-small4.jsonl --out device-2b-questions.jsonl --adb-temp --limit 30
-python scripts/ondevice_device_run.py --vectors evals/ondevice/vectors-qwen3.5-2b-q4_0-extract-small-2b-v1.jsonl --out device-2b-heat.jsonl --minutes 5 --adb-temp
+python scripts/ondevice_device_run.py --vectors evals/ondevice/vectors-qwen3.5-2b-q4_0-ssmq8-extract-small-2b-v1.jsonl --out device-2b-extract.jsonl --adb-temp
+python scripts/ondevice_device_run.py --vectors evals/ondevice/vectors-questions-qwen3.5-2b-q4_0-ssmq8-questions-small4.jsonl --out device-2b-questions.jsonl --adb-temp --limit 30
+python scripts/ondevice_device_run.py --vectors evals/ondevice/vectors-qwen3.5-2b-q4_0-ssmq8-extract-small-2b-v1.jsonl --out device-2b-heat.jsonl --minutes 5 --adb-temp
 ```
 
 ### 보고 싶은 것 넷 (1.7B 9/7 실측과 나란히 봅니다)
