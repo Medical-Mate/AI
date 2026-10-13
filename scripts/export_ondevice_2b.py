@@ -75,6 +75,11 @@ def main() -> None:
                 "id": f"{r['case_id']}#0",
                 # 앱은 첫 발화 없이 축 질문부터 연다(skip_open_ended) — 첫 발화 벡터는 참고용
                 "app_path": asked is not None,
+                # 이 케이스가 보는 것과 지켜야 할 것(채점기 `evals/cases.jsonl` 그대로). 폰 출력이 PC와
+                # 바이트가 달라도 `expect`를 지키면 통과다 — 판정은 AI 쪽 채점기(가드 포함)가 한다
+                "category": c["category"],
+                "purpose": c.get("from", ""),
+                "expect": c["expect"],
                 "system": system,
                 "user": ps.user_message(c["utterance"], asked),
                 "settings": settings,

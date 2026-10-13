@@ -112,6 +112,19 @@ GGUF 파일(정확한 양자화 이름), 프롬프트 파일(버전), `turn_extr
 | `device-runs/2026-09-13-s24u-npu.jsonl` | 앱이 폰(S24U, HTP0)에서 낸 88건 raw, case id 포함 | 이슈 #35 코멘트를 결과 형식으로 옮김. 모델·프롬프트·설정은 벡터와 동일 |
 | `device-runs/…raw.report.txt` · `…guard.report.txt` | 그 88건을 `score.py`로 채점한 결과 (가드 없이 / 온디바이스 가드) | `uv run python -m medimate.evals.run --report <jsonl> --prompt small [--guard ondevice]` |
 
+### Qwen3.5-2B 후보 (2026-10-13, 폰 실측 요청 — `docs/android-ondevice-handoff.md` 같은 이름의 절)
+
+| 파일 | 무엇 | 어떻게 만들었나 |
+|---|---|---|
+| `prompt-extract-small-2b-v1.system.txt` | 2B용 진료 전 추출 시스템 프롬프트 | `MEDIMATE_SMALL_PROMPT=2b-v1`의 `prompt_small.system_prompt()` (LF) |
+| `vectors-qwen3.5-2b-q4_0-extract-small-2b-v1.jsonl` | 추출 벡터 79(앱 경로 65). 줄마다 `category`·`purpose`·`expect`(채점 기준)·`expected_output`(PC 출력) | `scripts/export_ondevice_2b.py` ← PC GPU 실행 원본 |
+| `vectors-questions-qwen3.5-2b-q4_0-questions-small4.jsonl` | 질문 후보 벡터 100(`messages`에 예시 차례 포함) | 같은 스크립트 ← 이어 돌리기 원본(카드는 2B가 만든 것) |
+| `questions.schema.json` · `questions.gbnf` | 질문 후보 출력 스키마와 그 GBNF | `assist_prompts.QUESTIONS_SCHEMA` · 업스트림 `examples/json_schema_to_grammar.py` |
+| `qwen3.5-2b.chat_template.jinja` | 모델 안의 채팅 템플릿 원문 | `llama-server`(b10819) `/props`의 `chat_template` |
+| `rendered/2b-A01-0.…txt` · `rendered/2b-questions-PC01.…txt` | 벡터 하나씩을 `enable_thinking=false`로 렌더한 전문 | 같은 서버의 `/apply-template` — 앱의 `llama_chat_apply_template` 결과와 글자까지 같아야 한다 |
+
+PC 기준(폰 가드 재채점): 108문항 77(앱 경로 86 중 68) · 위반 0. 1.7B는 82(앱 경로 68).
+
 같은 채점기로 PC 실행(`evals/results/local/Qwen3-1.7B-Q4_0-small4b.jsonl`)과 나란히 보면:
 PC 61/88·위반 0, 폰 60/88·위반 0 (둘 다 가드 적용). raw는 PC 59/3, 폰 58/2.
 "축·상태가 다른" 7건 중 5건(A01×2·NG02·NG03·PD02)은 폰 쪽이 채점기 기준에 맞는다.

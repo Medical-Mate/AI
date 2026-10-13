@@ -127,6 +127,23 @@ CPU로 떨어질 수 있다"며 뺐는데, 넘겨드린 엔진 빌드(`pkg-andro
 
 `expected_output`은 PC(GPU)에서 낸 것이라 폰과 바이트가 같을 필요는 없습니다. 판정은 AI 쪽 채점기가 합니다.
 
+**벡터 읽는 법 — 폰에서 무엇이 나와야 하는가**
+
+- **프롬프트가 먼저 같아야 합니다.** 모델에 들어가는 전문은 `evals/ondevice/rendered/2b-A01-0.enable_thinking_false.txt`와
+  글자까지 같아야 합니다(끝이 `<|im_start|>assistant
+<think>
+
+</think>
+
+` — 생각 끄기). 템플릿 원문은
+  `evals/ondevice/qwen3.5-2b.chat_template.jinja`. 여기가 다르면 아래 숫자는 의미가 없습니다
+- **출력은 JSON 하나**(스키마 강제). `<think>` 내용이나 설명문이 섞이면 실패입니다
+- **줄마다 `expect`가 판정 기준**입니다. 예: `{"axes": {"onset": "filled"}, "value_must_contain": {"onset": "4일"}}` —
+  물은 칸이 채워지고 값에 "4일"이 들어 있으면 통과. 바이트가 PC와 달라도 `expect`를 지키면 통과입니다.
+  `category`·`purpose`는 그 케이스가 무엇을 보는지(경계값·고쳐 말하기·채팅체·인젝션 등)
+- **`app_path: false`는 첫 발화 케이스**라 앱 흐름(축 질문부터)에는 없습니다. 참고용
+- 질문 후보 벡터는 정답이 하나가 아닙니다. 서버 검증기가 거르고 템플릿이 채우므로, 폰에서는 **JSON이 나오고 3~5개**인지만 봅니다
+
 ### 재는 법 (PC + USB, 30분 정도)
 
 ```bash
