@@ -8,10 +8,13 @@
 폰 엔진과 같은 빌드로 다시 내야 한다.
 
   uv run --no-sync python scripts/export_memo_ondevice_v5.py
+  # 2B 묶음 v2(2026-10-13): 같은 프롬프트·스키마, 벡터만 2B 실행으로
+  uv run --no-sync python scripts/export_memo_ondevice_v5.py --model-tag qwen3.5-2b-q4_0-ssmq8       --run evals/results/memo/ondevice-memo-small-v5-local-qwen3.5-2b-ssmq8-gpu.jsonl       --engine "llama.cpp b10819 (PC winget, GPU Vulkan) — 폰 엔진과 다른 빌드·장치"
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -32,6 +35,11 @@ ENGINE = "llama.cpp b10819 (PC, winget) — 폰 엔진과 다른 빌드"
 
 
 def main() -> None:
+    a = argparse.ArgumentParser()
+    a.add_argument("--run", type=Path, default=RUN)
+    a.add_argument("--model-tag", default="qwen3-1.7b-q4_0")
+    a.add_argument("--engine", default=ENGINE)
+    args = a.parse_args()
     assert VERSION == "memo-small-v5", VERSION
     system = prompt_memo_small.system_prompt()
     # 폰 자산은 LF — 윈도우 기본(CRLF)으로 쓰면 프롬프트 바이트가 달라진다
@@ -49,8 +57,8 @@ def main() -> None:
     )
 
     vecs = [json.loads(x) for x in VEC.read_text(encoding="utf-8").splitlines() if x.strip()]
-    run = {json.loads(x)["id"]: json.loads(x) for x in RUN.read_text(encoding="utf-8").splitlines() if x.strip()}
-    out = OD / f"vectors-memo-qwen3-1.7b-q4_0-{VERSION}.jsonl"
+    run = {json.loads(x)["id"]: json.loads(x) for x in args.run.read_text(encoding="utf-8").splitlines() if x.strip()}
+    out = OD / f"vectors-memo-{args.model_tag}-{VERSION}.jsonl"
     ok = total = 0
     with out.open("w", encoding="utf-8", newline="\n") as f:
         for v in vecs:
@@ -71,7 +79,7 @@ def main() -> None:
                             "seed": 42,
                             "reasoning": "off",
                             "json_schema": f"memo_labels-{VERSION}.schema.json (N={len(sents)})",
-                            "engine": ENGINE,
+                            "engine": args.engine,
                         },
                         "expected_output": r["raw"],
                         "expected_labels": gold,

@@ -120,6 +120,8 @@ GGUF 파일(정확한 양자화 이름), 프롬프트 파일(버전), `turn_extr
 | `vectors-qwen3.5-2b-q4_0-ssmq8-extract-small-2b-v1.jsonl` | 추출 벡터 79(앱 경로 65). 줄마다 `category`·`purpose`·`expect`(채점 기준)·`expected_output`(PC 출력) | `scripts/export_ondevice_2b.py` ← PC GPU 실행 원본 |
 | `vectors-questions-qwen3.5-2b-q4_0-ssmq8-questions-small4.jsonl` | 질문 후보 벡터 100(`messages`에 예시 차례 포함) | 같은 스크립트 ← 이어 돌리기 원본(카드는 2B가 만든 것) |
 | `questions.schema.json` · `questions.gbnf` | 질문 후보 출력 스키마와 그 GBNF | `assist_prompts.QUESTIONS_SCHEMA` · 업스트림 `examples/json_schema_to_grammar.py` |
+| `vectors-memo-qwen3.5-2b-q4_0-ssmq8-memo-small-v5.jsonl` | 메모 분류 벡터 34(프롬프트·스키마는 1.7B v5와 같은 파일), PC 라벨 124/132 | `scripts/export_memo_ondevice_v5.py --model-tag …` |
+| `prompt-followup-v1.system.txt` · `followup-v1.schema.json` · `vectors-followup-qwen3.5-2b-q4_0-ssmq8-followup-v1.jsonl` | 재방문 표현 자르기(폰) 66. 줄마다 `expect_days`·운영 순서 서버 날짜 `pc_server_date`(66/66) | `scripts/export_followup_ondevice.py` ← `eval_followup_reader.py --provider local` 원본 |
 | `qwen3.5-2b.chat_template.jinja` | 모델 안의 채팅 템플릿 원문 | `llama-server`(b10819) `/props`의 `chat_template` |
 | `rendered/2b-A01-0.…txt` · `rendered/2b-questions-PC01.…txt` | 벡터 하나씩을 `enable_thinking=false`로 렌더한 전문 | 같은 서버의 `/apply-template` — 앱의 `llama_chat_apply_template` 결과와 글자까지 같아야 한다 |
 

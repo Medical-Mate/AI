@@ -1,0 +1,33 @@
+{
+  "type": "object",
+  "properties": {
+    "text": {
+      "type": "string"
+    },
+    "days": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "month": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "day": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "text",
+    "days",
+    "month",
+    "day"
+  ],
+  "additionalProperties": false
+}
