@@ -29,6 +29,9 @@ from medimate.schema.card import Axis  # noqa: E402
 OD = Path("evals/ondevice")
 EXTRACT_RUN = Path("evals/results/local/gpu-qwen3.5-2b-q4_0-ssmq8-small-2b-v1.jsonl")
 CHAIN_RUN = Path("evals/results/ondevice-chain/chain-qwen3.5-2b-q4_0-ssmq8-small-2b-v1.jsonl")
+# 질문 출력은 40자 상한 스키마로 다시 낸 것(같은 카드·같은 메시지, `scripts/ondevice_device_run.py` PC GPU).
+# 상한 없는 원본과 85/100이 같고, 나머지는 길이 때문에 갈린 것이다
+QUESTIONS_RUN = Path("evals/results/ondevice-chain/questions-2b-ssmq8-maxlen40.jsonl")
 # 2026-10-13 폰 실측 뒤: unsloth Q4_0에서 ssm_out(Q5_K, NPU 미지원)만 Q8_0으로 바꾼 파일
 # (`scripts/gguf_swap_tensor_type.py`, hyos0415/Qwen3.5-2B-NPU-GGUF@1c069ab6)
 MODEL = "Qwen3.5-2B-Q4_0-ssmout-q8.gguf"
@@ -47,8 +50,15 @@ def main() -> None:
     system = ps.system_prompt()
     # 폰 자산은 LF — 윈도우 기본(CRLF)으로 쓰면 프롬프트 바이트가 달라진다
     (OD / f"prompt-{ps.PROMPT_VERSION}.system.txt").write_text(system, encoding="utf-8", newline="\n")
+    # 폰 스키마는 글자 수 상한을 단다(2026-10-13 2차 실측): PC22에서 2B가 "석 달쯤"을 되풀이하다
+    # max_tokens 1024에 걸려 JSON이 깨지고 66초가 걸렸다. 40자는 서버 질문 검증기(MAX_CHARS)와 같아서
+    # 넘는 문장은 어차피 버려진다. 문법이 문자열을 닫게 만들어 폭주가 생길 수 없다
+    phone_schema = json.loads(json.dumps(ap.QUESTIONS_SCHEMA))
+    item = phone_schema["properties"]["items"]["items"]["properties"]
+    item["text"]["maxLength"] = 40
+    item["source"]["maxLength"] = 24
     (OD / "questions.schema.json").write_text(
-        json.dumps(ap.QUESTIONS_SCHEMA, ensure_ascii=False, indent=2) + "\n",
+        json.dumps(phone_schema, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
         newline="\n",
     )
@@ -96,6 +106,11 @@ def main() -> None:
 
     qsettings = {**settings, "json_schema": "questions.schema.json"}
     qrows = []
+    capped = {
+        json.loads(x)["id"]: json.loads(x)
+        for x in QUESTIONS_RUN.read_text(encoding="utf-8").splitlines()
+        if x.strip()
+    }
     for x in CHAIN_RUN.read_text(encoding="utf-8").splitlines():
         r = json.loads(x)
         messages = [{"role": "system", "content": ap.questions_system(Q_VERSION)}]
@@ -106,8 +121,8 @@ def main() -> None:
                 "id": r["id"],
                 "messages": messages,
                 "settings": qsettings,
-                "expected_output": r["q_raw"],
-                "pc_latency_s": r["q_latency_s"],
+                "expected_output": capped[r["id"]]["output"],
+                "pc_latency_s": capped[r["id"]]["latency_s"],
                 "engine": ENGINE,
             }
         )
