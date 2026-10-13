@@ -119,3 +119,11 @@ def test_server_path_is_unchanged_and_audited():
     assert b["ended"] and ex.called == 1
     assert b["card"]["question_candidates"] is None
     assert b["audit"]["question_candidates"] == {"source": "server", "kept": 0}
+
+
+def test_template_sees_the_exacerbating_axis():
+    """템플릿 v2는 `exacerbating` 키로 읽는다. 엔진 축 값(`exacerbating_relieving`)으로 넘기면
+    악화·완화 템플릿을 건너뛰었다(2026-10-13, 1.7B 카드 100장 중 악화·완화 질문 28장 → 77장)"""
+    r, _ = finish([])
+    cands = r.json()["card"]["question_candidates"]
+    assert any(c["source"] == "exacerbating" for c in cands), cands

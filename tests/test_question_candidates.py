@@ -240,3 +240,13 @@ def test_a_filled_profile_still_renders_the_values():
     assert "복용약: 혈압약, 아스피린" in user
     assert "알러지: 페니실린" in user
     assert f"기저질환: {PROFILE_UNKNOWN}" in user  # 안 온 것만 미확인
+
+
+def test_every_filled_axis_reaches_the_prompt():
+    """엔진 축 값(`exacerbating_relieving`)과 프롬프트 키(`exacerbating`)가 달라 악화·완화가
+    "(안 답함)"으로 찍혔다(2026-10-13). 대본은 8축을 전부 채운다 — 빈 칸이 하나도 없어야 한다"""
+    c, ex, st = _client()
+    _turn(c, st, question_candidates=True)
+    _, user = ex.prompts[0]
+    assert "악화·완화: x" in user
+    assert "(안 답함)" not in user
