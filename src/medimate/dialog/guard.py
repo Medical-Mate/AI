@@ -26,6 +26,7 @@ import re
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from medimate.dialog.value_source import patient_words, value_problems
 from medimate.llm.base import AxisUpdate, TurnExtraction
 from medimate.schema.card import FieldStatus
 
@@ -67,10 +68,16 @@ class GuardConfig:
     # ("의사가 '회전근개 파열'이래요")은 받아쓰라는 동사가 없어 그대로 받는다.
     # 시키는 동사 + 따옴표가 같이 있을 때만
     dictated_quote_not_a_value: bool = True
+    # 규칙 10 (2026-10-13): 값이 그 발화에서 나오지 않았으면(낱말 출처·숫자·부정, `value_source`)
+    # 값을 **환자가 한 말로 바꾼다.** 근거 필터(2)는 evidence만 보고 값은 안 봤다 — 폰 1.7B가
+    # "아침에 좀 뻣뻣해요"에 `립구름`, "열이 나지는 않아요"에 `열이 나요`를 냈고 둘 다 카드에 갔다.
+    # 버리지 않는 이유: 같은 뜻을 다른 낱말로 쓴 값도 걸리는데, 그때 손해는 값이 길어지는 것뿐이다.
+    # 폰 프로필에서만 켠다. Nova·Terra·Sonnet 저장 결과에는 이런 값이 없었다
+    value_from_utterance: bool = False
 
     @classmethod
     def ondevice(cls) -> GuardConfig:
-        return cls(only_asked_axis=True)
+        return cls(only_asked_axis=True, value_from_utterance=True)
 
 
 @dataclass
@@ -223,6 +230,30 @@ def guard_extraction(
                     # 시킨 말뿐이었다 — 갱신 자체를 버린다. 물은 축이면 엔진이 되묻거나 닫는다
                     continue
                 u = AxisUpdate(axis=u.axis, status=u.status, value=stripped, evidence=u.evidence)
+        if (
+            reason is None
+            and cfg.value_from_utterance
+            and u.status == FieldStatus.FILLED
+            and u.value
+            and not letterless
+        ):
+            problems = value_problems(u.value, utterance, str(u.axis.value))
+            if problems:
+                dropped.append(
+                    {
+                        "axis": u.axis.value,
+                        "reason": "value_not_from_utterance:" + ";".join(problems),
+                        "value": u.value,
+                        "evidence": u.evidence,
+                    }
+                )
+                # 근거도 발화 전체로 — 값이 근거 밖의 말을 담게 되므로
+                u = AxisUpdate(
+                    axis=u.axis,
+                    status=u.status,
+                    value=patient_words(utterance),
+                    evidence=utterance,
+                )
         if reason is None:
             if bare_affirm and u.axis == asked_axis and u.status != FieldStatus.AMBIGUOUS:
                 # 값은 버리고 축은 살린다 — 엔진이 되묻는다. 무엇을 버렸는지는 dropped에 남긴다.
