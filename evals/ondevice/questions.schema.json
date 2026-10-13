@@ -9,10 +9,12 @@
         "type": "object",
         "properties": {
           "text": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 40
           },
           "source": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 24
           }
         },
         "required": [

@@ -122,7 +122,8 @@ CPU로 떨어질 수 있다"며 뺐는데, 넘겨드린 엔진 빌드(`pkg-andro
 | 엔진 | 그대로 `pkg-android-2092353` (새로 받을 것 없음) |
 | 추출 프롬프트 | `evals/ondevice/prompt-extract-small-2b-v1.system.txt` (1.7B의 small-v4에서 값 규칙 한 줄과 예시 둘만 다름) |
 | 추출 벡터 | `evals/ondevice/vectors-qwen3.5-2b-q4_0-ssmq8-extract-small-2b-v1.jsonl` (79개, `app_path: true` 65개) |
-| 질문 후보 벡터 | `evals/ondevice/vectors-questions-qwen3.5-2b-q4_0-ssmq8-questions-small4.jsonl` (100개, `messages` 그대로 보냄) · 스키마 `evals/ondevice/questions.schema.json` |
+| 질문 후보 벡터 | `evals/ondevice/vectors-questions-qwen3.5-2b-q4_0-ssmq8-questions-small4.jsonl` (100개, `messages` 그대로 보냄) · 스키마 `evals/ondevice/questions.schema.json` · GBNF `questions.gbnf` |
+| 질문 스키마 상한 | **`text` 40자 · `source` 24자** (2026-10-13 2차 실측 PC22: 2B가 "석 달쯤"을 되풀이하다 max_tokens에 걸려 JSON이 깨지고 66초). 40자는 서버 질문 검증기 상한과 같아 넘는 문장은 어차피 버려진다. 문법이 문자열을 닫게 해 폭주가 생길 수 없다. PC 100장: 파싱 실패 2 → 0, 검증 통과 170 → 171 |
 | 추론 설정 | 1.7B와 같음 — temperature 0 · seed 42 · max_tokens 1024 · **reasoning off** · `-c 4096` · NPU `--device HTP0 -ngl 99` |
 
 `expected_output`은 PC(GPU)에서 낸 것이라 폰과 바이트가 같을 필요는 없습니다. 판정은 AI 쪽 채점기가 합니다.
