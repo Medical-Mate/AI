@@ -1,9 +1,43 @@
-# 안드로이드 전달 — 온디바이스 추출 묶음 (2026-09-07 1차 · 2026-09-09 진료 후 추가)
+# 안드로이드 전달 — 온디바이스 묶음 (v2 Qwen3.5-2B · 2026-10-13 확정)
 
-AI 쪽 실험은 끝났고(이슈 #24), 안드로이드에는 **고정된 묶음**과 **일치 확인 절차**만 넘깁니다.
-모델·프롬프트·스키마를 앱에서 바꾸지 않습니다. 바뀌면 AI 쪽이 버전을 올려 다시 전달합니다.
+안드로이드에는 **고정된 묶음**과 **일치 확인 절차**만 넘깁니다. 모델·프롬프트·스키마를 앱에서 바꾸지 않습니다.
+바뀌면 AI 쪽이 버전을 올려 다시 전달합니다. 추론만 폰에서 하고 가드·검증·날짜 계산·템플릿은 AI 서버가 합니다.
 
-## 묶음
+## 묶음 v2 — Qwen3.5-2B (지금 기준)
+
+2026-10-13 폰 실측 두 번(#35)으로 확정. 같은 조건에서 1.7B 대비 앱 경로 턴 지연 p50 2.80초(1.7B 2.86) ·
+5분 발열 같음(38.6°C) · 진료 전 추출 같음(폰 53/65, 위반 0) · 질문 후보 검증 통과 46 → 88 ·
+메모 분류 89.4% → 93.9%. 첫 호출만 1.7초 느림(5.9초 — 화면을 열 때 시스템 프롬프트를 먼저 보내 두면 체감 없음).
+
+| 항목 | 값 / 위치 | v1에서 바뀐 것 |
+|---|---|---|
+| 엔진 | `pkg-android-2092353` 그대로 | 없음 |
+| 모델 | `Qwen3.5-2B-Q4_0-ssmout-q8.gguf` · 1,243,185,536 bytes · SHA256 `c8e057dfc224b87b2fce69690ee6b53ca828f67543d01d088e409cb8315dc53f` | **교체** |
+| 받는 곳 | `https://huggingface.co/hyos0415/Qwen3.5-2B-NPU-GGUF/resolve/1c069ab6a03d5840d81ad29b2476752a13a407c0/Qwen3.5-2B-Q4_0-ssmout-q8.gguf` (계정 불필요, 이어받기 됨, Apache-2.0) | **교체** |
+| 추론 설정 | temperature 0 · seed 42 · max_tokens 1024 · **reasoning off** · `-c 4096` · NPU `--device HTP0 -ngl 99` | 없음 |
+| 채팅 템플릿 | 모델 안 템플릿 그대로. 렌더 전문 `evals/ondevice/rendered/2b-*.enable_thinking_false.txt`와 글자까지 같아야 함 | 모델과 함께 바뀜 |
+
+| 기능 | 프롬프트 | 스키마 | 테스트 벡터 (PC 기준) |
+|---|---|---|---|
+| 진료 전 추출 | `prompt-extract-small-2b-v1.system.txt` **(교체)** | `turn_extraction.small.schema.json` (그대로) | `vectors-qwen3.5-2b-q4_0-ssmq8-extract-small-2b-v1.jsonl` 79 · 줄마다 `expect` |
+| 질문 후보 | `questions-small4` (벡터 `messages`에 예시 차례까지) | `questions.schema.json` · `questions.gbnf` **(text 40자 상한)** | `vectors-questions-qwen3.5-2b-q4_0-ssmq8-questions-small4.jsonl` 100 |
+| 메모 분류 | `prompt-memo-small-v5.system.txt` **(v4 → v5: 라벨 `lifestyle_instructions` 추가)** | `memo_labels-memo-small-v5.schema.json` (문장 수 N에 맞춰 번호 키 생성) | `vectors-memo-qwen3.5-2b-q4_0-ssmq8-memo-small-v5.jsonl` 34 · 라벨 124/132 |
+| 재방문 표현 | `prompt-followup-v1.system.txt` **(새로)** | `followup-v1.schema.json` | `vectors-followup-qwen3.5-2b-q4_0-ssmq8-followup-v1.jsonl` 66 · 서버 날짜 66/66 |
+
+전부 `evals/ondevice/` 아래. 벡터 읽는 법은 아래 "후보 모델 폰 실측 요청" 절과 같습니다(`expect`·`app_path`).
+
+**앱에서 바꿀 것**
+1. 모델 파일(URL·해시)과 진료 전 추출 시스템 프롬프트 교체
+2. 질문 후보를 붙일 때 새 질문 스키마(40자 상한) 사용 — 같은 말 되풀이로 1024토큰까지 가는 일이 없어진다
+3. 메모 분류를 폰으로 옮길 때 **v5** 프롬프트·스키마 사용(v4로 붙이면 생활 지침 문장이 다른 칸으로 간다).
+   메모 API 응답의 `lifestyle_axis`가 true면 지침 칸이 따로 나간다(`docs/api-postvisit.md`)
+4. 재방문 문장은 폰이 **표현만 잘라** `follow_up_readings`로 보낸다. 날짜는 서버가 센다 — 폰이 센 `days`는
+   서버 규칙이 아무것도 못 읽었을 때만 쓴다(2026-10-13부터 앞 절 날짜를 덮지 않는다)
+5. 추론 설정·엔진은 그대로
+
+## (이전) 묶음 v1 — Qwen3-1.7B (2026-09-07 1차 · 2026-09-09 진료 후 추가)
+
+아래 v1 절들은 기록으로 둡니다. 일치 확인 절차·통합 시 알아둘 것은 v2에도 그대로 적용됩니다.
 
 | 항목 | 값 / 위치 | 비고 |
 |---|---|---|
@@ -194,4 +228,5 @@ ADSP_LIBRARY_PATH를 빠뜨리면 에러 없이 CPU로 돕니다 — 첫 호출�
 ## 연락
 
 - 벡터 불일치, 빌드 실패, 지연 이상은 이슈 #35에 코멘트. AI 쪽이 재현·판정한다.
-- 이 묶음의 버전: 모델 Qwen3-1.7B-Q4_0 · 진료 전 프롬프트 extract-small-v4 · 스키마 small(2026-09-07) · 진료 후 프롬프트 memo-small-v4 · 스키마 번호 키(2026-09-09) · 가드 규칙은 서버 쪽(앱 무관).
+- 이 묶음의 버전: **v2** — 모델 Qwen3.5-2B-Q4_0-ssmout-q8 · 진료 전 extract-small-2b-v1 · 질문 questions-small4 + 40자 스키마 · 진료 후 memo-small-v5 · 재방문 followup-v1 (2026-10-13). 가드 규칙은 서버 쪽(앱 무관).
+- 이전: v1 — Qwen3-1.7B-Q4_0 · extract-small-v4 · memo-small-v4 (2026-09-07 · 09-09).
