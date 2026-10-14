@@ -54,7 +54,7 @@
 | (기본) | `cparams.n_batch = 2048` · `cparams.n_ubatch = 512` | 실측 때 값 |
 | (기본 auto) | `cparams.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_AUTO` | |
 | `--temp 0 --seed 42` | 샘플러 체인 끝에 `llama_sampler_init_greedy()` | 온도 0이라 greedy. seed는 쓰이지 않는다 |
-| 요청별 `response_format: json_schema` | 체인 앞에 `llama_sampler_init_grammar(vocab, <GBNF>, "root")` | GBNF는 아래 표. 메모는 문장 수 N마다 만든다 |
+| 요청별 `response_format: json_schema` | `llama_sampler_init_grammar(vocab, <GBNF>, "root")` — **체인에 넣지 말고 따로 들고**, greedy로 고른 토큰 **하나만** 문법에 대어 본다(후보 1개짜리 배열에 `llama_sampler_apply`). 막히면(logit `-INFINITY`) 그때만 전체 후보에 문법을 걸고 다시 greedy. 고른 토큰은 `llama_sampler_accept`로 문법에도 알린다 | llama-server(`common_sampler`)가 이렇게 한다. 체인 앞에 걸면 매 토큰 어휘 전체를 문법으로 걸러 **추출 p50 6.0초 → 3.0초** 차이(2026-10-14 앱 실측, 출력 79개 글자까지 같음, #35). GBNF는 아래 표. 메모는 문장 수 N마다 만든다 |
 | `--reasoning off` | 프롬프트 끝에 **`<think>\n\n</think>\n\n`을 직접 붙인다** | `llama_chat_apply_template`(chatml)은 `<\|im_start\|>assistant\n`에서 끝나고 이 블록을 안 붙인다. 렌더 전문 `rendered/2b-*.txt`와 글자 대조 |
 | `max_tokens 1024` | 생성 루프 상한 1024토큰 | 질문 후보는 40자 문법이라 여기 닿지 않는다 |
 | 프롬프트 캐시(서버가 자동) | 시스템 프롬프트를 decode한 직후 `llama_state_seq_get_data`로 상태를 떠 두고, 턴마다 `llama_state_seq_set_data`로 되돌린 뒤 사용자 메시지만 decode | **2B는 부분 삭제가 안 된다**(로그 "does not support partial sequence removal" — DeltaNet 상태). 1.7B처럼 `llama_memory_seq_rm`으로 턴 부분만 지우는 방식은 안 통한다. 이걸 안 하면 매 턴 시스템 프롬프트(약 2,000토큰)를 다시 처리한다 |
