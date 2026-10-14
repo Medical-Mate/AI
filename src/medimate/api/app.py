@@ -56,6 +56,7 @@ from medimate.llm.memo_classifier import (
     LLMMemoClassifier,
     LLMMemoSegmenter,
 )
+from medimate.llm.prompt_small import AXIS_KO
 from medimate.llm.providers import (
     PRICES,
     PROMPTS,
@@ -110,9 +111,29 @@ class StartRequest(BaseModel):
     request_id: str | None = Field(default=None, max_length=128)  # 응답·audit에 그대로 되돌린다
 
 
+class AskingAxis(BaseModel):
+    """`reply`가 묻는 칸. 폰 추출 프롬프트의 "질문한 항목"에 그대로 넣는다(백엔드 #157).
+
+    백엔드는 `state`를 열지 않으므로 밖으로 꺼낸다. `label`은 폰 프롬프트와 같은 원천
+    (`prompt_small.AXIS_KO`)에서 온다 — 앱이 표를 따로 들면 프롬프트가 바뀔 때 어긋난다.
+    """
+
+    key: str  # 축 키(예 `onset`). 폰 프롬프트의 `axis=` 자리
+    label: str  # 폰 프롬프트에 넣는 칸 이름(예 `언제부터·어떻게 시작`)
+
+
+def _asking_axis(s: Session) -> AskingAxis | None:
+    """끝났거나 축 질문이 아니면(첫 자유 발화·"전하고 싶은 말") None — 그때는 서버 추출로 보낸다."""
+    if s.ended or s.asked_axis is None:
+        return None
+    axis = Axis(s.asked_axis)
+    return AskingAxis(key=axis.value, label=AXIS_KO[axis])
+
+
 class StartResponse(BaseModel):
     reply: str  # 환자에게 보여줄 첫 질문
     state: SessionState
+    asking_axis: AskingAxis | None = None  # reply가 묻는 칸(폰 추출용)
     request_id: str | None = None
 
 
@@ -375,6 +396,7 @@ class MemoResponse(BaseModel):
 
 class TurnResponse(BaseModel):
     reply: str  # 다음 질문 또는 마무리 문장
+    asking_axis: AskingAxis | None  # reply가 묻는 칸(폰 추출용). 끝났거나 축 질문이 아니면 None
     ended: bool
     end_reason: str | None
     state: SessionState  # 다음 턴에 그대로 보낼 것
@@ -693,8 +715,12 @@ def create_app(
                 s.card.provenance.ontology_snapshot = sel.ontology_snapshot
             else:
                 s.preselect_site(body.site_label)
+        reply = s.opening()  # 첫 축은 여기서 정해진다(skip_open_ended)
         return StartResponse(
-            reply=s.opening(), state=s.to_state(), request_id=body.request_id if body else None
+            reply=reply,
+            state=s.to_state(),
+            asking_axis=_asking_axis(s),
+            request_id=body.request_id if body else None,
         )
 
     @app.post("/v1/previsit/turns", response_model=TurnResponse)
@@ -786,6 +812,7 @@ def create_app(
 
         return TurnResponse(
             reply=reply,
+            asking_axis=_asking_axis(s),
             ended=s.ended,
             end_reason=s.end_reason,
             state=s.to_state(),

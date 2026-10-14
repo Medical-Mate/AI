@@ -347,3 +347,59 @@ def test_health_says_whether_the_require_flag_was_read(monkeypatch):
     monkeypatch.setenv("MEDIMATE_HMAC_SECRET", "s3cret")
     body = TestClient(create_app()).get("/health").json()
     assert body["hmac_required"] is True and body["hmac_enforced"] is True
+
+
+def test_responses_carry_the_axis_the_reply_asks_with_the_phone_prompt_label():
+    """백엔드 #157 — 폰 추출 프롬프트에 넣을 칸을 state 밖으로 꺼낸다. 끝나면 null."""
+    from medimate.llm.prompt_small import AXIS_KO, user_message
+
+    client, made = make_client([])
+    b = client.post(
+        "/v1/previsit/sessions", json={"profile": "ondevice", "site_label": "허리"}
+    ).json()
+    assert b["asking_axis"] == {"key": "onset", "label": AXIS_KO[Axis.ONSET]}
+    assert b["asking_axis"]["key"] == b["state"]["asked_axis"]
+    # 앱이 이 둘로 만든 줄이 폰 프롬프트의 줄과 같다
+    head = user_message("x", Axis(b["asking_axis"]["key"])).splitlines()[0]
+    assert head.startswith(
+        f"질문한 항목: {b['asking_axis']['label']} (axis={b['asking_axis']['key']})"
+    )
+
+    state, t = b["state"], b
+    seen = []
+    while t["asking_axis"] is not None:
+        key = t["asking_axis"]["key"]
+        seen.append(key)
+        assert t["reply"] == QUESTIONS[Axis(key)]
+        t = client.post(
+            "/v1/previsit/turns",
+            json={"state": state, "selections": [{"axis": key, "value": "선택값"}]},
+        ).json()
+        state = t["state"]
+    assert len(seen) == len(set(seen)) and "site" not in seen  # 부위는 인체도로 채워졌다
+    # 진료 전에는 "전하고 싶은 말" 질문이 없다(4단계 화면, 2026-09-11) — 마지막 칸 뒤 끝
+    assert t["ended"] and t["asking_axis"] is None
+    assert all(ex.calls == [] for ex in made)
+
+
+def test_server_profile_opens_free_text_so_no_axis_is_asked_yet():
+    client, _ = make_client([])
+    b = client.post("/v1/previsit/sessions", json={"site_label": "허리"}).json()
+    assert b["asking_axis"] is None and b["state"]["asked_axis"] is None
+
+
+def test_reask_after_an_ambiguous_answer_keeps_asking_the_same_axis():
+    client, _ = make_client([])
+    state = client.post(
+        "/v1/previsit/sessions", json={"profile": "ondevice", "site_label": "허리"}
+    ).json()["state"]
+    ext = TurnExtraction(
+        updates=[
+            AxisUpdate(axis=Axis.ONSET, status=FieldStatus.AMBIGUOUS, value="", evidence="ㅇㅇ")
+        ]
+    ).model_dump()
+    t = client.post(
+        "/v1/previsit/turns", json={"state": state, "utterance": "ㅇㅇ", "extraction": ext}
+    ).json()
+    assert t["reply"] != QUESTIONS[Axis.ONSET]  # 되묻기 문장
+    assert t["asking_axis"]["key"] == "onset"  # 되묻는 동안 폰 프롬프트의 칸은 그대로
