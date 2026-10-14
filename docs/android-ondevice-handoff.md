@@ -18,14 +18,16 @@
 | 왜 `n_seq_max = 1` | 2B의 `ssm_out` 행렬곱은 입력이 `[2048, 토큰 수, 시퀀스 수]` 3차원이고, Hexagon 행렬곱은 세 번째 차원이 1이 아니면 받지 않는다(no broadcasting). 시퀀스를 여럿 잡으면(llama-server 기본 `n_parallel` auto = 4) DeltaNet 18층의 이 행렬곱이 CPU로 가서 graph splits 39 · 호출마다 가중치 4MB 복사. `-np 1`로 splits 3(1.7B와 같음), 2026-10-13 폰 확인(#35). 앱은 환자 한 명이 한 번에 한 요청이라 1이면 충분하다 | 2B에서 생김 |
 | 채팅 템플릿 | 모델 안 템플릿 그대로. 렌더 전문 `evals/ondevice/rendered/2b-*.enable_thinking_false.txt`와 글자까지 같아야 함 | 모델과 함께 바뀜 |
 
-| 기능 | 프롬프트 | 스키마 | 테스트 벡터 (PC 기준) |
-|---|---|---|---|
-| 진료 전 추출 | `prompt-extract-small-2b-v1.system.txt` **(교체)** | `turn_extraction.small.schema.json` (그대로) | `vectors-qwen3.5-2b-q4_0-ssmq8-extract-small-2b-v1.jsonl` 79 · 줄마다 `expect` |
-| 질문 후보 | `questions-small4` (벡터 `messages`에 예시 차례까지) | `questions.schema.json` · `questions.gbnf` **(text 40자 상한)** | `vectors-questions-qwen3.5-2b-q4_0-ssmq8-questions-small4.jsonl` 100 |
-| 메모 분류 | `prompt-memo-small-v5.system.txt` **(v4 → v5: 라벨 `lifestyle_instructions` 추가)** | `memo_labels-memo-small-v5.schema.json` (문장 수 N에 맞춰 번호 키 생성) | `vectors-memo-qwen3.5-2b-q4_0-ssmq8-memo-small-v5.jsonl` 34 · 라벨 124/132 |
-| 재방문 표현 | `prompt-followup-v1.system.txt` **(새로)** | `followup-v1.schema.json` | `vectors-followup-qwen3.5-2b-q4_0-ssmq8-followup-v1.jsonl` 66 · 서버 날짜 66/66 |
+| 기능 | 언제 부르나 | 프롬프트 | 스키마 | 테스트 벡터 (PC 기준) |
+|---|---|---|---|---|
+| 1. 진료 전 추출 | 문답 중 환자가 답할 때마다 | `prompt-extract-small-2b-v1.system.txt` **(교체)** | `turn_extraction.small.schema.json` (그대로) | `vectors-qwen3.5-2b-q4_0-ssmq8-extract-small-2b-v1.jsonl` 79 · 줄마다 `expect` |
+| 2. 질문 후보 | 문답이 끝난 뒤 한 번 | `questions-small4` (벡터 `messages`에 예시 차례까지) | `questions.schema.json` · `questions.gbnf` **(text 40자 상한)** | `vectors-questions-qwen3.5-2b-q4_0-ssmq8-questions-small4.jsonl` 100 |
+| 3. 진료 후 기록(메모 분류) | 메모를 저장할 때 | `prompt-memo-small-v5.system.txt` **(v4 → v5: 라벨 `lifestyle_instructions` 추가)** | `memo_labels-memo-small-v5.schema.json` (문장 수 N에 맞춰 번호 키 생성) | `vectors-memo-qwen3.5-2b-q4_0-ssmq8-memo-small-v5.jsonl` 34 · 라벨 124/132 |
+| └ 재방문 표현 **(선택)** | 메모에 재방문 문장이 있을 때만 — 안 붙이면 서버 규칙이 날짜를 센다 | `prompt-followup-v1.system.txt` **(새로)** | `followup-v1.schema.json` | `vectors-followup-qwen3.5-2b-q4_0-ssmq8-followup-v1.jsonl` 66 · 서버 날짜 66/66 |
 
-전부 `evals/ondevice/` 아래. 벡터 읽는 법은 아래 "후보 모델 폰 실측 요청" 절과 같습니다(`expect`·`app_path`).
+폰 모델이 하는 일은 셋(진료 전 추출 · 질문 후보 · 진료 후 기록)이고 재방문 표현은 진료 후 기록 안의 선택 단계다.
+전부 `evals/ondevice/` 아래. **케이스마다 무엇을 넣고 무엇이 나와야 하는지는 [`docs/android-ondevice-testcases.md`](android-ondevice-testcases.md)**
+(벡터에서 자동 생성, PC 판정·PC도 틀리는 케이스 표시).
 
 **앱에서 바꿀 것**
 1. 모델 파일(URL·해시)과 진료 전 추출 시스템 프롬프트 교체
