@@ -40,6 +40,7 @@ AI 서버는 무상태다. 인증·세션 식별·저장은 백엔드가 한다(
 {
   "reply": "왼쪽 허리 옆 쪽이 어떻게 불편하신지 편하게 말씀해 주세요.",
   "state": { "...": "불투명하게 보관. 다음 요청에 그대로 넣는다" },
+  "asking_axis": null,
   "request_id": "req-0001"
 }
 ```
@@ -58,6 +59,7 @@ AI 서버는 무상태다. 인증·세션 식별·저장은 백엔드가 한다(
 | 필드 | 뜻 |
 |---|---|
 | `reply` | 환자에게 보여줄 다음 문장(질문 또는 마무리) |
+| `asking_axis` | `reply`가 묻는 칸 `{key, label}` 또는 `null`. 세션 시작 응답에도 있다. 아래 "온디바이스 프로필" |
 | `ended`, `end_reason` | 종료 여부. `stop`(환자가 그만) · `complete`(8축 모두 닫힘) · `max_turns` · `budget` |
 | `state` | 다음 턴에 그대로 보낼 것. **불투명하게 보관하고 열어보지 않는다** |
 | ⚠️ `card` vs `state.card` | **둘은 다르다.** 최상위 `card`가 백엔드가 읽을 것이다 |
@@ -298,6 +300,7 @@ AI 서버는 무상태다. 인증·세션 식별·저장은 백엔드가 한다(
 | 턴 요청 | `extraction` (+ `extraction_meta`: model_id·prompt_version) | 폰이 만든 추출 JSON. 있으면 서버는 LLM을 부르지 않고 가드만 통과시킨다. **근거 검증을 위해 `utterance`(원문)도 함께 보낸다** — 발화는 외부 LLM 업체에 가지 않는 것이고, 우리 서버·백엔드에는 온다(카드에 근거 인용이 들어가므로 새 노출은 아님) |
 | 턴 요청 | `selections`: `[{axis, value}]` | 선택지(칩)·폼으로 고른 값. LLM 없이 카드에 바로, 근거는 `[선택] 값`. `utterance` 없이 selections만 와도 한 턴으로 처리해 다음 질문을 준다. 같은 턴에 `utterance`를 섞어도 된다 |
 | 요청 공통 | `request_id` | 응답·audit에 그대로 되돌린다. 중복 응답 캐시는 백엔드가 원하면 백엔드에서 |
+| 응답(시작·턴) | `asking_axis`: `{key, label}` \| `null` (2026-10-14, 백엔드 #157) | `reply`가 묻는 칸. 폰 추출 프롬프트의 첫 줄 `질문한 항목: {label} (axis={key}). 이 항목만 답한다.`에 그대로 넣는다 — 예 `{"key": "onset", "label": "언제부터·어떻게 시작"}`. `label`은 폰 프롬프트와 같은 원천(`prompt_small.AXIS_KO`)이라 앱이 표를 들 필요가 없다. 되묻는 동안(애매한 답 → 확인 질문)은 같은 칸 그대로. 문답이 끝났거나 축 질문이 아니면(server 프로필의 첫 자유 발화) `null` — 그때는 서버 추출로 보낸다. `state.asked_axis`와 같은 값을 밖으로 꺼낸 것이다(백엔드는 `state`를 열지 않는다). `audit.asked_axis`는 **이번 턴에 이미 물었던** 칸이라 다르다 |
 | 응답 `audit` | `dropped[]`, `raw_extraction`, `source` | 가드가 버린 갱신과 이유(not_asked_axis / evidence_not_in_utterance / number_not_in_utterance / note_not_in_utterance), 모델 원본, 출처(server / device / none) |
 | 응답 `card.provenance` | `model_id`, `prompt_version` | `extraction_meta`가 오면 그 값으로 갱신된다(폰 모델·프롬프트 버전) |
 | 새 엔드포인트 | `GET /v1/ontology/body-map` | 부위 마스터: `anchors[]{id,label,image_key,laterality,view,region,departments,zones[]}` + `ontology_snapshot`. 앱·백엔드 공용, 읽기 전용. 진료과 안내는 팀 콘텐츠(인용 아님). **`image_key`**(2026-09-09 추가)는 앱 이미지 자산 파일명 키(영문 이름 슬러그, 예 `head`, `lower-back-and-hip`) — 앱이 id→파일을 하드코딩하지 않게. 이미지는 앱 자산이고 서버는 키만 낸다. 응답 예시 전체: `docs/examples/body-map.json`. **`aliases`**(2026-09-10 추가)는 폼 검색용 유의어(복부→배, 옆구리→허리 옆, 뒷목→목 뒤·옆). 앱이 로컬에서 이름+aliases 포함 매칭하면 된다 |

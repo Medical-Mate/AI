@@ -89,6 +89,7 @@
           "ended": false,
           "end_reason": null
         },
+        "asking_axis": null,
         "request_id": "demo-0"
       }
     },
@@ -178,6 +179,10 @@
       },
       "response": {
         "reply": "처음보다 지금은 어떤가요? 심해졌는지, 비슷한지, 나아졌는지요.",
+        "asking_axis": {
+          "key": "time_course",
+          "label": "처음과 비교한 변화"
+        },
         "ended": false,
         "end_reason": null,
         "state": {
@@ -495,6 +500,10 @@
       },
       "response": {
         "reply": "어떤 때 더 심해지나요?",
+        "asking_axis": {
+          "key": "exacerbating_relieving",
+          "label": "심해지거나 나아지는 상황"
+        },
         "ended": false,
         "end_reason": null,
         "state": {
@@ -814,6 +823,10 @@
       },
       "response": {
         "reply": "그 불편함이 다른 곳으로 퍼지기도 하나요?",
+        "asking_axis": {
+          "key": "radiation",
+          "label": "퍼지는 곳"
+        },
         "ended": false,
         "end_reason": null,
         "state": {
@@ -1139,6 +1152,10 @@
       },
       "response": {
         "reply": "같이 나타나는 다른 증상이 있나요?",
+        "asking_axis": {
+          "key": "associated",
+          "label": "함께 나타나는 증상"
+        },
         "ended": false,
         "end_reason": null,
         "state": {
@@ -1470,6 +1487,7 @@
       },
       "response": {
         "reply": "말씀해 주신 내용을 정리해서 진료 때 보실 수 있게 준비했어요.",
+        "asking_axis": null,
         "ended": true,
         "end_reason": "complete",
         "state": {
@@ -1820,6 +1838,7 @@
       },
       "response": {
         "reply": "말씀해 주신 내용을 정리해서 진료 때 보실 수 있게 준비했어요.",
+        "asking_axis": null,
         "ended": true,
         "end_reason": "complete",
         "state": {
