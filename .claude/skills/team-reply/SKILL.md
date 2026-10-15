@@ -99,7 +99,7 @@ PYTHONIOENCODING=utf-8 gh release list --repo Medical-Mate/AI
 | 추출 | **설계는 온디바이스, 운영은 서버**(2026-09-15 확인). 앱은 문답·질문후보·메모분류를 전부 백엔드 API로 보낸다. 폰에서 도는 건 STT뿐. 온디바이스 LLM은 앱 #142 미머지 | `docs/android-ondevice-handoff.md`, 앱 #142 |
 | 엔진 빌드 | 릴리즈 `pkg-android-2092353` (65,374,731 bytes). llama.cpp 업스트림 산출물 | `gh release view pkg-android-2092353` |
 | 외부 LLM 자리 | ① 질문 후보 ② 진료 후 메모 폴백. **둘뿐** | `evals/RESULTS.md` |
-| 증상 정리 흐름 | **1 부위 → 2 문답(챗) → 3 통증 강도 → 4 물어볼 것.** "2/4"는 화면 단계 | 피그마 `cG6lz8nwzp75bfAXCnMqxx` 섹션 `D · 증상 문답 4단계` |
+| 증상 정리 흐름 | **1 부위 → 2 통증 강도(`1d`) → 3 문답 + 채팅 안 질문 후보(`1c-D`).** "n/3"은 화면 단계이고 응답 `progress`와 무관(2026-10-15 전환) | 피그마 `cG6lz8nwzp75bfAXCnMqxx`(`1d`·`1c-D`), 백엔드 PR #169 |
 | 문답 턴 | `ASK_ORDER` 7축, 부위는 인체도 사전채움 → **6턴.** 퍼짐·동반은 **받는다**(빼지 않기로 확정) | `dialog/questions.py` `ASK_ORDER` |
 | 문답 입력 | **전부 자유 입력. 칩(선택지)은 없다** — 구현된 적 없다. 턴 응답은 `reply` 문자열 하나 | `docs/android-ondevice-handoff.md` |
 | 통증 강도 | **NRS 아님. 1~5 서열척도 + 라벨.** `selections`로 `{axis:"severity", value:"3 (꽤 아파요)"}` | `dialog/questions.py`, `api/app.py` `Selection` |
