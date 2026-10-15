@@ -377,7 +377,8 @@ def test_responses_carry_the_axis_the_reply_asks_with_the_phone_prompt_label():
         ).json()
         state = t["state"]
     assert len(seen) == len(set(seen)) and "site" not in seen  # 부위는 인체도로 채워졌다
-    # 진료 전에는 "전하고 싶은 말" 질문이 없다(4단계 화면, 2026-09-11) — 마지막 칸 뒤 끝
+    # 진료 전에는 "전하고 싶은 말" 질문이 없다(채팅 안 질문 후보가 대신, 2026-09-11)
+    # — 마지막 칸 뒤 끝
     assert t["ended"] and t["asking_axis"] is None
     assert all(ex.calls == [] for ex in made)
 

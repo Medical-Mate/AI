@@ -67,7 +67,7 @@ def test_update_without_evidence_is_dropped():
 def test_all_axes_answered_ends_without_a_message_turn():
     """진료 전은 "전하고 싶은 말" 턴이 없다(2026-09-11).
 
-    와이어프레임 4단계("의사에게 물어볼 것")가 그 역할을 대신한다 — AI 후보 + 환자 직접 입력.
+    채팅 안 질문 후보(1c-D, "의사에게 물어볼 것")가 그 역할을 대신한다 — AI 후보 + 환자 직접 입력.
     축이 닫히면 바로 종료한다.
     """
     updates = [filled(a, "x", "x") for a in Axis]
@@ -79,7 +79,7 @@ def test_all_axes_answered_ends_without_a_message_turn():
 
 
 def test_severity_is_not_asked_in_the_interview():
-    """3단계 슬라이더가 값을 주므로 문답에서 묻지 않는다(백엔드 합의 #7).
+    """문답 전 통증 슬라이더(1d)가 값을 주므로 문답에서 묻지 않는다(백엔드 합의 #7).
 
     슬라이더는 **NRS가 아니라** 1~5 서열척도 + 라벨이다(`"3 (꽤 아파요)"`). 2026-09-11 정정.
 

@@ -104,7 +104,7 @@ CASES: list[dict] = [
     },
     {
         "id": "V09",
-        "note": "selections만 보내는 턴(3단계 통증 강도 슬라이더)",
+        "note": "selections만 보내는 턴(통증 강도 슬라이더 1d)",
         "method": "POST",
         "path": "/v1/previsit/turns",
         "timestamp": "1789000006",

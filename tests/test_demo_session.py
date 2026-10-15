@@ -44,7 +44,7 @@ def test_every_screen_the_demo_needs_is_covered():
     card = d["steps"][-2]["response"]["card"]
     assert card["title"], "제목 줄"
     assert card["department_guidance"], "진료과 안내"
-    assert len(card["question_candidates"]) == 3, "4단계 물어볼 것"
+    assert len(card["question_candidates"]) == 3, "질문 후보 3개"
     memo = d["steps"][-1]["response"]
     assert memo["sentences"] and memo["card"]["follow_up_date"], "메모 분류·재방문 날짜"
 

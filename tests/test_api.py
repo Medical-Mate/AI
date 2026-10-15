@@ -258,7 +258,7 @@ def test_side_on_non_lateral_zone_is_rejected():
 
 
 def test_axes_closed_ends_the_session_without_a_message_turn():
-    """진료 전은 "전하고 싶은 말" 턴이 없다(2026-09-11). 4단계 화면이 대신한다.
+    """진료 전은 "전하고 싶은 말" 턴이 없다(2026-09-11). 채팅 안 질문 후보가 대신한다.
 
     `patient_message`도 채울 경로가 없어져 export에서 뺐다(백엔드 요청 #7 — 항상 null이면
     앱이 헷갈린다).
@@ -272,7 +272,7 @@ def test_axes_closed_ends_the_session_without_a_message_turn():
 
 
 def test_severity_arrives_by_selection_not_by_question():
-    """3단계 슬라이더 값을 `selections`로 받는다. LLM을 부르지 않고 근거는 `[선택] …`"""
+    """통증 슬라이더(1d) 값을 `selections`로 받는다. LLM을 부르지 않고 근거는 `[선택] …`"""
     client, _ = make_client([TurnExtraction(updates=[])])
     state = client.post("/v1/previsit/sessions").json()["state"]
     b = client.post(
