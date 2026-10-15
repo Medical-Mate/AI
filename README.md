@@ -125,13 +125,13 @@
 |---|---|---|
 | 인체도 부위 | `POST /sessions`의 `site_node_id` + `side` | 세션 시작 |
 | 자유 발화 | 턴의 `utterance` | 매 턴 |
-| **통증 강도 슬라이더(1d)** | 턴의 `selections: [{axis: "severity", value: "3 (꽤 아파요)"}]` | **아무 턴이나. 단 `ended` 전에** |
+| **통증 강도 슬라이더(1d, 문답 전)** | 턴의 `selections: [{axis: "severity", value: "3 (꽤 아파요)"}]` | **문답이 끝난 뒤 후보 요청에**(`question_candidates: true`와 같이). 중간 턴도 받는다. 세션 시작에는 못 싣는다(422) |
 | 온보딩 프로필 | 턴의 `patient_profile` | **마지막 턴에만**(`question_candidates: true`와 같이) |
 
 `severity`는 **문답으로 묻지 않는 축이다.** 통증 점수를 말로 물으면 환자가 숫자를 지어내고 그 값은
 근거가 없어서, 화면에서 고른 값만 받는다(`evidence`가 `[선택] …`이 되고 `source`는 `selection`).
-`selections`를 안 보내면 카드의 심각도는 끝까지 빈다. `ended`인 턴은 카드를 바꾸지 않으므로
-**종료 전에 보내야 한다.**
+`selections`를 안 보내면 카드의 심각도는 끝까지 빈다. `ended` 뒤에도 선택은 반영되므로
+(2026-09-14) 슬라이더는 문답 전에 고르지만 **값은 문답이 끝난 뒤 후보 요청에 실으면 된다.**
 
 배포 사양·요구사항은 [`docs/deploy-requirements.md`](./docs/deploy-requirements.md) (컨테이너 하나, 1 vCPU · 512MB~1GB, 무상태, GPU 없음).
 

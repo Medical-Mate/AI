@@ -75,7 +75,7 @@ from medimate.schema.card import (
 )
 from medimate.schema.export import to_backend_payload
 
-# 앱 4단계 화면이 3개를 보여준다. 생성은 제한하지 않고 가중치로 정렬해 위에서 자른다
+# 앱이 채팅 안(화면 1c-D)에 3개를 보여준다. 생성은 제한하지 않고 가중치로 정렬해 위에서 자른다
 QUESTION_CANDIDATES_TOP = 3
 
 # 기본값이 곧 운영값이다(2026-09-15). 전에는 openai / gpt-5.6-terra였는데, env 한 줄이
@@ -797,9 +797,10 @@ def create_app(
                 qc_audit = {"source": "server", "kept": len(cands or [])}
         if qc_audit is not None:
             if audit is None:
-                # 끝난 세션의 턴(통증 슬라이더 등)에는 턴 로그가 없다 — 엔진이 발화를 무시하고
-                # 바로 돌려준다. 폰은 서버가 확정한 마지막 카드와 슬라이더 값을 받은 **뒤에야**
-                # 후보를 만들 수 있으므로 이 자리가 후보의 정상 경로다. 판정 로그만 따로 남긴다
+                # 끝난 세션의 턴에는 턴 로그가 없다 — 엔진이 발화를 무시하고 바로 돌려준다.
+                # 백엔드는 문답이 끝난 뒤 강도 selections와 후보 요청을 한 번에 싣고, 폰은 서버가
+                # 확정한 마지막 카드를 받은 **뒤에야** 후보를 만들 수 있으므로 이 자리가 후보의
+                # 정상 경로다. 판정 로그만 따로 남긴다
                 audit = TurnAudit(
                     turn=s.turn,
                     asked_axis=None,

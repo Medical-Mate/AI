@@ -44,7 +44,8 @@ def to_backend_payload(
         # docs/decisions/2026-09-04-department-guidance.md
         out["department_guidance"] = _department_guidance(card)
         out["title"] = _title(card)
-        # 의사에게 물어볼 것 후보(앱 4단계 화면). **요청이 켜졌고 세션이 끝난 턴에만** 값이 온다.
+        # 의사에게 물어볼 것 후보(앱 채팅 안, 화면 1c-D).
+        # **요청이 켜졌고 세션이 끝난 턴에만** 값이 온다.
         # 만드는 것은 API이고(LLM 호출) 여기는 자리를 낸다 — 이 함수는 순수하게 남긴다.
         # 최종 목록(환자가 고른 것 + 직접 쓴 것)은 앱·백엔드 몫이다. 우리는 후보만 낸다
         out["question_candidates"] = question_candidates

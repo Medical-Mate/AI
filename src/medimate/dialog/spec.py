@@ -25,8 +25,8 @@ class InterviewSpec:
     ask_order: list  # 묻는 순서
     opening: str
     # 축이 모두 닫힌 뒤 한 번. None이면 그 턴을 내지 않고 바로 종료한다.
-    # 진료 전은 2026-09-11에 None으로 바꿨다 — 와이어프레임 4단계가 그 역할을 대신한다
-    # ("의사에게 물어볼 것" 화면에서 AI 후보 + 환자 직접 입력). card.patient_message는
+    # 진료 전은 2026-09-11에 None으로 바꿨다 — "의사에게 물어볼 것"이 그 역할을 대신한다
+    # (채팅 안 질문 후보 1c-D에서 AI 후보 체크 + 환자 직접 추가). card.patient_message는
     # 채울 경로가 없어져 항상 None이고, export에서도 뺐다
     message_question: str | None
     closing: str
@@ -51,7 +51,8 @@ PREVISIT_SPEC = InterviewSpec(
     clarify=pre_q.CLARIFY,
     ask_order=pre_q.ASK_ORDER,
     opening=pre_q.OPENING,
-    message_question=None,  # 4단계 화면이 대신한다(2026-09-11). 템플릿은 questions.py에 남겨 둔다
+    # 채팅 안 질문 후보가 대신한다(2026-09-11). 템플릿은 questions.py에 남겨 둔다
+    message_question=None,
     closing=pre_q.CLOSING,
     site_axis=Axis.SITE,
     opening_with_site=pre_q.OPENING_WITH_SITE,

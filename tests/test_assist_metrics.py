@@ -293,7 +293,8 @@ def test_v7_drops_the_ending_menu_that_became_a_template():
 
 
 def test_v7_has_no_statement_items_and_no_patient_message_source():
-    """4단계 화면이 질문 목록이라 서술문이 안 맞고, 전할 말 턴이 없어져 그 재료도 안 온다"""
+    """물어볼 것(채팅 안 질문 후보)이 질문 목록이라 서술문이 안 맞고,
+    전할 말 턴이 없어져 그 재료도 안 온다"""
     v7 = ap.questions_system("questions-v7")
     assert "전부 질문이고 물음표로 끝난다" in v7
     assert '"general"과 "patient_message"는 쓰지 않는다' in v7
