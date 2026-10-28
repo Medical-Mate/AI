@@ -742,9 +742,9 @@ nlp = [
     { name = "kiwipiepy", specifier = ">=0.23.2" },
     { name = "typesafe-sdk", specifier = ">=0.7.0" },
 ]
-obs = [{ name = "langfuse", specifier = ">=4.15.4" }]
+obs = [{ name = "langfuse", specifier = ">=4.15.4,<5" }]
 providers = [
-    { name = "anthropic", specifier = ">=0.50" },
+    { name = "anthropic", specifier = ">=0.50,<2" },
     { name = "boto3", specifier = ">=1.35" },
     { name = "google-genai", specifier = ">=1.0" },
     { name = "openai", specifier = ">=1.50" },
