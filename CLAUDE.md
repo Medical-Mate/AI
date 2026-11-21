@@ -83,6 +83,7 @@ uv run python -m medimate.evals.run --provider openai --model gpt-5.6-terra  # �
 | langfuse | obs (트레이싱, 환자 데이터 경로 — 식별자 가림 뒤 전송) |
 | python-dotenv | api · eval (`.env` 읽기) |
 | anthropic · openai · google-genai | eval (비교 모델 어댑터. 운영 이미지에 설치되지만 운영 경로는 부르지 않음. openai는 로컬 llama-server 호출에도 씀) |
+| llama.cpp (Hexagon 백엔드 `pkg-android-2092353` · `llama-server`) | 앱 (온디바이스 추론 — 폰 NPU, 운영) · eval (`llama-server`로 로컬 비교). pip 의존성이 아니라 빌드한 바이너리라 manifest에 없다 — 레이더가 이 행으로 릴리스를 본다 |
 | kiwipiepy | text · span (실험, 운영 이미지에 없음) |
 | typesafe-sdk | span (Jev 선택기, 기각된 실험, 운영 이미지에 없음) |
 | httpx | dev (fastapi TestClient) |
